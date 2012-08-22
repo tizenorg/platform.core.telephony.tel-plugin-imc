@@ -1,0 +1,682 @@
+/*
+ * tel-plugin-imc
+ *
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <glib.h>
+
+#include <tcore.h>
+#include <hal.h>
+#include <core_object.h>
+#include <plugin.h>
+#include <queue.h>
+#include <server.h>
+#include <co_sat.h>
+#include <user_request.h>
+#include <at.h>
+
+#include "s_common.h"
+#include "s_sat.h"
+#define ENVELOPE_CMD_LEN        256
+
+static struct tnoti_sat_proactive_ind *g_refresh_data = NULL;
+
+static	TReturn s_terminal_response(CoreObject *o, UserRequest *ur);
+//static void setup_event_rsp_get_ipc(CoreObject *o, struct tel_sat_setup_event_list_tlv *setup_evt_list);
+static void on_confirmation_sat_message_send(TcorePending *p, gboolean result, void *user_data ); // from Kernel
+
+static void on_confirmation_sat_message_send( TcorePending *p, gboolean result, void *user_data )
+{
+	dbg("on_confirmation_modem_message_send - msg out from queue.\n");
+
+	if (result == FALSE) {
+		/* Fail */
+		dbg("SEND FAIL");
+	}
+	else {
+		dbg("SEND OK");
+	}
+}
+
+static enum tcore_response_command _find_resp_command(UserRequest *ur)
+{
+	enum tcore_request_command command;
+	command = tcore_user_request_get_command(ur);
+	switch(command){
+		case TREQ_SIM_VERIFY_PINS:
+			return TRESP_SIM_VERIFY_PINS;
+			break;
+		case TREQ_SIM_VERIFY_PUKS:
+			return TRESP_SIM_VERIFY_PUKS;
+			break;
+		case TREQ_SIM_CHANGE_PINS:
+			return TRESP_SIM_CHANGE_PINS;
+			break;
+		case TREQ_SIM_GET_FACILITY_STATUS:
+			return TRESP_SIM_GET_FACILITY_STATUS;
+			break;
+		case TREQ_SIM_DISABLE_FACILITY:
+			return TRESP_SIM_DISABLE_FACILITY;
+			break;
+		case TREQ_SIM_ENABLE_FACILITY:
+			return TRESP_SIM_ENABLE_FACILITY;
+			break;
+		case TREQ_SIM_GET_LOCK_INFO:
+			return TRESP_SIM_GET_LOCK_INFO;
+			break;
+		case TREQ_SIM_TRANSMIT_APDU:
+			return TRESP_SIM_TRANSMIT_APDU;
+			break;
+		case TREQ_SIM_GET_ATR:
+			return TRESP_SIM_GET_ATR;
+			break;
+		case TREQ_SIM_GET_ECC:
+			return TRESP_SIM_GET_ECC;
+			break;
+		case TREQ_SIM_GET_LANGUAGE:
+			return TRESP_SIM_GET_LANGUAGE;
+			break;
+		case TREQ_SIM_SET_LANGUAGE:
+			return TRESP_SIM_SET_LANGUAGE;
+			break;
+		case TREQ_SIM_GET_ICCID:
+			return TRESP_SIM_GET_ICCID;
+			break;
+		case TREQ_SIM_GET_MAILBOX:
+			return TRESP_SIM_GET_MAILBOX;
+			break;
+		case TREQ_SIM_GET_CALLFORWARDING:
+			return TRESP_SIM_GET_CALLFORWARDING;
+			break;
+		case TREQ_SIM_SET_CALLFORWARDING:
+			return TRESP_SIM_SET_CALLFORWARDING;
+			break;
+		case TREQ_SIM_GET_MESSAGEWAITING:
+			return TRESP_SIM_GET_MESSAGEWAITING;
+			break;
+		case TREQ_SIM_GET_CPHS_INFO:
+			return TRESP_SIM_GET_CPHS_INFO;
+			break;
+		case TREQ_SIM_GET_MSISDN:
+			return TRESP_SIM_GET_MSISDN;
+			break;
+		case TREQ_SIM_GET_SPN:
+			return TRESP_SIM_GET_SPN;
+			break;
+		case TREQ_SIM_GET_SPDI:
+			return TRESP_SIM_GET_SPDI;
+			break;
+		case TREQ_SIM_GET_OPL:
+			return TRESP_SIM_GET_OPL;
+			break;
+		case TREQ_SIM_GET_PNN:
+			return TRESP_SIM_GET_PNN;
+			break;
+		case TREQ_SIM_GET_CPHS_NETNAME:
+			return TRESP_SIM_GET_CPHS_NETNAME;
+			break;
+		case TREQ_SIM_GET_OPLMNWACT:
+			return TRESP_SIM_GET_OPLMNWACT;
+			break;
+		case TREQ_SIM_REQ_AUTHENTICATION:
+			return TRESP_SIM_REQ_AUTHENTICATION;
+			break;
+		default:
+			break;
+	}
+	return TRESP_UNKNOWN;
+}
+
+/*static void on_response_set_up_eventlist(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	CoreObject *o = NULL;
+
+	dbg("SAT setup event list get rsp");
+	o = tcore_pending_ref_core_object(p);
+	ur = tcore_user_request_ref((UserRequest *)user_data);
+
+	s_terminal_response(o, ur);
+	return;
+}*/
+
+/*static void on_event_sat_envelope_resp(CoreObject *o, const void *event_info, void *user_data)
+{
+
+}
+
+static void on_event_sat_refresh_status(CoreObject *o, const void *event_info, void *user_data)
+{
+	ipc_sat_refresh_noti_type *ind = (ipc_sat_refresh_noti_type*) event_info;
+	dbg("CP SAT refresh status[%d]-0:start,1:end,2:fail", ind->action_type);
+
+	if (ind->action_type == IPC_SAT_REFRESH_ACTION_END) {
+		if(g_refresh_data) {
+			tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAT_PROACTIVE_CMD,
+				sizeof(struct tnoti_sat_proactive_ind), g_refresh_data);
+			free(g_refresh_data);
+		} else {
+			dbg("refresh proactive command data is null");
+		}
+	}
+}*/
+
+
+static void on_response_terminal_response_confirm(CoreObject *o, const void *event_info, void *user_data)
+{
+	dbg("Function Entry");
+	dbg("Function Exit");
+}
+
+static void on_event_sat_proactive_command(CoreObject *o, const void *event_info, void *user_data)
+{
+	
+	struct tcore_sat_proactive_command decoded_data;
+	struct tnoti_sat_proactive_ind proactive_noti;
+	int 	len_proactive_cmd = 0;
+	GSList 	*lines= NULL;
+	GSList 	*tokens= NULL;
+	char 	*line= NULL;
+	char 	*hexData= NULL;
+	char 	*tmp= NULL;
+	char 	*recordData= NULL;
+
+	dbg("Function Entry");
+
+	memset(&proactive_noti, 0x00, sizeof(struct tnoti_sat_proactive_ind));
+	lines = (GSList*)event_info;
+	line = (char*)lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) != 1) {
+		dbg("invalid message");
+		tcore_at_tok_free(tokens);
+		return FALSE;
+	}
+	hexData = (char*)g_slist_nth_data(tokens, 0);
+	
+	dbg("hexdata %s ", hexData);
+	dbg("hexdata length %d", strlen(hexData));
+
+	tmp = calloc(1, strlen(hexData)-1);
+	if(tmp == NULL){
+		return;
+	}	
+	memcpy(tmp, hexData+1, strlen(hexData)-2);
+
+	recordData = util_hexStringToBytes(tmp);
+	dbg("recordData: %x", recordData);
+	free(tmp);
+	util_hex_dump("    ", strlen(hexData)/2, recordData);
+	len_proactive_cmd = strlen(recordData);
+	dbg("len_proactive_cmd = %d", len_proactive_cmd);
+	tcore_sat_decode_proactive_command(recordData, (strlen(hexData)/2) - 1, &decoded_data);
+	free(recordData);
+
+	proactive_noti.cmd_number = decoded_data.cmd_num;
+	proactive_noti.cmd_type = decoded_data.cmd_type;
+
+	switch(decoded_data.cmd_type){
+		case SAT_PROATV_CMD_DISPLAY_TEXT:
+			dbg("decoded command is display text!!");
+			memcpy(&proactive_noti.proactive_ind_data.display_text, &decoded_data.data.display_text,	sizeof(struct tel_sat_display_text_tlv));
+			break;
+		case SAT_PROATV_CMD_GET_INKEY:
+			dbg("decoded command is get inkey!!");
+			memcpy(&proactive_noti.proactive_ind_data.get_inkey, &decoded_data.data.get_inkey,	sizeof(struct tel_sat_get_inkey_tlv));
+			break;
+		case SAT_PROATV_CMD_GET_INPUT:
+			dbg("decoded command is get input!!");
+			memcpy(&proactive_noti.proactive_ind_data.get_input, &decoded_data.data.get_input,	sizeof(struct tel_sat_get_input_tlv));
+			break;
+		case SAT_PROATV_CMD_MORE_TIME:
+			dbg("decoded command is more time!!");
+			memcpy(&proactive_noti.proactive_ind_data.more_time, &decoded_data.data.more_time,	sizeof(struct tel_sat_more_time_tlv));
+			break;
+		case SAT_PROATV_CMD_PLAY_TONE:
+			dbg("decoded command is play tone!!");
+			memcpy(&proactive_noti.proactive_ind_data.play_tone, &decoded_data.data.play_tone,	sizeof(struct tel_sat_play_tone_tlv));
+			break;
+		case SAT_PROATV_CMD_SETUP_MENU:
+			dbg("decoded command is SETUP MENU!!");
+			memcpy(&proactive_noti.proactive_ind_data.setup_menu, &decoded_data.data.setup_menu, sizeof(struct tel_sat_setup_menu_tlv));
+			break;
+		case SAT_PROATV_CMD_SELECT_ITEM:
+			dbg("decoded command is select item!!");
+			memcpy(&proactive_noti.proactive_ind_data.select_item, &decoded_data.data.select_item,	sizeof(struct tel_sat_select_item_tlv));
+			break;
+		case SAT_PROATV_CMD_SEND_SMS:
+			dbg("decoded command is send sms!!");
+			memcpy(&proactive_noti.proactive_ind_data.send_sms, &decoded_data.data.send_sms,	sizeof(struct tel_sat_send_sms_tlv));
+			break;
+		case SAT_PROATV_CMD_SEND_SS:
+			dbg("decoded command is send ss!!");
+			memcpy(&proactive_noti.proactive_ind_data.send_ss, &decoded_data.data.send_ss,	sizeof(struct tel_sat_send_ss_tlv));
+			break;
+		case SAT_PROATV_CMD_SEND_USSD:
+			dbg("decoded command is send ussd!!");
+			memcpy(&proactive_noti.proactive_ind_data.send_ussd, &decoded_data.data.send_ussd,	sizeof(struct tel_sat_send_ussd_tlv));
+			break;
+		case SAT_PROATV_CMD_SETUP_CALL:
+			dbg("decoded command is setup call!!");
+			memcpy(&proactive_noti.proactive_ind_data.setup_call, &decoded_data.data.setup_call,	sizeof(struct tel_sat_setup_call_tlv));
+			break;
+		case SAT_PROATV_CMD_REFRESH:
+			dbg("decoded command is refresh");
+			memcpy(&proactive_noti.proactive_ind_data.refresh, &decoded_data.data.refresh, sizeof(struct tel_sat_refresh_tlv));
+			break;
+		case SAT_PROATV_CMD_PROVIDE_LOCAL_INFO:
+			dbg("decoded command is provide local info");
+			memcpy(&proactive_noti.proactive_ind_data.provide_local_info, &decoded_data.data.provide_local_info, sizeof(struct tel_sat_provide_local_info_tlv));
+			break;
+		case SAT_PROATV_CMD_SETUP_EVENT_LIST:
+			dbg("decoded command is setup event list!!");
+			memcpy(&proactive_noti.proactive_ind_data.setup_event_list, &decoded_data.data.setup_event_list, sizeof(struct tel_sat_setup_event_list_tlv));
+			//setup_event_rsp_get_ipc(o, &decoded_data.data.setup_event_list);
+			break;
+		case SAT_PROATV_CMD_SETUP_IDLE_MODE_TEXT:
+			dbg("decoded command is setup idle mode text");
+			memcpy(&proactive_noti.proactive_ind_data.setup_idle_mode_text, &decoded_data.data.setup_idle_mode_text,	sizeof(struct tel_sat_setup_idle_mode_text_tlv));
+			break;
+		case SAT_PROATV_CMD_SEND_DTMF:
+			dbg("decoded command is send dtmf");
+			memcpy(&proactive_noti.proactive_ind_data.send_dtmf, &decoded_data.data.send_dtmf,	 sizeof(struct tel_sat_send_dtmf_tlv));
+			break;
+		case SAT_PROATV_CMD_LANGUAGE_NOTIFICATION:
+			dbg("decoded command is language notification");
+			memcpy(&proactive_noti.proactive_ind_data.language_notification, &decoded_data.data.language_notification,	sizeof(struct tel_sat_language_notification_tlv));
+			break;
+		case SAT_PROATV_CMD_LAUNCH_BROWSER:
+			dbg("decoded command is launch browser");
+			memcpy(&proactive_noti.proactive_ind_data.launch_browser, &decoded_data.data.launch_browser,	sizeof(struct tel_sat_launch_browser_tlv));
+			break;
+		case SAT_PROATV_CMD_OPEN_CHANNEL:
+			dbg("decoded command is open channel!!");
+			memcpy(&proactive_noti.proactive_ind_data.open_channel, &decoded_data.data.open_channel,	sizeof(struct tel_sat_open_channel_tlv));
+			break;
+		case SAT_PROATV_CMD_CLOSE_CHANNEL:
+			dbg("decoded command is close channel!!");
+			memcpy(&proactive_noti.proactive_ind_data.close_channel, &decoded_data.data.close_channel,	sizeof(struct tel_sat_close_channel_tlv));
+			break;
+		case SAT_PROATV_CMD_RECEIVE_DATA:
+			dbg("decoded command is receive data!!");
+			memcpy(&proactive_noti.proactive_ind_data.receive_data, &decoded_data.data.receive_data,	sizeof(struct tel_sat_receive_channel_tlv));
+			break;
+		case SAT_PROATV_CMD_SEND_DATA:
+			dbg("decoded command is send data!!");
+			memcpy(&proactive_noti.proactive_ind_data.send_data, &decoded_data.data.send_data,	sizeof(struct tel_sat_send_channel_tlv));
+			break;
+		case SAT_PROATV_CMD_GET_CHANNEL_STATUS:
+			dbg("decoded command is get channel status!!");
+			memcpy(&proactive_noti.proactive_ind_data.get_channel_status, &decoded_data.data.get_channel_status,	sizeof(struct tel_sat_get_channel_status_tlv));
+			break;
+		default:
+			dbg("wrong input");
+			break;
+	}
+
+	if (decoded_data.cmd_type == SAT_PROATV_CMD_REFRESH){
+		g_refresh_data = calloc(1, sizeof(struct tnoti_sat_proactive_ind));
+		if(g_refresh_data == NULL){
+			dbg("fail to calloc for refresh data");
+			return;
+		}else {
+			memcpy(g_refresh_data, &proactive_noti, sizeof(struct tnoti_sat_proactive_ind));
+		}
+	} else{
+		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAT_PROACTIVE_CMD,
+				sizeof(struct tnoti_sat_proactive_ind), &proactive_noti);
+	}
+	tcore_at_tok_free(tokens);
+	dbg("Function Exit");
+}
+
+/*static void on_event_sat_control_result(CoreObject *o, const void *event_info, void *user_data)
+{
+
+}*/
+
+static void on_response_envelop_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	const struct treq_sat_envelop_cmd_data *req_data = NULL;
+	GSList *tokens=NULL;
+	struct tresp_sat_envelop_data res;
+	const char *line;
+	const char *env_res;
+	int busy;
+
+	
+	ur = tcore_pending_ref_user_request(p);
+	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	if(!req_data){
+		dbg("request data is NULL");
+		return;
+	}
+	memset(&res, 0, sizeof(struct tresp_sat_envelop_data));
+
+	res.sub_cmd = req_data->sub_cmd;
+
+	if(resp->success > 0)
+	{
+		dbg("RESPONSE OK");
+		if(resp->lines) {
+			line = (const char*)resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				tcore_at_tok_free(tokens);
+				return;
+			}
+		}
+		env_res = g_slist_nth_data(tokens, 0);
+		/*TODO - update actual value now not handled in TAPI*/
+		res.result = 0x8000;
+		res.envelop_resp = ENVELOPE_SUCCESS;
+		/*dbg("RESPONSE OK 3");
+		if(NULL != g_slist_nth_data(tokens, 1)){
+			busy = atoi(g_slist_nth_data(tokens, 1));
+			dbg("RESPONSE OK 4");
+			if(busy != 0){
+				dbg("RESPONSE OK 5");
+				res.result = -1;
+				res.envelop_resp = ENVELOPE_SIM_BUSY;
+			}
+		}*/
+	}
+	else{
+		dbg("RESPONSE NOK");
+		res.result = -1;
+		res.envelop_resp = ENVELOPE_FAILED;
+	}
+
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAT_REQ_ENVELOPE, sizeof(struct tresp_sat_envelop_data), &res);
+	}
+	tcore_at_tok_free(tokens);
+	dbg(" Function exit");
+}
+
+static void on_timeout_terminal_response(TcorePending *p, void *user_data)
+{
+	UserRequest *ur = NULL;
+	CoreObject *o = NULL;
+	gpointer tmp = NULL;
+
+	dbg("Function Entry");
+	dbg("SAT - TIMEOUT !!!!! pending=%p", p);
+
+	ur = tcore_pending_ref_user_request(p);
+	tmp = (gpointer)tcore_user_request_ref_communicator(ur);
+	if(!ur || !tmp ){
+		dbg("error - current ur is NULL");
+		return;
+	}
+
+	o = tcore_pending_ref_core_object(p);
+	if(!o)
+		dbg("error - current sat core is NULL");
+
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAT_SESSION_END,	 0, NULL);
+	dbg("Function Exit");
+}
+
+
+static void on_response_terminal_response(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	CoreObject *o = NULL;
+	const TcoreATResponse *resp = data;
+	gpointer tmp = NULL;
+
+	dbg("Function Entry");
+
+	if(resp->success > 0){
+		dbg("RESPONSE OK");
+		dbg(" resp->success = %d",  resp->success);
+		ur = tcore_pending_ref_user_request(p);
+		tmp = (gpointer)tcore_user_request_ref_communicator(ur);
+		if(!ur || !tmp ){
+			dbg("error - current ur is NULL");
+			return;
+		}
+
+		o = tcore_pending_ref_core_object(p);
+		if(!o)
+			dbg("error - current sat core is NULL");
+
+		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAT_SESSION_END,	 0, NULL);
+	}
+
+	dbg("Function Exit");
+}
+
+static	TReturn s_envelope(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal* hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_sat_envelop_cmd_data *req_data;
+	int envelope_cmd_len = 0;
+	char envelope_cmd[ENVELOPE_CMD_LEN];
+	int count = 0;
+	char envelope_cmdhex[ENVELOPE_CMD_LEN*2];
+	char *pbuffer = NULL;
+
+	dbg("Function Entry");
+	memset(&envelope_cmdhex, 0x00, sizeof(envelope_cmdhex));
+	pbuffer = envelope_cmdhex;
+
+	hal = tcore_object_get_hal(o);
+	pending = tcore_pending_new(o, 0);
+	req_data = tcore_user_request_ref_data(ur, NULL);
+	dbg("new pending sub cmd(%d)", req_data->sub_cmd);
+
+	envelope_cmd_len = tcore_sat_encode_envelop_cmd(req_data, (char *)envelope_cmd);
+		
+	dbg("envelope_cmd_len %d", envelope_cmd_len);		
+	if(envelope_cmd_len == 0){
+		return TCORE_RETURN_EINVAL;
+	}
+	for(count = 0; count < envelope_cmd_len ;count++ )
+	{
+		dbg("envelope_cmd %02x", envelope_cmd[count]);
+		sprintf(pbuffer, "%02x", envelope_cmd[count]);
+		pbuffer +=2;
+	}
+	dbg("pbuffer %s", envelope_cmdhex);	
+	cmd_str = g_strdup_printf("AT+SATE=\"%s\"%s", envelope_cmdhex,"\r");
+
+	req = tcore_at_request_new(cmd_str, "+SATE:", TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_envelop_cmd, hal);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sat_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+	
+	dbg("Function Exit");
+	return TCORE_RETURN_SUCCESS;
+
+	
+}
+
+static	TReturn s_terminal_response(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal* hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_sat_terminal_rsp_data *req_data;
+	int proactive_resp_len = 0;
+	char proactive_resp[ENVELOPE_CMD_LEN];
+	char proactive_resphex[ENVELOPE_CMD_LEN*2];
+	char *pbuffer = NULL;
+	int count = 0;
+	int i = 0;
+	char *hexString = NULL;
+
+	dbg("Function Entry");
+	memset(&proactive_resphex, 0x00, sizeof(proactive_resphex));
+	pbuffer = proactive_resphex;
+	hal = tcore_object_get_hal(o);
+	pending = tcore_pending_new(o, 0);
+	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	proactive_resp_len = tcore_sat_encode_terminal_response(req_data, (char *)proactive_resp);
+	dbg("proactive_resp %s", proactive_resp);
+	dbg("proactive_resp length %d", strlen(proactive_resp));
+	if(proactive_resp_len == 0){
+		return TCORE_RETURN_EINVAL;
+	}
+
+
+	 hexString = calloc((proactive_resp_len*2)+1, 1);
+
+    for(i=0; i<proactive_resp_len*2; i+=2) 
+    {
+                    char value = 0;
+
+                    value = (proactive_resp[i/2] & 0xf0) >> 4;
+                    if(value < 0xA)
+                                    hexString[i] = ((proactive_resp[i/2] & 0xf0) >> 4) + '0';
+                    else hexString[i] = ((proactive_resp[i/2] & 0xf0) >> 4) + 'A' -10;
+
+                    value = proactive_resp[i/2] & 0x0f;
+                    if(value < 0xA)
+                                    hexString[i+1] = (proactive_resp[i/2] & 0x0f) + '0';
+                    else hexString[i+1] = (proactive_resp[i/2] & 0x0f) + 'A' -10;
+	}
+
+	dbg("hexString %s", hexString);
+	cmd_str = g_strdup_printf("AT+SATR=\"%s\"%s", hexString,"\r");
+
+	req = tcore_at_request_new(cmd_str, NULL , TCORE_AT_NO_RESULT);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_timeout(pending, 10);
+	tcore_pending_set_response_callback(pending, on_response_terminal_response, hal);
+	tcore_pending_set_timeout_callback(pending, on_timeout_terminal_response, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sat_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
+
+	dbg("Function Exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+//static void setup_event_rsp_get_ipc(CoreObject *o, struct tel_sat_setup_event_list_tlv *setup_evt_list){
+/*	UserRequest *ur = NULL;
+	struct tcore_user_info ui = { 0, };
+	struct treq_sat_terminal_rsp_data tr;*/
+
+/*	TcorePlugin *p = NULL;
+	TcoreHal *h = NULL;
+	TcorePending *pending = NULL;
+	ipc_sat_setup_evtlist_get_type ipc;
+
+	dbg("new pending(IPC_SAT_TERMINAL_RESPONSE)");
+
+	p = tcore_object_ref_plugin(o);
+	h = tcore_plugin_ref_hal(p);
+
+	memset(&ipc, 0, sizeof(ipc_sat_setup_evtlist_get_type));
+	ipc.hdr.len = (ipc_uint16) sizeof(ipc_sat_setup_evtlist_get_type);
+	ipc.hdr.main_cmd = (ipc_uint8) IPC_SAT_CMD;
+	ipc.hdr.sub_cmd = (ipc_uint8) IPC_SAT_SETUP_EVENT_LIST;
+	ipc.hdr.cmd_type = (ipc_uint8) IPC_CMD_GET;
+	ipc.hdr.msg_seq = (ipc_uint8) 0xFF;
+
+	memset(ipc.evt_list, 0xFF, SAT_EVENT_LIST_MAX);
+	ipc.evt_list_len = setup_evt_list->modem_event_list.event_list_cnt;
+	memcpy(ipc.evt_list, setup_evt_list->modem_event_list.evt_list, sizeof(ipc.evt_list)); */
+
+	//create ur for terminal response
+/*	ur = tcore_user_request_new(NULL, NULL);
+	tcore_user_request_set_user_info(ur, &ui);
+	memset(&tr, 0, sizeof(struct treq_sat_terminal_rsp_data));
+	tr.cmd_number = setup_evt_list->command_detail.cmd_num;
+	tr.cmd_type = setup_evt_list->command_detail.cmd_type;
+	tr.terminal_rsp_data.setup_event_list.command_detail.cmd_num = setup_evt_list->command_detail.cmd_num;
+	tr.terminal_rsp_data.setup_event_list.command_detail.cmd_type = setup_evt_list->command_detail.cmd_type;
+	tr.terminal_rsp_data.setup_event_list.device_id.src = setup_evt_list->device_id.dest;
+	tr.terminal_rsp_data.setup_event_list.device_id.dest = setup_evt_list->device_id.src;
+	tr.terminal_rsp_data.setup_event_list.result_type = RESULT_SUCCESS;
+	tcore_user_request_set_data(ur, sizeof(struct treq_sat_terminal_rsp_data), (void *)&tr);
+	tcore_user_request_set_command(ur, TREQ_SAT_REQ_TERMINALRESPONSE);*/
+
+/*	pending = tcore_pending_new(o, UTIL_ID(ipc.hdr));
+	tcore_pending_set_request_data(pending, sizeof(ipc_sat_setup_evtlist_get_type), &ipc);
+	tcore_pending_set_timeout(pending, 0);
+
+	tcore_pending_set_auto_free_status_after_sent(pending, TRUE);
+	//tcore_pending_set_response_callback(pending, on_response_set_up_eventlist, ur);
+	tcore_hal_send_request(h, pending);
+
+	return;
+}*/
+
+static struct tcore_sat_operations sat_ops =
+{
+	.envelope = s_envelope,
+	.terminal_response = s_terminal_response,
+};
+
+gboolean s_sat_init(TcorePlugin *p, TcoreHal *h)
+{
+	dbg("Entry");
+	CoreObject *o;
+	o = tcore_sat_new(p, "sat", &sat_ops,h);
+	if (!o)
+	{
+		dbg("CoreObject NULL !!");
+		return FALSE;
+	}
+
+	//tcore_object_add_callback(o, " ", on_event_sat_envelope_resp, NULL);
+	//tcore_object_add_callback(o, " ", on_event_sat_refresh_status, NULL);
+	tcore_object_add_callback(o, "+SATI", on_event_sat_proactive_command, NULL);
+	tcore_object_add_callback(o, "+SATN", on_event_sat_proactive_command, NULL);
+	tcore_object_add_callback(o, "+SATF", on_response_terminal_response_confirm, NULL);
+	//tcore_object_add_callback(o, EVENT_IPC_NOTI_SAT_CONTROL_RESULT, on_event_sat_control_result, NULL);
+
+	dbg("Exit");
+	return TRUE;
+}
+
+void s_sat_exit(TcorePlugin *p)
+{
+	CoreObject *o;
+	o = tcore_plugin_ref_core_object(p, "sat");
+	if (!o)
+		return;
+
+	tcore_sat_free(o);
+}
