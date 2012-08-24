@@ -18,7 +18,6 @@
  * limitations under the License.
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +34,9 @@
 #include <storage.h>
 #include <server.h>
 #include <at.h>
+#ifdef ENABLE_CMUX
+#include <mux.h>
+#endif
 
 #include "s_common.h"
 #include "s_modem.h"
@@ -95,16 +97,18 @@ typedef struct {
 	unsigned char szEriVersion[TAPI_MISC_PRL_ERI_VER_LEN_MAX * 3];/**< eri version (only for CDMA), null termination */
 } TelMiscVersionInformation;
 
+
 void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const char *at_cmd, const char* prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback);
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data); // from Kernel
-void on_response_bootup_subscription(TcorePending *p, gboolean result, void *user_data);
-void on_response_last_bootup_subscription(TcorePending *p, gboolean result, void *user_data);
+void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data);
+void on_response_last_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data);
 static void on_timeout_modem_poweron(TcorePending *p, void *user_data);
+static void on_response_enable_proactive_command(TcorePending *p, int data_len, const void *data, void *user_data);
 
 static void on_timeout_modem_poweron(TcorePending *p, void *user_data)
 {
 	unsigned int data_len = 0;
-	char data[] = "AT+CPAS\r";			
+	char data[] = "AT+CPAS";			
 	dbg("TIMEOUT for 1st AT Command !!!!! NO Response for initial AT command. Resending it");	
 	data_len = sizeof(data);
 	
@@ -129,16 +133,30 @@ static void on_confirmation_modem_message_send(TcorePending *p, gboolean result,
 	}
 }
 
+static void on_response_enable_proactive_command(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	
+	if(resp->success > 0){
+		dbg("RESPONSE OK proactive command enabled");
+    		
+	}
+	else	{
+		dbg("RESPONSE NOK proactive command disabled");
+	}
+}
+
 void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const char *at_cmd, const char* prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback)
 {
 	TcoreATRequest *req = NULL;
-	TcoreHal *hal;
+	TcoreHal *hal = NULL;
 	CoreObject *o= NULL;
 	TcorePending *pending = NULL;
 	TReturn ret;
 	
 	o = tcore_plugin_ref_core_object(plugin, co_name);
 	hal = tcore_object_get_hal(o);
+	dbg("hal: %p", hal);
 	
 	pending = tcore_pending_new(o, 0);
 	if(!pending)
@@ -155,36 +173,32 @@ void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const 
 	return;
 }
 
-void on_response_bootup_subscription(TcorePending *p, gboolean result, void *user_data)
-{	
+void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
 	dbg("enry of on_response_bootup_subscription() - response comes\n");
 
-	if (result == FALSE) {
-		/* Fail */
-		dbg("result ERROR");
+	if(resp->success){
+		dbg("result OK");	
 	}
-	else {
-		dbg("result OK");
+	else{
+		dbg("result ERROR");
 	}
 }
 
-void on_response_last_bootup_subscription(TcorePending *p, gboolean result, void *user_data)
+void on_response_last_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
 {
+	const TcoreATResponse *resp = data;
 	dbg("enry of on_response_last_bootup_subscription() - final response comes\n");
-
-	if (result == FALSE) {
-		/* Fail */
+	if(resp->success){
+		dbg("SEND OK");	
+	}
+	else{
 		dbg("SEND FAIL");
 	}
-	else {
-		dbg("SEND OK");
-	}
-	
 	dbg("Response for AT+CLIP. Boot-up configration completed for IMC modem. Bring CP to online based on Flightmode status\n");
 	on_event_modem_power(NULL, NULL, tcore_pending_ref_plugin(p));
 }
-
-
 
 static void on_response_power_off(TcorePending *p, int data_len, const void *data, void *user_data)
 {
@@ -204,16 +218,13 @@ static void on_response_set_flight_mode(TcorePending *p, int data_len, const voi
 	UserRequest *ur = NULL;
 	const TcoreATResponse *resp = data;
 	GSList *tokens=NULL;
-	const char *line;
-	struct tresp_modem_set_flightmode res;
-	GQueue *queue;
-	int err;
-	int response;
-	struct tnoti_modem_flight_mode modem_flight_mode;
+	const char *line = NULL;
+	struct tresp_modem_set_flightmode res = {0};
+	int response = 0;
+	struct tnoti_modem_flight_mode modem_flight_mode = {0};
 
 	o = tcore_pending_ref_core_object(p);
 
-	
 	if(resp->success > 0){
 		dbg("RESPONSE OK - flight mode operation finished");
     		res.result = TCORE_RETURN_SUCCESS;
@@ -236,19 +247,15 @@ static void on_response_set_flight_mode(TcorePending *p, int data_len, const voi
 
 	ur = tcore_pending_ref_user_request(p);
 	if(NULL == ur){
-		dbg("No user request ");
-	}
-	else	{
-		tcore_user_request_send_response(ur, TRESP_MODEM_SET_FLIGHTMODE, sizeof(struct tresp_modem_set_flightmode), &res);
-	}
-
-	if(resp->success > 0){	
-		modem_flight_mode.enable = tcore_modem_get_flight_mode_state(o);
+		dbg("No user request. Internal request created during boot-up sequence");
 		
-		dbg("sucess case - Sending Flight Mode Notification (%d) to Server",modem_flight_mode.enable);
-		
-		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_MODEM_FLIGHT_MODE,
-				sizeof(struct tnoti_modem_flight_mode), &modem_flight_mode);
+		if(resp->success > 0){
+			modem_flight_mode.enable = tcore_modem_get_flight_mode_state(o);
+			dbg("sucess case - Sending Flight Mode Notification (%d) to Telephony Server",modem_flight_mode.enable);
+			
+			tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_MODEM_FLIGHT_MODE,
+					sizeof(struct tnoti_modem_flight_mode), &modem_flight_mode);
+		}
 	}
 	
 	tcore_at_tok_free(tokens);
@@ -257,14 +264,13 @@ static void on_response_set_flight_mode(TcorePending *p, int data_len, const voi
 static void on_response_imei(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse* resp = data;
-	TcorePlugin *plugin;
+	TcorePlugin *plugin = NULL;
 	struct tresp_modem_get_imei res;
-	TelMiscSNInformation *imei_property;
+	TelMiscSNInformation *imei_property = NULL;
 	UserRequest* ur = NULL;
 	GSList *tokens=NULL;
 	const char *line;
-	int response;
-	int err;
+	int response = 0;
 
 	memset(&res, 0, sizeof(struct tresp_modem_get_imei));
 
@@ -301,18 +307,16 @@ static void on_response_imei(TcorePending *p, int data_len, const void *data, vo
 			tokens = tcore_at_tok_new(line);
 		}
 
-		memset(&res, 0, sizeof(struct tresp_modem_get_version));
-
-
+		
 		if (g_slist_length(tokens) < 1) {
 		  	dbg("err cause not specified or string corrupted");
-		    res.result = TCORE_RETURN_3GPP_ERROR;
+		    	res.result = TCORE_RETURN_3GPP_ERROR;
 		}
 		else
 		{
 			response = atoi(g_slist_nth_data(tokens, 0));
 			/* TODO: CMEE error mapping is required. */
-    		res.result = TCORE_RETURN_3GPP_ERROR;
+    			res.result = TCORE_RETURN_3GPP_ERROR;
 		}
 	}
 
@@ -320,23 +324,29 @@ static void on_response_imei(TcorePending *p, int data_len, const void *data, vo
 	tcore_user_request_send_response(ur, TRESP_MODEM_GET_IMEI, sizeof(struct tresp_modem_get_imei), &res);	
 
 OUT:
-	tcore_at_tok_free(tokens);
+	if(tokens != NULL)
+		tcore_at_tok_free(tokens);
 
+	return;
 }
 
 static void on_response_version(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
-	TcorePlugin *plugin;
-	TelMiscVersionInformation *vi;
-	TelMiscVersionInformation *vi_property;
-	struct tresp_modem_get_version res;
-	UserRequest *ur;
+	TcorePlugin *plugin = NULL;
+	struct tresp_modem_get_version res = {0};
+	TelMiscVersionInformation *vi_property = NULL;
+	TelMiscVersionInformation *vi = NULL;
+	UserRequest *ur = NULL;
 	GSList* tokens = NULL;
 	const char* line=NULL;
-	char *swver= NULL,*hwver=NULL, *caldate=NULL,*pcode=NULL,*id=NULL;
+	char *swver= NULL;
+	char *hwver=NULL; 
+	char *caldate=NULL;
+	char *pcode=NULL;
+	char *id=NULL;
 
-	int response, err;
+	int response = 0;
 
 	if(resp->success > 0)
 	{
@@ -380,6 +390,7 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 		plugin = tcore_pending_ref_plugin(p);
 		vi_property = tcore_plugin_ref_property(plugin, "VERSION");
 		memcpy(vi_property, vi, sizeof(TelMiscVersionInformation));
+		free(vi);
 	}
 	else
 	{
@@ -408,8 +419,10 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 	tcore_user_request_send_response(ur, TRESP_MODEM_GET_VERSION, sizeof(struct tresp_modem_get_version), &res);
 
 OUT:
-	tcore_at_tok_free(tokens);
+	if(tokens != NULL)
+		tcore_at_tok_free(tokens);
 
+	return;	
 }
 
 static gboolean on_event_bootup_sim_status(CoreObject *o, const void *event_info, void *user_data)
@@ -432,11 +445,16 @@ static gboolean on_event_bootup_sim_status(CoreObject *o, const void *event_info
 
 	if(7 == value){
 		dbg("SIM ready. request COPS & remove callback");
+		dbg("power on done set for proactive command receiving mode");
+		prepare_and_send_pending_request(tcore_object_ref_plugin(o), "sat", "AT+CFUN=6", NULL, TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
 		prepare_and_send_pending_request(tcore_object_ref_plugin(o), "umts_network", "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 		return FALSE;
 	}
 
 OUT:
+	if (tok != NULL)
+		tcore_at_tok_free(tok);
+	
 	return TRUE;
 }
 
@@ -444,17 +462,18 @@ OUT:
 
 gboolean on_event_modem_power(TcoreAT *at, const char *line, TcorePlugin *p)
 {
-	CoreObject *o;
-	struct treq_modem_set_flightmode flight_mode_set;
-	struct tnoti_modem_power modem_power;
-	TcoreHal *h;
-	Storage *strg;
+	CoreObject *o = NULL;
+	struct treq_modem_set_flightmode flight_mode_set = {0};
+	struct tnoti_modem_power modem_power = {0};
+	TcoreHal *h = NULL;
+	Storage *strg = NULL; 
 	
 	o = tcore_plugin_ref_core_object(p, "modem");
 	
 	strg = tcore_server_find_storage(tcore_plugin_ref_server(p), "vconf");
 	flight_mode_set.enable = tcore_storage_get_bool(strg, STORAGE_KEY_SETAPPL_FLIGHT_MODE_BOOL);
 
+	h = tcore_object_get_hal(o);
 	tcore_hal_set_power_state(h, TRUE);
 	
 	/* Set Flight mode as per AP settings */
@@ -485,111 +504,34 @@ gboolean on_event_modem_power(TcoreAT *at, const char *line, TcorePlugin *p)
 	return TRUE;
 }
 
-
-#ifdef ENABLE_CMUX
-
-static void on_response_setupmux(TcorePending *p, int data_len, const void *data, void *user_data)
+static void _modem_subscribe_events(TcorePlugin *plugin)
 {
-	TcorePlugin *plugin = NULL;
+	dbg("Entry");
 	
-	plugin = tcore_pending_ref_plugin(p);
-	
-	/* TODO: Initialize MUX module.
-	 *       Append each MUX HAL to each Co-Object while initialization.
-	 * API: tcore_object_set_hal(CoreObject *o, TcoreHal *h)
-	 *
-	 * After MUX setup, AT parse functionality of PHY HAL
-	 * should be disabled.
-	 * e.g.) plugin = tcore_pending_ref_plugin((TcorePending*) p);
-	 *       hal    = tcore_plugin_ref_hal((TcorePlugin*) plugin);
-	 *       tcore_hal_disable_queue((TcoreHal*) hal);
-	 */
-
-	/* TODO: Should be moved to ...
-	 * Proceed power up noti process after MUX initialization.
-	 */
-	s_modem_send_poweron(NULL, NULL, plugin);
-}
-
-
-
-static void setup_mux(CoreObject *o)
-{
-	TcoreHal* hal;
-	TcoreATRequest *req;
-	TcorePending *pending = NULL;
-
-
-	prepare_and_send_pending_request(p, "modem", "AT+CMUX=0,0,,1509,10,3,30,,", +CMUX, TCORE_AT_NO_RESULT, on_response_set_flight_mode);
-
-	/* HAL has type itself,
-	 * e.g.) TCORE_HAL_MODE_AT
-	 */
-	hal = tcore_object_get_hal(o);
-	pending = tcore_pending_new(o, 0);
-
-	/* Set Metainfo into TcorePending directly
-	 * using TcoreATRequest
-	 * command type: e.g.) SINGLELINE
-	 * response prefix
-	 */
-	req = tcore_at_request_new("AT+CMUX=0,0,,1509,10,3,30,,", "+CMUX", TCORE_AT_NO_RESULT);
-
-	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
-
-	tcore_pending_set_request_data(pending, 0, req);
-	tcore_pending_set_response_callback(pending, on_response_setupmux, hal);
-	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
-
-	tcore_hal_send_request(hal, pending);
-}
-
-#endif
-	
-static void on_response_enable_logging(TcorePending *p, int data_len, const void *data, void *user_data)
-{
-	const TcoreATResponse *resp = data;
-	TcorePlugin *plugin = NULL;
-	
-	plugin = tcore_pending_ref_plugin(p);
-	
-	/* DELETE ME: only for DEBUG */
-	if (!resp)
-		dbg("no data");
-
-	dbg("response...(result = %d, final_response = '%s')", resp->success, resp->final_response);
-
-	if(resp->success){
-		dbg("RESPONSE OK");
-		dbg("Enabling CP logging is success !!!\n");
-
-	}else {
-		dbg("RESPONSE NOK");
-		dbg("Enabling CP logging is failed !!!\n");
-	}
-
-
-#ifdef ENABLE_CMUX
-	dbg("call setup_mux");
-	prepare_and_send_pending_request(plugin, "modem", "AT+CMUX=0,0,,1509,10,3,30,,", +CMUX, TCORE_AT_NO_RESULT, on_response_setupmux);
-	/*setup_mux(tcore_pending_ref_core_object(p));*/
-#else
-
 	/* XCALLSTAT subscription */
 	prepare_and_send_pending_request(plugin, "call", "at+xcallstat=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* XSIMSTATE subscription */
 	prepare_and_send_pending_request(plugin, "sim", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-	
+	prepare_and_send_pending_request(plugin, "umts_sms", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	prepare_and_send_pending_request(plugin, "modem", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+
 	/* CREG subscription */
 	prepare_and_send_pending_request(plugin, "umts_network", "at+creg=2", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* CGREG subscription */
 	prepare_and_send_pending_request(plugin, "umts_network", "at+cgreg=2", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	prepare_and_send_pending_request(plugin, "umts_ps", "at+cgreg=2", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
+	/* Allow automatic time Zone updation via NITZ */
+	prepare_and_send_pending_request(plugin, "umts_network", "at+ctzu=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+
+	/* TZ, time & daylight changing event reporting subscription */
+	prepare_and_send_pending_request(plugin, "umts_network", "at+ctzr=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	
 	/* XMER subscription */
 	prepare_and_send_pending_request(plugin, "umts_network", "at+xmer=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-
+	
 	/* CGEREP subscription */
 	prepare_and_send_pending_request(plugin, "umts_ps", "at+cgerep=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
@@ -614,29 +556,133 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
 	/*CMEE subscription*/
 	prepare_and_send_pending_request(plugin,"umts_ps","at+cmee=2",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
-
 	/*incoming sms and cb subscription*/
-	prepare_and_send_pending_request(plugin,"umts_sms","at+cnmi=1,2,2,2,0",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	prepare_and_send_pending_request(plugin,"umts_sms","at+cnmi=1,2,0,0,0",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/*message service subscription*/
 	prepare_and_send_pending_request(plugin,"umts_sms","at+csms=1",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* text/pdu mode subscription*/
-	prepare_and_send_pending_request(plugin,"umts_sms","at+cmgf=0",NULL,TCORE_AT_NO_RESULT, on_response_last_bootup_subscription);
-#if 0
-	/* Check for SIM PIN status */
-	prepare_and_send_pending_request(plugin, "sim", "at+cpin?", on_response_bootup_subscription);
+	prepare_and_send_pending_request(plugin,"umts_sms","at+cmgf=1",NULL,TCORE_AT_NO_RESULT, on_response_last_bootup_subscription);
+
+	dbg("Exit");
+	return;
+}
+
+#ifdef ENABLE_CMUX
+static void on_response_setupmux(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	TcorePlugin *plugin = NULL;
+	TcoreHal *hal = NULL;
+	
+	/* IMC Plugin dereferenced from pending request */
+	plugin = tcore_pending_ref_plugin(p);
+	
+	/* Actual HAL - like svnet(2) */
+	hal = (TcoreHal *)user_data;
+
+	/* Link HAL */
+	//tcore_plugin_link_user_data(plugin, hal);
+	
+	/* TODO: Initialize MUX module.
+	 *       Append each MUX HAL to each Co-Object while initialization.
+	 * API: tcore_object_set_hal(CoreObject *o, TcoreHal *h)
+	 *
+	 * After MUX setup, AT parse functionality of PHY HAL
+	 * should be disabled.
+	 * e.g.) plugin = tcore_pending_ref_plugin((TcorePending*) p);
+	 *       hal    = tcore_plugin_ref_hal((TcorePlugin*) plugin);
+	 *       tcore_hal_disable_queue((TcoreHal*) hal);
+	 */
+
+	/* TODO: Should be moved to ...
+	 * Proceed power up noti process after MUX initialization.
+	 */
+
+	/* Initialize CMUX */
+	tcore_cmux_init(plugin, hal);
+	
+	return;
+}
+
+
+
+static void setup_mux(CoreObject *o)
+{
+	TcoreHal* hal = NULL;
+	TcorePending *pending = NULL;
+	dbg("Entered");
+
+	/* HAL has type itself,
+	 * e.g.) TCORE_HAL_MODE_AT
+	 */
+	/*o = tcore_pending_ref_core_object(plugin);*/
+	hal = tcore_object_get_hal(o);
+
+	//prepare_and_send_pending_request(plugin, "modem", "AT+CMUX=0,0,,1509,10,3,30,,", "+CMUX", TCORE_AT_NO_RESULT, on_response_setupmux);
+	pending = tcore_at_pending_new(o, "AT+CMUX=0,0,,1509,10,3,30,,", "+CMUX", TCORE_AT_NO_RESULT, on_response_setupmux, hal);
+
+	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
+
+	/* Send callback */
+	tcore_hal_send_request(hal, pending);
+
+	return;
+}
+
+static gboolean on_event_mux_channel_up(CoreObject *o, const void *event_info, void *user_data)
+{
+	TcorePlugin *plugin = NULL;
+	dbg("Entry");
+
+	plugin = (TcorePlugin *)user_data;
+	_modem_subscribe_events(plugin);
+	dbg("Exit");
+	return;
+}
 #endif
 	
+static void on_response_enable_logging(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	TcorePlugin *plugin = NULL;
+	
+	plugin = tcore_pending_ref_plugin(p);
+	
+	/* DELETE ME: only for DEBUG */
+	if (!resp)
+		dbg("no data");
+
+	dbg("response...(result = %d, final_response = '%s')", resp->success, resp->final_response);
+
+	if(resp->success){
+		dbg("RESPONSE OK");
+		dbg("Enabling CP logging is success !!!\n");
+
+	}else {
+		dbg("RESPONSE NOK");
+		dbg("Enabling CP logging is failed !!!\n");
+	}
+
+#ifdef ENABLE_CMUX
+	dbg("Calling setup_mux");
+	setup_mux(tcore_pending_ref_core_object(p));
+#else
+	_modem_subscribe_events(plugin);
 #endif
+
+	dbg("Exit");
+	return;
+
 }
 
 static void _send_enable_logging_command(CoreObject *o)
 {
-	TcoreATRequest *req;
-	TcoreHal *hal;
-	TcorePending *pending;
-	TReturn ret;
+	TcoreATRequest *req = NULL;
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	TReturn ret = 0;
+	
 	/* DLELTE ME */
 	dbg("Send Trace enabling command for CP logging. \n");
 
@@ -668,8 +714,7 @@ static void on_response_poweron(TcorePending *p, int data_len, const void *data,
 	const char *line=NULL;
 	gboolean bpoweron = FALSE;
 	int response = 0;
-	int err;
-	
+		
 	if(resp->success){
 		dbg("RESPONSE OK");
 		/* Parse AT Response */
@@ -699,7 +744,7 @@ static void on_response_poweron(TcorePending *p, int data_len, const void *data,
 			case CPAS_RES_UNAVAIL:
 			case CPAS_RES_UNKNOWN:
 			default:
-				dbg("unvail/unknown,but response received - CP can communicate - proceed bootup");
+				dbg("value is unvail/unknown - but forcefully proceed for test. should be changed -hyko20120803");
 				//bpoweron = FALSE;
 				bpoweron = TRUE;
 			break;
@@ -713,7 +758,8 @@ error:
 	/* DELE ME: AT request & response are freed after AT processing in HAL.
 	 * ref.) _emit_pending_response (libtcore/src/at.c)
 	 */
-	 tcore_at_tok_free(tokens);
+	 if(tokens != NULL)
+		tcore_at_tok_free(tokens);
 
 	if(bpoweron == TRUE){
 		dbg("Power on NOTI received, (pending: 0x%x, co: 0x%x)\n", p, tcore_pending_ref_core_object(p));
@@ -721,21 +767,16 @@ error:
 		_send_enable_logging_command(tcore_pending_ref_core_object(p));
 	}
 	else{
-		dbg("CP is not ready, send CPAS once again");
+		dbg("CP is not ready, let us send CPAS once again");
 		s_modem_send_poweron(tcore_object_ref_plugin(tcore_pending_ref_core_object(p)));
 	}
-}
-
-static TReturn power_on(CoreObject *o, UserRequest *ur)
-{
-
-	return TCORE_RETURN_SUCCESS;
+	return;
 }
 
 static TReturn power_off(CoreObject *o, UserRequest *ur)
 {
-	TcoreHal* hal;
-	TcoreATRequest *req;
+	TcoreHal *hal = NULL;
+	TcoreATRequest *req = NULL;
 	TcorePending *pending = NULL;
 
 	/* FIXME: Before MUX setup, use PHY HAL directly. */
@@ -758,12 +799,6 @@ static TReturn power_off(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
 
 	tcore_hal_send_request(hal, pending);
-
-	return TCORE_RETURN_SUCCESS;
-}
-
-static TReturn power_reset(CoreObject *o, UserRequest *ur)
-{
 
 	return TCORE_RETURN_SUCCESS;
 }
@@ -817,11 +852,11 @@ static TReturn get_version(CoreObject *o, UserRequest *ur)
 
 static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
 {
-	TcoreHal* hal;
-	TcoreATRequest *req;
+	TcoreHal *hal = NULL;
+	TcoreATRequest *req = NULL;
 	TcorePending *pending = NULL;
-	const struct treq_modem_set_flightmode *req_data;
-	char* cmd_str = NULL;
+	const struct treq_modem_set_flightmode *req_data = NULL;
+	char *cmd_str = NULL;
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
@@ -830,11 +865,11 @@ static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
 
 	if (req_data->enable) {
 		dbg("Flight mode on/n");
-		cmd_str = g_strdup("AT+CFUN=4\r");
+		cmd_str = g_strdup("AT+CFUN=4");
 	}
 	else {
 		dbg("Flight mode off/n");
-		cmd_str = g_strdup("AT+CFUN=1\r");
+		cmd_str = g_strdup("AT+CFUN=1");
 	}
 
 	req = tcore_at_request_new((const char*)cmd_str, NULL, TCORE_AT_NO_RESULT);
@@ -854,9 +889,9 @@ static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
 
 static struct tcore_modem_operations modem_ops =
 {
-	.power_on = power_on,
+	.power_on = NULL,
 	.power_off = power_off,
-	.power_reset = power_reset,
+	.power_reset = NULL,
 	.set_flight_mode = set_flight_mode,
 	.get_imei = get_imei,
 	.get_version = get_version,
@@ -866,11 +901,11 @@ static struct tcore_modem_operations modem_ops =
 
 gboolean s_modem_init(TcorePlugin *p, TcoreHal *h)
 {
-	CoreObject *o;
-	GQueue *work_queue;
-	TelMiscVersionInformation *vi_property;
-	TelMiscSNInformation *imei_property;
-	TelMiscSNInformation *sn_property;
+	CoreObject *o = NULL;
+	GQueue *work_queue = NULL;
+	TelMiscVersionInformation *vi_property = NULL;
+	TelMiscSNInformation *imei_property = NULL;
+	TelMiscSNInformation *sn_property = NULL;
 
 	o = tcore_modem_new(p, "modem", &modem_ops, h);
 	if (!o)
@@ -887,18 +922,25 @@ gboolean s_modem_init(TcorePlugin *p, TcoreHal *h)
 
 	sn_property = calloc(sizeof(TelMiscSNInformation), 1);
 	tcore_plugin_link_property(p, "SN", sn_property);
+	
+#ifdef ENABLE_CMUX
+	dbg("Registerind for CMUX-UP event");
+	tcore_object_add_callback(o, "CMUX-UP", on_event_mux_channel_up, p);
+#endif
 
+	dbg("Registering for +XSIM event");
 	tcore_object_add_callback(o, "+XSIM", on_event_bootup_sim_status, NULL);
+
 	return TRUE;
 }
 
 void s_modem_exit(TcorePlugin *p)
 {
-	CoreObject *o;
-	GQueue *work_queue;
-	TelMiscVersionInformation *vi_property;
-	TelMiscSNInformation *imei_property;
-	TelMiscSNInformation *sn_property;
+	CoreObject *o = NULL;
+	GQueue *work_queue = NULL;
+	TelMiscVersionInformation *vi_property = NULL;
+	TelMiscSNInformation *imei_property = NULL;
+	TelMiscSNInformation *sn_property = NULL;
 
 	if (!p)
 		return;
@@ -921,6 +963,7 @@ void s_modem_exit(TcorePlugin *p)
 		free(sn_property);
 
 	tcore_modem_free(o);
+	return;
 }
 
 gboolean s_modem_send_poweron(TcorePlugin *p)

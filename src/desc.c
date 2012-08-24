@@ -151,6 +151,7 @@ static gboolean on_init(TcorePlugin *p)
 	len = _get_cp_name(&cp_name);
 	if (!len) {
 		dbg("[ error ] unsupport cp (name : %s)", cp_name);
+		free(gd);
 		return FALSE;
 	}
 
@@ -161,6 +162,7 @@ static gboolean on_init(TcorePlugin *p)
 	h = tcore_server_find_hal(tcore_plugin_ref_server(p), cp_name);
 	if (!h)  {
 		g_free(cp_name);
+		free(gd);
 		return FALSE;
 	}
 

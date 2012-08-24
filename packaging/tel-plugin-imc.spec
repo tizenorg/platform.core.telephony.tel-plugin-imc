@@ -1,7 +1,7 @@
 #sbs-git:slp/pkgs/t/tel-plugin-imc
 Name:       tel-plugin-imc
 Summary:    imc plugin for telephony
-Version:    0.1.1
+Version:    0.1.2
 Release:    1
 Group:      System/Libraries
 License:    Apache

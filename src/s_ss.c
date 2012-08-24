@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ * Contact: sharanayya mathapati <sharan.m@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <glib.h>
 
 #include <tcore.h>
@@ -40,19 +39,19 @@
 #include "s_common.h"
 #include "s_ss.h"
 
-#define TIZEN_NUM_TYPE_INTERNATIONAL		0x01
-#define TIZEN_NUM_PLAN_ISDN				    0x01
+#define NUM_TYPE_INTERNATIONAL		0x01
+#define NUM_PLAN_ISDN				    0x01
 
 //To avoid sending multiple response to application
 static gboolean UssdResp = FALSE;
 
 enum  telephony_ss_opcode
 {
-	TIZEN_SS_OPCO_REG=0x01,         /* 0x01 : Registration */
-	TIZEN_SS_OPCO_DEREG,            /* 0x02 : De-registration(erase) */
-	TIZEN_SS_OPCO_ACTIVATE,         /* 0x03 : Activation */
-	TIZEN_SS_OPCO_DEACTIVATE,       /* 0x04 : De-activation */
-	TIZEN_SS_OPCO_MAX
+	SS_OPCO_REG=0x01,         /* 0x01 : Registration */
+	SS_OPCO_DEREG,            /* 0x02 : De-registration(erase) */
+	SS_OPCO_ACTIVATE,         /* 0x03 : Activation */
+	SS_OPCO_DEACTIVATE,       /* 0x04 : De-activation */
+	SS_OPCO_MAX
 };
 
 struct ss_confirm_info
@@ -64,7 +63,11 @@ struct ss_confirm_info
 	int  data_len;
 };
 
-static gboolean _ss_request_message(TcorePending *pending, CoreObject *o, UserRequest *ur, void* on_resp, void* user_data);
+static gboolean _ss_request_message(TcorePending *pending,
+                                    CoreObject *o,
+                                    UserRequest *ur,
+                                    void* on_resp,
+                                    void* user_data);
 
 static TReturn _ss_barring_get(CoreObject *o,
 								UserRequest *ur,
@@ -82,7 +85,6 @@ static TReturn _ss_waiting_get(CoreObject *o,
 								UserRequest *ur,
 								enum telephony_ss_class class,
 								enum tcore_response_command resp);
-
 
 static TReturn s_ss_barring_activate(CoreObject *o, UserRequest *ur);
 static TReturn s_ss_barring_deactivate(CoreObject *o, UserRequest *ur);
@@ -125,6 +127,7 @@ static void _ss_ussd_notification(TcorePlugin *p, const char* ussd_str, enum tel
 static gboolean on_notification_ss_info(CoreObject *o, const void *data, void *user_data);
 static gboolean on_notification_ss_ussd(CoreObject *o, const void *data, void *user_data);
 
+
 static gboolean _ss_request_message(TcorePending *pending,
 										CoreObject *o,
 										UserRequest *ur,
@@ -138,20 +141,17 @@ static gboolean _ss_request_message(TcorePending *pending,
 	if (on_resp) {
 		tcore_pending_set_response_callback(pending, on_resp, user_data);
 	}
-
 	tcore_pending_set_send_callback(pending, on_confirmation_ss_message_send, NULL);
-
 	if (ur) {
 		tcore_pending_link_user_request(pending, ur);
 	}
 	else {
 		err("User Request is NULL, is this internal request??");
 	}
-
-	/* HAL */
+	// HAL
 	hal = tcore_object_get_hal(o);
 
-	/* Send request to HAL */
+	// Send request to HAL
 	ret = tcore_hal_send_request(hal, pending);
 	if(TCORE_RETURN_SUCCESS != ret) {
 		err("Request send failed");
@@ -169,7 +169,6 @@ static void _ss_ussd_response(UserRequest *ur, const char* ussd_str, enum teleph
 
 	if (ur) {
 		memset (&resp, 0x0, sizeof(struct tresp_ss_ussd));
-
 		resp.type = type;
 		resp.status = status;
 		resp.err = FALSE;
@@ -177,8 +176,7 @@ static void _ss_ussd_response(UserRequest *ur, const char* ussd_str, enum teleph
 
 		if (ussd_str) {
 			int len = strlen(ussd_str);
-
-			if (len < MAX_SS_USSD_LEN) {
+    		if (len < MAX_SS_USSD_LEN) {
 				memcpy(resp.str, ussd_str, len);
 				resp.str[len] = '\0';
 			}
@@ -192,9 +190,8 @@ static void _ss_ussd_response(UserRequest *ur, const char* ussd_str, enum teleph
 			dbg("USSD string is not present");
 			memset(resp.str, '\0', MAX_SS_USSD_LEN);
 		}
-
          UssdResp = TRUE;
-		/* Send response to TAPI */
+		// Send response to TAPI
 		tcore_user_request_send_response(ur, TRESP_SS_SEND_USSD, sizeof(struct tresp_ss_ussd), &resp);
 	}
 	else {
@@ -207,50 +204,39 @@ static void _ss_ussd_response(UserRequest *ur, const char* ussd_str, enum teleph
 
 static void _ss_ussd_notification(TcorePlugin *p, const char* ussd_str, enum telephony_ss_ussd_status status)
 {
-	CoreObject *o = 0;
+	CoreObject *core_obj = 0;
 	struct tnoti_ss_ussd noti;
 
    	dbg("function enter");
-
-	if (!p)
-    {
+	if (!p) {
 		dbg("[ error ] p : (NULL)");
 		return ;
 	}
-
 	noti.status = status;
-
-	if (ussd_str)
-    {
+	if (ussd_str) {
 
 		int len = strlen(ussd_str);
-
-		if (len < MAX_SS_USSD_LEN)
-        {
+		if (len < MAX_SS_USSD_LEN) {
 			memcpy(noti.str, ussd_str, len);
 			noti.str[ len ] = '\0';
 		}
-        else
-        {
+        else {
 			memcpy(noti.str, ussd_str, MAX_SS_USSD_LEN);
 			noti.str[ MAX_SS_USSD_LEN - 1 ] = '\0';
 		}
 
 	}
-    else
-    {
+    else {
 		memset(noti.str, '\0', MAX_SS_USSD_LEN);
-
 	}
     dbg("noti.str - %s", noti.str);
 
-	o = tcore_plugin_ref_core_object(p, "ss");
-
+	core_obj = tcore_plugin_ref_core_object(p, "ss");
 	tcore_server_send_notification(tcore_plugin_ref_server(p),
-			o,
+			core_obj,
 			TNOTI_SS_USSD,
 			sizeof(struct tnoti_ss_ussd),
-			(void*)&noti	);
+			(void*)&noti);
 
 }
 
@@ -259,15 +245,15 @@ static gboolean	on_notification_ss_ussd(CoreObject *o, const void *data, void *u
     enum telephony_ss_ussd_status status;
 	UssdSession *ussd_session = 0;
 	char *ussd_str = 0, *cmd = 0;
-	TcorePlugin *p = 0;
+	TcorePlugin *plugin = 0;
 	int m = -1, dcs = 0;
-    char *pUssdNoti= NULL, *pStr = NULL, *pDcs = NULL;
+    char *ussdnoti= NULL, *str = NULL, *dcs_str = NULL;
     GSList *tokens = NULL;
     GSList *lines = NULL;
-    char *Ussd_String = NULL;
+    char *ussd_string = NULL;
     unsigned int len;
 
-	p = tcore_object_ref_plugin(o);
+	plugin = tcore_object_ref_plugin(o);
 	ussd_session = tcore_ss_ussd_get_session(o);
 
     dbg("function enter");
@@ -277,55 +263,47 @@ static gboolean	on_notification_ss_ussd(CoreObject *o, const void *data, void *u
 		goto OUT;
 	}
 	cmd = (char*)(lines->data);
-
 	// parse ussd status
     tokens = tcore_at_tok_new(cmd);
 
     // parse <m>
-    pUssdNoti = g_slist_nth_data(tokens, 0);
-    if(!pUssdNoti)
-    {
+    ussdnoti = g_slist_nth_data(tokens, 0);
+    if(!ussdnoti) {
         dbg("+CUSD<m> is missing from %CUSD Notification");
 
     }
-    else
-    {
-        m  = atoi(pUssdNoti);
+    else {
+
+        m  = atoi(ussdnoti);
         dbg("USSD status  %d",m);
         //parse [ <str>, <dcs>]
-        Ussd_String = g_slist_nth_data(tokens, 1);
+        ussd_string = g_slist_nth_data(tokens, 1);
+        if(ussd_string) {
 
-
-        if(Ussd_String)
-        {
             /* Strike off starting & ending quotes. 1 extra character for NULL termination */
-            pStr = malloc(strlen(Ussd_String) - 1);
-            dbg("length of Ussd Stirng - %d", strlen(Ussd_String));
-            if(pStr)
-            {
-            	memset(pStr, 0x00, strlen(Ussd_String) - 1);
+            str = malloc(strlen(ussd_string) - 1);
+            dbg("length of Ussd Stirng - %d", strlen(ussd_string));
+            if(str) {
+            	memset(str, 0x00, strlen(ussd_string) - 1);
             }
-            else
-            {
+            else {
                 dbg("malloc failed")
                 return FALSE;
             }
+            len  = strlen(ussd_string)-1;
+            ++ussd_string;
+            strncpy(str, ussd_string, len);
 
-            len  = strlen(Ussd_String)-1;
-            ++Ussd_String;
-            strncpy(pStr, Ussd_String, len);
-       }
-       if((pDcs = g_slist_nth_data(tokens, 2)))
-       {
-            dcs = atoi(pDcs);
-       }
-        dbg("USSD String - %s len = %d",pStr,strlen(pStr));
-        dbg("USSD dcs %d",dcs);
-
+            dbg("USSD String - %s len = %d",str,strlen(str));
      }
+     if((dcs_str = g_slist_nth_data(tokens, 2))) {
+            dcs = atoi(dcs_str);
+            dbg("USSD dcs %d",dcs);
+      }
+   }
 
-	switch(m)
-    {
+	switch(m) {
+
 		case 0:
 			status = SS_USSD_NO_ACTION_REQUIRE;
 		break;
@@ -356,33 +334,34 @@ static gboolean	on_notification_ss_ussd(CoreObject *o, const void *data, void *u
 		break;
 	}
 
-    switch (tcore_util_get_cbs_coding_scheme(dcs))
-    {
+    switch (tcore_util_get_cbs_coding_scheme(dcs)) {
+
         case TCORE_DCS_TYPE_7_BIT:
         case TCORE_DCS_TYPE_UNSPECIFIED:
-        	//ussd_str = tcore_util_unpack_gsm7bit(pStr, strlen(pStr));
+        	//ussd_str = tcore_util_unpack_gsm7bit(str, strlen(str));
          //break;
 
         case TCORE_DCS_TYPE_UCS2:
         case TCORE_DCS_TYPE_8_BIT:
-            if (strlen(pStr)  > 0)
+            if ( (str != NULL ) && (strlen(str)  > 0))
             {
-        		ussd_str = g_new0(char, strlen(pStr)  + 1);
-        		memcpy(ussd_str,pStr, strlen(pStr));
-        		ussd_str[ strlen(pStr) ] = '\0';
+        		ussd_str = g_new0(char, strlen(str)  + 1);
+        		if(ussd_str != NULL){
+        		            memcpy(ussd_str,str, strlen(str));
+        		            ussd_str[ strlen(str) ] = '\0';
+                }
         	}
-
         break;
         default:
           dbg("[ error ] unknown dcs type. ussd_session : %x", ussd_session);
-          if (ussd_session)
-          {
+          if (ussd_session) {
+
                 UserRequest *ur = 0;
                 enum telephony_ss_ussd_type type;
 
                 tcore_ss_ussd_get_session_data(ussd_session, (void**)&ur);
-                if (!ur)
-                {
+                if (!ur) {
+
                     dbg("[ error ] ur : (0)");
                     return  FALSE;
                 }
@@ -395,16 +374,15 @@ static gboolean	on_notification_ss_ussd(CoreObject *o, const void *data, void *u
           return FALSE;
     }
 
-    switch (status)
-    {
+    switch (status) {
+
     	case SS_USSD_NO_ACTION_REQUIRE:
     	case SS_USSD_ACTION_REQUIRE:
     	case SS_USSD_OTHER_CLIENT:
     	case SS_USSD_NOT_SUPPORT:
     	case SS_USSD_TIME_OUT:
         {
-    		if (ussd_session)
-            {
+    		if (ussd_session) {
 
     			UserRequest *ur = 0;
     			enum telephony_ss_ussd_type type;
@@ -414,40 +392,31 @@ static gboolean	on_notification_ss_ussd(CoreObject *o, const void *data, void *u
     				dbg("[ error ] ur : (0)");
     				return FALSE;
     			}
-
     			type = (enum telephony_ss_ussd_type)tcore_ss_ussd_get_session_type(ussd_session);
                 dbg("ussd type  - %d", type);
     			_ss_ussd_response(ur, (const char*)ussd_str, type, status);
                 if(ussd_str)
     			    g_free(ussd_str);
-
     		}
-            else
-            {
+            else {
        			tcore_ss_ussd_create_session(o, TCORE_SS_USSD_TYPE_NETWORK_INITIATED, 0, 0);
-    			_ss_ussd_notification(p, (const char*)ussd_str, status);
+    			_ss_ussd_notification(plugin, (const char*)ussd_str, status);
+
                  if(ussd_str)
     			    g_free(ussd_str);
-
 		    }
-
 	    }
         break;
 	    case SS_USSD_TERMINATED_BY_NET:
         {
-
-    		if (ussd_session)
-            {
+       		if (ussd_session){
     			UserRequest *ur = 0;
-
     			tcore_ss_ussd_get_session_data(ussd_session, (void**)&ur);
-
-    			if (ur)
-    				tcore_user_request_unref(ur);
-
+    			if (ur) {
+                    tcore_user_request_unref(ur);
+    			}
     			tcore_ss_ussd_destroy_session(ussd_session);
     		}
-
 	    }
         break;
 
@@ -459,30 +428,29 @@ OUT:
 	if(NULL!=tokens)
 		tcore_at_tok_free(tokens);
 
-    if(NULL != pStr)
-        free(pStr);
+    if(NULL != str)
+        free(str);
     dbg("Exit");
 	return TRUE;
 
 }
 static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *user_data)
 {
-
-	TcorePlugin *p  = 0;
+	TcorePlugin *plugin  = 0;
 	CoreObject *co = 0;
 	char* cmd = 0, *number = 0, *pos;
 	int code1 = -1, code2 = -1, index = 0, ton = 0;
-    char *pCode1, *pCode2, *pTon ,*pIndex;
+    char *str_code1, *str_code2, *str_ton ,*str_index;
     GSList *tokens = NULL;
     char *buf;
     gboolean cssu = FALSE,cssi = FALSE;
     GSList *lines = NULL;
     dbg("function enter");
 
-	p	= tcore_object_ref_plugin(o);
-	co	= tcore_plugin_ref_core_object(p, "call");
-	if (!co)
-    {
+	plugin	= tcore_object_ref_plugin(o);
+	co	= tcore_plugin_ref_core_object(plugin, "call");
+	if (!co) {
+
 		dbg("[ error ] plugin_ref_core_object : call");
 		return FALSE;
 	}
@@ -494,10 +462,8 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
 	}
 
 	cmd = (char*)(lines->data);
-
     pos = strchr(cmd, ':');
-    if(!pos)
-    {
+    if(!pos){
         dbg("[ error ] not valid SS- notification ");
 		return TRUE;
     }
@@ -505,53 +471,46 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
 	memcpy(buf, cmd, pos - cmd);
     dbg("buf is %s", buf);
 
-    if(!strcmp(buf,"+CSSU"))
-    {
+    if(!strcmp(buf,"+CSSU")){
+
         dbg("SS - +CSSU indication");
         cssu = TRUE;
     }
-    else if(!strcmp(buf,"+CSSI"))
-    {
+    else if(!strcmp(buf,"+CSSI")) {
+
         dbg("SS - +CSSI indication");
         cssi = TRUE;
     }
-
     free(buf);
 
    //handle %CSSU notification
-    if(cssu)
-    {
+    if(cssu){
+
         tokens = tcore_at_tok_new(cmd);
         // parse <code2>
-        pCode2 = g_slist_nth_data(tokens, 0);
-        if(!pCode2)
-        {
+        str_code2 = g_slist_nth_data(tokens, 0);
+        if(!str_code2) {
             dbg("Code2 is missing from %CSSU indiaction");
-
         }
-        else
-        {
-            code2  = atoi(pCode2);
+        else {
 
+            code2  = atoi(str_code2);
             //parse [ <index>, <number> <type>]
-            if ((pIndex = g_slist_nth_data(tokens, 1)))
-            {
-                index = atoi(pIndex);
+            if ((str_index = g_slist_nth_data(tokens, 1))) {
+                index = atoi(str_index);
             }
-             if ((number = g_slist_nth_data(tokens, 2)))
-             {
-                pTon = g_slist_nth_data(tokens, 3);
+             if ((number = g_slist_nth_data(tokens, 2))) {
+                str_ton = g_slist_nth_data(tokens, 3);
 
-                if(pTon)
-                {
-                   ton = atoi(pTon);
+                if(str_ton) {
+                   ton = atoi(str_ton);
                 }
              }
         }
 
-        dbg("CSSU - code2 = %d index = %d number = %s type = %d", code2, index,number, ton);
-    	switch(code2)
-        {
+        dbg("CSSU - code2 = %d index = %d number = %s type = %d", code2, index, number, ton);
+    	switch(code2) {
+
     		case 0:  //this is a forwarded call (MT call setup)
     			tcore_call_information_mt_forwarded_call(co, number);
     		break;
@@ -595,61 +554,56 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
     }
     //handle %CSSI notification
 
-    if(cssi)
-    {
+    if(cssi) {
+
         tokens = tcore_at_tok_new(cmd);
         // parse <code1>
-        pCode1 = g_slist_nth_data(tokens, 0);
-        if(!pCode1)
-        {
+        str_code1 = g_slist_nth_data(tokens, 0);
+        if(!str_code1){
             dbg("Code1 is missing from %CSSI indiaction");
-
         }
-        else
-        {
-            code1  = atoi(pCode1);
-
+        else {
+            code1  = atoi(str_code1);
             //parse [ <index> ]
-            if ((pIndex = g_slist_nth_data(tokens, 1)))
-            {
-                index = atoi(pIndex);
+            if ((str_index = g_slist_nth_data(tokens, 1))) {
+                index = atoi(str_index);
             }
 
         }
 
         dbg("CSSI - code1 - %d index - %d ", code1, index);
 
-    	switch(code1)
-        {
+    	switch(code1) {
+
     		case 0:  //Unconditional CF is active
     			tcore_call_information_mo_cfu(co);
     		break;
 
-            case 1:     /*some of the conditional call forwarding are active */
+            case 1:     //some of the conditional call forwarding are active
                 tcore_call_information_mo_cfc(co);
             break;
 
-    		case 2:     /* outgoing call is forwarded */
+    		case 2:    // outgoing call is forwarded
 			    tcore_call_information_mo_forwarded(co);
     		break;
 
-    		case 3:     /* this call is waiting */
+    		case 3:     // this call is waiting
 			    tcore_call_information_mo_waiting(co);
     		break;
 
-    		case 5:     /*outgoing call is barred */
+    		case 5:     // outgoing call is barred
 			    tcore_call_information_mo_barred_outgoing(co);
     		break;
 
-    		case 6:     /*incoming call is barred */
+    		case 6:     // incoming call is barred
     			tcore_call_information_mo_barred_incoming(co);
     		break;
 
-    		case 7:     /* CLIR suppression rejected */
+    		case 7:     // CLIR suppression rejected
 			    tcore_call_information_mo_clir_suppression_reject(co);
     		break;
 
-    		case 8:     /* outgoing call is deflected */
+    		case 8:     // outgoing call is deflected
 			    tcore_call_information_mo_deflected(co);
     		break;
 
@@ -657,7 +611,6 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
     			dbg("unsupported cmd : %d",code1);
     		break;
     	}
-
     }
 OUT:
 	if(NULL!=tokens)
@@ -670,7 +623,7 @@ static void on_confirmation_ss_message_send(TcorePending *p, gboolean result, vo
 	dbg("");
 
 	if (result == FALSE) {
-		/* Fail */
+		// Fail
 		dbg("FAIL");
 	}
 	else {
@@ -693,75 +646,63 @@ static void on_response_ss_barring_set(TcorePending *p, int data_len, const void
     const TcoreATResponse* response;
 
     dbg("function enter");
-
     response = data;
-
 	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 
 	info = (struct ss_confirm_info*)user_data;
 	class = info->class;
 
-    if (response->success > 0)
-    {
+    if (response->success > 0){
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
+
         dbg("RESPONSE NOT OK");
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-
         tcore_at_tok_free(tokens);
 	}
 
     dbg("on_response_ss_barring_set - rsp.err : %d, ur : %x flavor_type = %d", resp.err, ur , info->flavor_type);
     dbg("[ check ] class : 0x%x", info->class);
 
-    if (response->success > 0)
-	{
-		if (info->class == SS_CLASS_VOICE)
-		{
+    if (response->success > 0) {
+
+		if (info->class == SS_CLASS_VOICE) {
+
 		    class = SS_CLASS_ALL_TELE_BEARER;
 		}
 
 		ur_dup = tcore_user_request_ref(ur);
 
-		if (info->flavor_type == SS_BARR_MODE_AB || info->flavor_type == SS_BARR_MODE_AOB)
-		{
+		if (info->flavor_type == SS_BARR_MODE_AB || info->flavor_type == SS_BARR_MODE_AOB) {
 			_ss_barring_get(o, ur_dup, class, SS_BARR_MODE_BAOC, info->resp);
 		}
-		else if (info->flavor_type == SS_BARR_MODE_AIB)
-		{
+		else if (info->flavor_type == SS_BARR_MODE_AIB)	{
 			_ss_barring_get(o, ur_dup, class, SS_BARR_MODE_BAIC, info->resp);
 		}
-		else
-		{
+		else {
 			_ss_barring_get(o, ur_dup, class, info->flavor_type, info->resp);
 		}
-
 	}
-	else
-	{
-		if (ur)
-		{
+	else {
+		if (ur) {
 			tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 		}
-		else
-		{
+		else  {
 			dbg("[ error ] ur is 0");
 		}
 	}
@@ -769,7 +710,6 @@ static void on_response_ss_barring_set(TcorePending *p, int data_len, const void
 
 static void on_response_ss_barring_change_pwd(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-
     const TcoreATResponse* response = data;
     struct ss_confirm_info *info = 0;
 	UserRequest *ur;
@@ -779,52 +719,43 @@ static void on_response_ss_barring_change_pwd(TcorePending *p, int data_len, con
    	const char *line;
 
     dbg("function enter");
-
 	ur = tcore_pending_ref_user_request(p);
-
 	info = (struct ss_confirm_info*)user_data;
 
-    if (response->success > 0)
-    {
+    if (response->success > 0){
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
         dbg("RESPONSE NOT OK");
 
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
-			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+		else {
+
+		    err = atoi(g_slist_nth_data(tokens, 0));
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
        	tcore_at_tok_free(tokens);
 	}
 
 	dbg("on_response_ss_barring_change_pwd: rsp.err : %d, usr : %x", resp.err, ur);
-
-	if (ur)
-	{
+	if (ur) {
 		tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 	}
-	else
-	{
+	else {
 		dbg("[ error ] ur is 0");
 	}
 
 	g_free(user_data);
-
 }
-
 
 static void on_response_ss_forwarding_set(TcorePending *p, int data_len, const void *data, void *user_data)
 {
@@ -840,76 +771,68 @@ static void on_response_ss_forwarding_set(TcorePending *p, int data_len, const v
     dbg("function enter");
 
     response  = data;
-
 	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 
 	info = (struct ss_confirm_info*)user_data;
 
-    if (response->success > 0)
-    {
+    if (response->success > 0) {
+
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
+
         dbg("RESPONSE NOT OK");
 
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			/// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
 
       	tcore_at_tok_free(tokens);
 	}
 
-
 	dbg("[ check ] class : 0x%x", info->class);
 	dbg("[ check ] flavor_type : 0x%x", info->flavor_type);
 
 	dbg("on_response_ss_forwarding_set - rsp.err : %d, ur : %x", resp.err, ur);
 
-	if (response->success > 0)
-     {
+	if (response->success > 0) {
+
 		if (info->flavor_type == SS_CF_MODE_CF_ALL ||
-			 info->flavor_type == SS_CF_MODE_CFC)
-		{
-			if (ur)
-			{
+			 info->flavor_type == SS_CF_MODE_CFC)  {
+
+			if (ur) {
+
 				tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 			}
-			else
-			{
+			else {
+
 				dbg("[ error ] ur is 0");
 			}
 		}
-        else
-		{
+        else  {
 			dup_ur = tcore_user_request_ref(ur);
 			_ss_forwarding_get(o, dup_ur, info->class, info->flavor_type, info->resp);
 		}
 	}
-    else
-    {
-		if(ur)
-		{
+    else {
+
+		if(ur) {
 			tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 		}
-		else
-		{
+		else {
 			dbg("[ error ] ur is 0");
 		}
-
 	}
 	g_free(user_data);
 
@@ -917,8 +840,7 @@ static void on_response_ss_forwarding_set(TcorePending *p, int data_len, const v
 
 static void on_response_ss_waiting_set(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-
-	CoreObject*	o = 0;
+	CoreObject*	core_obj = 0;
 	UserRequest* ur = 0;
 	UserRequest* ur_dup = 0;
 	struct ss_confirm_info *info = 0;
@@ -929,56 +851,53 @@ static void on_response_ss_waiting_set(TcorePending *p, int data_len, const void
     const TcoreATResponse* response;
 
     dbg("function enter");
-
     response = data;
-	o  = tcore_pending_ref_core_object(p);
+	core_obj  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 
 	info = (struct ss_confirm_info*)user_data;
 
-	if(response->success > 0)
-    {
+	if(response->success > 0){
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
+
         dbg("RESPONSE NOT OK");
 
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
+
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			/// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
        	tcore_at_tok_free(tokens);
-
 	}
 
 	dbg("on_response_ss_waiting_set - rsp.err : %d, ur : %x, class : %d", resp.err, ur, info->class);
 
-	if(resp.err == TCORE_RETURN_SUCCESS)
-    {
+	if(resp.err == TCORE_RETURN_SUCCESS) {
+
 		 ur_dup = tcore_user_request_ref(ur);
          dbg("Get waiting call status");
-		_ss_waiting_get(o, ur_dup, info->class, info->resp);
+		_ss_waiting_get(core_obj, ur_dup, info->class, info->resp);
 	}
-    else
-    {
-		if (ur)
-		{
+    else {
+
+		if (ur) {
+
 			tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 		}
-		else
-		{
+		else {
+
 			dbg("[ error ] ur is 0");
 		 }
 	 }
@@ -986,15 +905,13 @@ static void on_response_ss_waiting_set(TcorePending *p, int data_len, const void
 }
 
 
-
 static void on_confirmation_ss_ussd(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-
+    CoreObject*	core_obj = 0;
 	struct ss_confirm_info *info = 0;
 	struct tresp_ss_ussd resp;
-	CoreObject*		o = NULL;
-	UserRequest*	ur = NULL , *ussd_ur= NULL;
-   	GSList *tokens=NULL;
+	UserRequest* ur = NULL , *ussd_ur= NULL;
+   	GSList *tokens = NULL;
    	const char *line;
    	int err;
     UssdSession *ussd_s = NULL;
@@ -1003,16 +920,13 @@ static void on_confirmation_ss_ussd(TcorePending *p, int data_len, const void *d
 
     dbg("function enter");
     response = data;
-
-	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
-
 	info = (struct ss_confirm_info*)user_data;
 
     memset(resp.str, 0x00, MAX_SS_USSD_LEN);
 
-
-	ussd_s = tcore_ss_ussd_get_session(o);
+   	core_obj  = tcore_pending_ref_core_object(p);
+	ussd_s = tcore_ss_ussd_get_session(core_obj);
 
 	if(ussd_s)
 		type = tcore_ss_ussd_get_session_type(ussd_s);
@@ -1022,45 +936,40 @@ static void on_confirmation_ss_ussd(TcorePending *p, int data_len, const void *d
 	resp.type = (enum telephony_ss_ussd_type)type;
     resp.status = SS_USSD_MAX; //hardcoded value.
 
+	if(response->success > 0) {
 
-	if(response->success > 0)
-    {
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
+
         dbg("RESPONSE NOT OK");
 
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
+
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-
      	tcore_at_tok_free(tokens);
      }
 
 	dbg("on_confirmation_ss_ussd - rsp.err : %d, ur : %x", resp.err, ur);
 
-	if(response->success > 0)
-	{
+	if(response->success > 0) {
 
-	    if(type == TCORE_SS_USSD_TYPE_USER_INITIATED)
-        {
+	    if(type == TCORE_SS_USSD_TYPE_USER_INITIATED) {
             dbg("ussd type %d",resp.type);
 
-            if(ussd_s)
-            {
+            if(ussd_s) {
 			    tcore_ss_ussd_get_session_data(ussd_s, (void**)&ussd_ur);
 			    if(ussd_ur)
                     tcore_user_request_free(ussd_ur);
@@ -1071,12 +980,10 @@ static void on_confirmation_ss_ussd(TcorePending *p, int data_len, const void *d
     if(ussd_s)
         tcore_ss_ussd_destroy_session(ussd_s);
 
-	if(ur)
-    {
-        if(UssdResp == FALSE) // to avoid sending multiple response to application.
-        {
-		    tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_ussd), &resp);
+	if(ur) {
 
+        if(UssdResp == FALSE){  // to avoid sending multiple response to application.
+		    tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_ussd), &resp);
         }
         UssdResp =  FALSE;
 	}
@@ -1089,80 +996,73 @@ static void on_confirmation_ss_ussd(TcorePending *p, int data_len, const void *d
 
 static void on_response_ss_barring_get(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-    CoreObject* o = 0;
+
 	UserRequest* ur = 0;
 	int status = 0, classx = 0, err = 0;
-    GSList *pRespData;
-
+    GSList *respdata;
 	struct ss_confirm_info* info = 0;
 	struct tresp_ss_barring resp;
 	int countRecords = 0, countValidRecords = 0;
   	GSList *tokens = NULL;
    	const char *line;
-    char *pClassx;
-    char *pStat = NULL;
+    char *classx_str;
+    char *stat = NULL;
     const TcoreATResponse *response;
 
     dbg("function enter");
 
     response = data;
-
-	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
-
 	info = (struct ss_confirm_info*)user_data;
 
-    if(response->lines)
-    {
-        pRespData = (GSList *)response->lines;
-        countRecords = g_slist_length(pRespData);
+    if(response->lines) {
+        respdata = (GSList *)response->lines;
+        countRecords = g_slist_length(respdata);
       	dbg("total records : %d",countRecords);
 
     }
-    else
-    {
+    else {
+
         countRecords  = 0;
         dbg("no active status - return to user")
     }
     resp.record_num = countRecords;
 
-    if(resp.record_num > 0)
-    {
-		resp.record = g_new0(struct barring_info, resp.record_num);
+    if(resp.record_num > 0) {
 
-		for (countValidRecords = 0; pRespData != NULL ; pRespData = pRespData->next)
-		{
-            line  = (const char*)(pRespData->data);
+		resp.record = g_new0(struct barring_info, resp.record_num);
+		for (countValidRecords = 0; respdata != NULL ; respdata = respdata->next) {
+
+            line  = (const char*)(respdata->data);
             tokens = tcore_at_tok_new(line);
 
            // parse <status>
-            pStat = g_slist_nth_data(tokens, 0);
-            if(!pStat)
-            {
+            stat = g_slist_nth_data(tokens, 0);
+            if(!stat) {
+
                 dbg("Stat is missing");
 				goto error;
             }
 
-		    status = atoi(pStat);
+		    status = atoi(stat);
+			if(status == 1) {
 
-			if(status == 1)
-            {
 				resp.record[countValidRecords].status = SS_STATUS_ACTIVATE;
 			}
-			else
-            {
+			else {
+
 				resp.record[countValidRecords].status = SS_STATUS_DEACTIVATE;
 			}
             dbg("call barring status - %d",status);
 
            //Parse <class>
-            pClassx = g_slist_nth_data(tokens, 1);
+            classx_str = g_slist_nth_data(tokens, 1);
 
-	    	if (!pClassx)
-            {
+	    	if (!classx_str) {
+
 				dbg("class error. classx not exist - set to requested one : %d", info->class);
-				switch(info->class)
-                {
+				switch(info->class) {
+
     				case SS_CLASS_ALL_TELE:
     					classx = 7;
     				break;
@@ -1188,14 +1088,13 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
     				break;
 				}
 			}
-            else
-            {
-                classx = atoi(pClassx);
+            else {
+                classx = atoi(classx_str);
                 dbg("call barring classx - %d",classx);
             }
 
-			switch(classx)
-			{
+			switch(classx) {
+
 				case 1:
 					resp.record[countValidRecords].class = SS_CLASS_VOICE;
 				break;
@@ -1222,7 +1121,6 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
 					goto error;
 				break;
 			}
-
 			resp.record[countValidRecords].mode = (enum telephony_ss_barring_mode)(info->flavor_type);
 			countValidRecords++;
             tcore_at_tok_free(tokens);
@@ -1238,37 +1136,36 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
 		resp.record_num = countValidRecords;
 		resp.err = TCORE_RETURN_SUCCESS;
 	}
-    else
-	{
+    else {
+
 		dbg("no active status - return to user")
 	}
 
-    if(response->success > 0)
-    {
+    if(response->success > 0) {
+
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
+    else {
+
         dbg("RESPONSE NOT OK");
         resp.err = TCORE_RETURN_FAILURE;
 
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
+
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
         tcore_at_tok_free(tokens);
-
     }
 
 	dbg("on_response_ss_barring_get- rsp.err : %d, ur : %x", resp.err, ur);
@@ -1278,8 +1175,8 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
 	else
 		dbg("[ error ] ur is 0");
 
-  	if (resp.record)
-  	{
+  	if (resp.record) {
+
 		g_free(resp.record);
         resp.record = NULL;
   	}
@@ -1290,7 +1187,6 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
 
 static void on_response_ss_forwarding_get(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-    CoreObject* o = 0;
 	UserRequest* ur = 0;
     int classx = 0, err = 0, time = 0;
 	char* num;
@@ -1298,74 +1194,64 @@ static void on_response_ss_forwarding_get(TcorePending *p, int data_len, const v
 	struct tresp_ss_forwarding resp;
 	int countRecords = 0, countValidRecords = 0;
 
-    GSList *pRespData = NULL ,*tokens = NULL ;
+    GSList *respdata = NULL ,*tokens = NULL ;
    	const char *line;
-    char *pClassx ,*pStatus, *pTon , *pTime;
+    char *classx_str ,*status, *ton, *time_str;
     const TcoreATResponse *response;
 
     dbg("function enter");
     response = data;
 
-	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
-
     info = (struct ss_confirm_info*)user_data;
+    if(response->lines) {
 
-    if(response->lines)
-    {
-        pRespData =  (GSList*)response->lines;
-        countRecords = g_slist_length(pRespData);
+        respdata =  (GSList*)response->lines;
+        countRecords = g_slist_length(respdata);
       	dbg("total records : %d",countRecords);
 
     }
-    else
-    {
+    else {
         countRecords  = 0;
         dbg("no active status - return to user")
     }
     resp.record_num = countRecords;
 
-    if (resp.record_num > 0)
-    {
+    if (resp.record_num > 0) {
+
 		resp.record = g_new0(struct forwarding_info, resp.record_num);
 
-		for (countValidRecords = 0; pRespData != NULL ; pRespData = pRespData->next)
-		{
+		for (countValidRecords = 0; respdata != NULL ; respdata = respdata->next) {
 
-           line  = (const char*)(pRespData->data);
+           line  = (const char*)(respdata->data);
            tokens = tcore_at_tok_new(line);
 
            // parse <status>
-            pStatus = g_slist_nth_data(tokens, 0);
-            if(!pStatus)
-            {
+            status = g_slist_nth_data(tokens, 0);
+            if(!status) {
+
                 dbg("start line error. skip this line");
 				goto error;
             }
-            else
-            {
-    			if(atoi(pStatus)== 1)
-                {
+            else {
+
+    			if(atoi(status)== 1) {
     				resp.record[countValidRecords].status = SS_STATUS_ACTIVATE;
     			}
-    			else
-                {
+    			else {
     				resp.record[countValidRecords].status = SS_STATUS_DEACTIVATE;
     			}
              }
 
 		    //Parse <class>
-
-            pClassx = g_slist_nth_data(tokens, 1);
-	    	if (!pClassx)
-            {
+            classx_str = g_slist_nth_data(tokens, 1);
+	    	if (!classx_str) {
 				dbg("class error. skip this line");
 				goto error;
 			}
-            else
-            {
-            	switch(atoi(pClassx))
-                {
+            else {
+
+            	switch(atoi(classx_str)) {
     				case 1:
     					resp.record[countValidRecords].class = SS_CLASS_VOICE;
     				break;
@@ -1396,24 +1282,25 @@ static void on_response_ss_forwarding_get(TcorePending *p, int data_len, const v
 
             //parse  <numer> <type>
             num = g_slist_nth_data(tokens, 2);
-            if (num)
-            {
+            if (num) {
+
                 dbg("number  - %s", num);
                 memcpy((resp.record[countValidRecords].number), num, strlen(num));
 				resp.record[countValidRecords].number_present = TRUE;
 
-                pTon = g_slist_nth_data(tokens, 3);
-                if(pTon)
-                   resp.record[countValidRecords].number_type = atoi(pTon);
+                ton = g_slist_nth_data(tokens, 3);
+                if(ton) {
+                   resp.record[countValidRecords].number_type = atoi(ton);
                    dbg("number  type - %d", resp.record[countValidRecords].number_type);
+                 }
             }
 
             //skip  <subaddr> <satype>
             //parse  <time>
-            pTime = g_slist_nth_data(tokens, 6);
-            if(pTime)
-            {
-                time  =  atoi(pTime);
+            time_str = g_slist_nth_data(tokens, 6);
+            if(time_str) {
+
+                time  =  atoi(time_str);
                 resp.record[countValidRecords].time = (enum telephony_ss_forwarding_no_reply_time)time;
                 dbg("time  - %d", time);
             }
@@ -1429,138 +1316,120 @@ static void on_response_ss_forwarding_get(TcorePending *p, int data_len, const v
             tcore_at_tok_free(tokens);
 			continue;
 		}
-
 		dbg("valid count :%d",countValidRecords);
 		resp.record_num = countValidRecords;
 		resp.err = TCORE_RETURN_SUCCESS;
-
 	}
-    else
-	{
+    else {
+
 		dbg("no active status - return to user")
 	}
 
-    if(response->success > 0)
-    {
+    if(response->success > 0) {
+
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
-        dbg("RESPONSE NOT OK");
+    else {
 
+        dbg("RESPONSE NOT OK");
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
+
 			err = atoi(g_slist_nth_data(tokens, 0));
 			/* TODO: CMEE error mapping is required. */
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
         tcore_at_tok_free(tokens);
-
     }
 
 	dbg("on_response_ss_forwarding_get- rsp.err : %d, ur : %x", resp.err, ur);
-
     if (ur)
 		tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_forwarding), &resp);
 	else
 		dbg("[ error ] ur is 0");
 
-  	if (resp.record)
-  	{
+  	if (resp.record) {
 		g_free(resp.record);
         resp.record = NULL;
   	}
-
 	g_free(user_data);
 
 }
 
 static void on_response_ss_waiting_get(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-    CoreObject* o = 0;
-	UserRequest* ur = 0;
-    GSList *pRespData, *tokens = NULL;
-	int classx = 0, err = 0;
 
+	UserRequest* ur = 0;
+    GSList *respdata, *tokens = NULL;
+	int classx = 0, err = 0;
 	struct ss_confirm_info* info = 0;
 	struct tresp_ss_waiting resp;
 	int countRecords = 0, countValidRecords = 0;
     const char *line;
-    char *pClassx ,*pStatus;
+    char *classx_str ,*status;
     const TcoreATResponse *response;
 
     dbg("function enter")
     response = data;
-	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
-
 	info = (struct ss_confirm_info*)user_data;
 
-    if(response->lines)
-    {
-        pRespData =  (GSList*)response->lines;
-        countRecords = g_slist_length(pRespData);
+    if(response->lines) {
+
+        respdata =  (GSList*)response->lines;
+        countRecords = g_slist_length(respdata);
       	dbg("total records : %d",countRecords);
 
     }
-    else
-    {
+    else {
         countRecords  = 0;
         dbg("no active status - return to user")
     }
     resp.record_num = countRecords;
 
-	if (resp.record_num > 0)
-    {
+	if (resp.record_num > 0) {
+
 		resp.record = g_new0(struct waiting_info, resp.record_num);
 
-		for (countValidRecords = 0; pRespData != NULL ; pRespData = pRespData->next)
-		{
+		for (countValidRecords = 0; respdata != NULL ; respdata = respdata->next) {
 
-           line  = (const char*)(pRespData->data);
+           line  = (const char*)(respdata->data);
            tokens = tcore_at_tok_new(line);
 
            // parse <status>
-            pStatus = g_slist_nth_data(tokens, 0);
-            if(!pStatus)
-            {
+            status = g_slist_nth_data(tokens, 0);
+            if(!status) {
                 dbg("Missing stat  in responce ");
 				goto error;
             }
-            else
-            {
-        		if(atoi(pStatus) == 1)
-                {
+            else {
+
+        		if(atoi(status) == 1) {
     				resp.record[countValidRecords].status = SS_STATUS_ACTIVATE;
     			}
-    			else
-                {
+    			else {
     				resp.record[countValidRecords].status = SS_STATUS_DEACTIVATE;
     			}
             }
             dbg("status = %d", resp.record[countValidRecords].status);
 
            //Parse <class>
-
-            pClassx = g_slist_nth_data(tokens, 1);
-	    	if (!pClassx)
-            {
+            classx_str = g_slist_nth_data(tokens, 1);
+	    	if (!classx_str) {
 				dbg("error - class is missing");
 				goto error;
 			}
             else
             {
-                switch(atoi(pClassx))
-                {
+                switch(atoi(classx_str)) {
     				case 1:
     					resp.record[countValidRecords].class = SS_CLASS_VOICE;
     				break;
@@ -1603,64 +1472,54 @@ static void on_response_ss_waiting_get(TcorePending *p, int data_len, const void
 		resp.record_num = countValidRecords;
 		resp.err = TCORE_RETURN_SUCCESS;
 	}
-	else
-	{
+	else {
 		dbg("no active status - return to user")
 	}
 
-	if(response->success > 0)
-    {
+	if(response->success > 0) {
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
-    else
-    {
-        dbg("RESPONSE NOT OK");
+    else {
 
+        dbg("RESPONSE NOT OK");
         line = (const char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
+
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
+
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
         tcore_at_tok_free(tokens);
-
     }
 
 	dbg("on_response_ss_waiting_get - rsp.err : %d, ur : %x", resp.err, ur);
-
 	if (ur)
 		tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_waiting), &resp);
 	else
 		dbg("[ error ] ur is 0");
 
-    if (resp.record)
-  	{
+    if (resp.record) {
 		g_free(resp.record);
         resp.record = NULL;
   	}
-
 	g_free(user_data);
-
 }
 
 
 static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-    CoreObject*	o = 0;
 	UserRequest* ur = 0;
-
 	struct tresp_ss_cli resp;
 	enum telephony_ss_cli_type *p_type = NULL;
-	char *line = NULL, *pStatus;
+	char *line = NULL, *status;
 	int err = FALSE;
     int cli_adj,stat ;
     GSList *tokens = NULL ;
@@ -1668,80 +1527,64 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 
     dbg("function enter")
     response = data;
-
-	o  = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
-
 	p_type = (enum telephony_ss_cli_type*)(user_data);
 
-    if (response->success  > 0)
-	{
+    if (response->success  > 0) {
+
         line  = (char*) (((GSList*)response->lines)->data);
         tokens = tcore_at_tok_new(line);
 
-        if(*p_type == SS_CLI_TYPE_CLIR)
-        {
+        if(*p_type == SS_CLI_TYPE_CLIR){
+
             //+CLIR: <n> <m>
            dbg("CLI type is CLIR")
-
             //parse <n>
-            pStatus = g_slist_nth_data(tokens, 0);
+            status = g_slist_nth_data(tokens, 0);
 
-            if(!pStatus)
-            {
+            if(!status) {
                 dbg("Call line identification adjustment missing <n>");
             }
-            else
-            {
-                cli_adj = atoi(pStatus);
+            else {
+
+                cli_adj = atoi(status);
                 dbg("CLIR response value of <n> - %d",cli_adj);
 
-                if(cli_adj == 0)
-                {
+                if(cli_adj == 0) {
+
                     //parse <m>
-                    pStatus = g_slist_nth_data(tokens, 1);
-                    if(!pStatus)
-                    {
+                    status = g_slist_nth_data(tokens, 1);
+                    if(!status) {
                         dbg("status is missing<m>");
                     }
-
-                    stat  = atoi(pStatus);
+                    stat  = atoi(status);
                     dbg("CLIR response value of <m> - %d",stat);
 
-                    if(stat == 1 || stat == 3)
-                    {
+                    if(stat == 1 || stat == 3) {
                        resp.status = TRUE;
                     }
-                    else
-                    {
+                    else {
                         resp.status = FALSE;
                     }
                }
-               else if (cli_adj  == 1)
-               {
+               else if (cli_adj  == 1) {
                   resp.status = TRUE;
                }
-               else
-               {
+               else {
                    resp.status = FALSE;
                }
                dbg("resp.status -  %d",resp.status);
             }
-
             tcore_at_tok_free(tokens);
         }
-        else
-        {
+        else  {
             //parse <n>
-            pStatus = g_slist_nth_data(tokens, 0);
-            if(!pStatus)
-            {
+            status = g_slist_nth_data(tokens, 0);
+            if(!status) {
                 dbg("Stat is missing");
             }
-            else
-            {
-                stat  = atoi(pStatus);
-
+            else {
+                stat  = atoi(status);
                 if(stat == 1)
                     resp.status = TRUE;
                 else
@@ -1749,49 +1592,41 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 
                 dbg("resp.status -  %d",resp.status);
             }
-
             tcore_at_tok_free(tokens);
         }
     }
 
-    if (response->success > 0)
-    {
+    if (response->success > 0) {
         dbg("RESPONSE OK");
         resp.err = TCORE_RETURN_SUCCESS;
     }
 
-    else
-    {
+    else {
         dbg("RESPONSE NOT OK");
 
         line = (char*)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
-		if (g_slist_length(tokens) < 1)
-        {
+		if (g_slist_length(tokens) < 1) {
 		  	dbg("err cause not specified or string corrupted");
 		    resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
-		else
-		{
+		else {
 			err = atoi(g_slist_nth_data(tokens, 0));
-			/* TODO: CMEE error mapping is required. */
+			// TODO: CMEE error mapping is required.
     		resp.err = TCORE_RETURN_3GPP_ERROR;
 		}
        	tcore_at_tok_free(tokens);
 	}
 
-
     resp.type = *p_type;
     dbg("check - resp.type = %d ", resp.type);
-
 	if (ur)
 		tcore_user_request_send_response(ur, TRESP_SS_CLI_GET_STATUS, sizeof(struct tresp_ss_cli), &resp);
 	else
 		dbg("[ error ] ur : (0)");
 
 	g_free(user_data);
-
 }
 
 static struct tcore_ss_operations ss_ops = {
@@ -1820,7 +1655,6 @@ static TReturn _ss_barring_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 {
 	struct treq_ss_barring *barring = 0;
 	struct ss_confirm_info *user_data = 0;
-
     char *cmd_str = NULL;
 	TcoreHal* hal;
 	TcorePending *pending = NULL;
@@ -1829,19 +1663,17 @@ static TReturn _ss_barring_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 	int opco;
 	int classx;
 	char* facility = NULL;
-
     gboolean ret = FALSE;
 
     dbg("function enter");
     barring = (struct treq_ss_barring*)tcore_user_request_ref_data(ur, 0);
 
-    switch(op)
-    {
-		case TIZEN_SS_OPCO_ACTIVATE:
-			opco = 1;
+    switch(op) {
+		case SS_OPCO_ACTIVATE:
+			 opco = 1;
 		break;
-		case TIZEN_SS_OPCO_DEACTIVATE:
-			opco = 0;
+		case SS_OPCO_DEACTIVATE:
+			 opco = 0;
 		break;
 		default:
 			dbg("unsupported opco : %d", op);
@@ -1883,8 +1715,7 @@ static TReturn _ss_barring_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 
     dbg("facility - %s",facility);
 
-	switch(barring->class)
-	{
+	switch(barring->class) {
 		case SS_CLASS_ALL_TELE:
 			classx =7;
 		break;
@@ -1920,49 +1751,39 @@ static TReturn _ss_barring_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
 
-    cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d,\"%s\",%d%s", facility, opco, passwd, classx,"\r");
+    cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d,\"%s\",%d", facility, opco, passwd, classx);
     dbg("request command : %s", cmd_str);
 
-
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 
 	user_data = g_new0(struct ss_confirm_info, 1);
-
-	if (op == TIZEN_SS_OPCO_ACTIVATE)
-    {
+	if (op == SS_OPCO_ACTIVATE) {
 		user_data->resp = TRESP_SS_BARRING_ACTIVATE;
 
 	}
-    else if (op == TIZEN_SS_OPCO_DEACTIVATE)
-    {
+    else if (op == SS_OPCO_DEACTIVATE){
 		user_data->resp = TRESP_SS_BARRING_DEACTIVATE;
 
 	}
-    else
-    {
+    else {
 		dbg("[ error ] wrong ss opco (0x%x)", op);
 		return TCORE_RETURN_FAILURE;
 	}
-
 	user_data->flavor_type = (int)(barring->mode);
 	user_data->class = barring->class;
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_barring_set, user_data);
-
 	g_free(cmd_str);
 
-	if (!ret)
-	{
+	if (!ret) {
+
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
-
 }
 
 static TReturn _ss_barring_get(CoreObject *o,
@@ -1972,27 +1793,22 @@ static TReturn _ss_barring_get(CoreObject *o,
 								enum tcore_response_command resp)
 
 {
-
-    TcorePlugin *p = 0;
 	struct ss_confirm_info *user_data = 0;
 	gboolean ret = FALSE;
 	char* cmd_str = NULL;
 	int opco, classx;
 	char* facility = NULL;
-
     TcoreHal* hal;
 	TcorePending *pending = NULL;
    	TcoreATRequest *req;
 
     dbg("function enter");
-	p = tcore_object_ref_plugin(o);
 
     //query status - opco is fixed to 2
 	opco = 2;
-
 	//barring mode
-	switch(mode)
-    {
+	switch(mode){
+
 		case SS_BARR_MODE_BAOC:
 			facility = "AO";
 		break;
@@ -2025,8 +1841,8 @@ static TReturn _ss_barring_get(CoreObject *o,
 
     dbg("facility - %s", facility);
 
-	switch(class)
-	{
+	switch(class) {
+
 		case SS_CLASS_ALL_TELE:
 			classx =7;
 		break;
@@ -2054,51 +1870,43 @@ static TReturn _ss_barring_get(CoreObject *o,
     dbg("class - %d", classx);
 
 	if(classx ==7)
-	    cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d%s", facility, opco,"\r");
+	    cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d", facility, opco);
 	else
-		cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d,,%d%s", facility, opco,classx,"\r");
+		cmd_str = g_strdup_printf("AT+CLCK=\"%s\",%d,,%d", facility, opco,classx);
 
 	dbg("request command : %s", cmd_str);
 
-
     hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
-
     req = tcore_at_request_new(cmd_str, "+CLCK", TCORE_AT_MULTILINE);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 
-
 	user_data = g_new0(struct ss_confirm_info, 1);
 	user_data->resp = resp;
-
 	user_data->flavor_type = (int)(mode);
 	user_data->class = class;
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_barring_get, user_data);
-
 	g_free(cmd_str);
 
-	if (!ret)
-	{
+	if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
 
 	return TCORE_RETURN_SUCCESS;
-
 }
 
 static TReturn s_ss_barring_activate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_barring_set(o, ur, TIZEN_SS_OPCO_ACTIVATE);
+	return _ss_barring_set(o, ur, SS_OPCO_ACTIVATE);
 }
 
 static TReturn s_ss_barring_deactivate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_barring_set(o, ur, TIZEN_SS_OPCO_DEACTIVATE);
+	return _ss_barring_set(o, ur, SS_OPCO_DEACTIVATE);
 }
 
 static TReturn s_ss_barring_change_password(CoreObject *o, UserRequest *ur)
@@ -2114,15 +1922,12 @@ static TReturn s_ss_barring_change_password(CoreObject *o, UserRequest *ur)
     dbg("function enter");
 	barring = (struct treq_ss_barring_change_password*)tcore_user_request_ref_data(ur, 0);
 
-	cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"%s", "AB", barring->password_old, barring->password_new,"\r");
+	cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", "AB", barring->password_old, barring->password_new);
 	dbg("request command : %s", cmd_str);
-
 
     hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
@@ -2131,16 +1936,12 @@ static TReturn s_ss_barring_change_password(CoreObject *o, UserRequest *ur)
 	user_data->resp = TRESP_SS_BARRING_CHANGE_PASSWORD;
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_barring_change_pwd, user_data);
-
 	g_free(cmd_str);
-	if (!ret)
-	{
-	    dbg("AT request sent failed ")
+    if (!ret) {
+        dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
-
 }
 
 static TReturn s_ss_barring_get_status(CoreObject *o, UserRequest *ur)
@@ -2155,10 +1956,8 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 {
 	struct treq_ss_forwarding *forwarding = 0;
 	struct ss_confirm_info *user_data = 0;
-
 	gboolean ret = FALSE;
 	int len = 0;
-
 	char* cmd_str = NULL;
 	char* tmp_str = NULL;
 	int reason=0, mode = 0, num_type = 0, classx = 0,time = 0;
@@ -2170,9 +1969,8 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 	dbg("_ss_forwarding_set with opco %d ", op);
 
 	forwarding = (struct treq_ss_forwarding*) tcore_user_request_ref_data(ur, 0);
+	switch(forwarding->mode) {
 
-	switch(forwarding->mode)
-	{
 		case SS_CF_MODE_CFU:
 			reason = 0;
 			break;
@@ -2199,18 +1997,17 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 	}
 
     dbg("reason = %d", reason);
-
 	switch(op){
-		case TIZEN_SS_OPCO_DEACTIVATE:
+		case SS_OPCO_DEACTIVATE:
 			mode = 0;
 		break;
-		case TIZEN_SS_OPCO_ACTIVATE:
+		case SS_OPCO_ACTIVATE:
 			mode = 1;
 		break;
-		case TIZEN_SS_OPCO_REG:
+		case SS_OPCO_REG:
 			mode = 3;
 		break;
-		case TIZEN_SS_OPCO_DEREG:
+		case SS_OPCO_DEREG:
 			mode = 4;
 		break;
 
@@ -2221,9 +2018,8 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 
     dbg("mode = %d", mode);
 
-// class
-	switch(forwarding->class)
-	{
+    // class
+	switch(forwarding->class) {
 		case SS_CLASS_ALL_TELE:
 			classx =7;
 		break;
@@ -2250,31 +2046,30 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 	}
     dbg("classx = %d", classx);
 
-//number
+    //number
 	len = strlen(forwarding->number);
 	if (len > 0){
 		valid_num = TRUE;
 		if (forwarding->number[0] == '+')
-			num_type = ((TIZEN_NUM_TYPE_INTERNATIONAL << 4)|TIZEN_NUM_PLAN_ISDN);
+			num_type = ((NUM_TYPE_INTERNATIONAL << 4)| NUM_PLAN_ISDN);
 		else
 			num_type = 0;
 	}
-
     dbg("number = %s", forwarding->number);
 
 	user_data = g_new0(struct ss_confirm_info, 1);
 
 	switch (op) {
-		case TIZEN_SS_OPCO_REG:
+		case SS_OPCO_REG:
 			user_data->resp = TRESP_SS_FORWARDING_REGISTER;
 			break;
-		case TIZEN_SS_OPCO_DEREG:
+		case SS_OPCO_DEREG:
 			user_data->resp = TRESP_SS_FORWARDING_DEREGISTER;
 			break;
-		case TIZEN_SS_OPCO_ACTIVATE:
+		case SS_OPCO_ACTIVATE:
 			user_data->resp = TRESP_SS_FORWARDING_ACTIVATE;
 			break;
-		case TIZEN_SS_OPCO_DEACTIVATE:
+		case SS_OPCO_DEACTIVATE:
 			user_data->resp = TRESP_SS_FORWARDING_DEACTIVATE;
 			break;
 		default:
@@ -2287,34 +2082,27 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
    else
       num_type = 129;
 
-	if(op == TIZEN_SS_OPCO_REG)
+	if(op == SS_OPCO_REG)
 		tmp_str = g_strdup_printf("AT+CCFC=%d,%d,\"%s\",%d,%d", reason, mode, forwarding->number, num_type, classx);
 	else// other opcode does not need num field
 		tmp_str = g_strdup_printf("AT+CCFC=%d,%d,,,%d", reason, mode, classx);
 
-	if(forwarding->mode == SS_CF_MODE_CFNRy)
-    {
+	if(forwarding->mode == SS_CF_MODE_CFNRy) {
 		//add time info to 'no reply' case
 		time = (int)(forwarding->time);
-		cmd_str = g_strdup_printf("%s,,,%d%s", tmp_str,time,"\r");
+		cmd_str = g_strdup_printf("%s,,,%d", tmp_str,time);
 	}
-	else
-    {
-		cmd_str = g_strdup_printf("%s%s", tmp_str,"\r");
+	else {
+		cmd_str = g_strdup_printf("%s", tmp_str);
 	}
 
 	dbg("request command : %s", cmd_str);
-
-
     hal = tcore_object_get_hal(o);
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
-
 
 	user_data->flavor_type = forwarding->mode;
 	user_data->class = forwarding->class;
@@ -2324,16 +2112,13 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 	g_free(tmp_str);
 	g_free(cmd_str);
 
-	if (!ret)
-	{
+	if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
 
 	return TCORE_RETURN_SUCCESS;
-
 }
-
 
 static TReturn _ss_forwarding_get(CoreObject *o,
 									UserRequest *ur,
@@ -2344,18 +2129,15 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 
 	struct ss_confirm_info *user_data = 0;
 	gboolean ret = FALSE;
-
 	char* cmd_str = NULL;
    	int reason = 0, mode = 0, classx = 0;
-
     TcoreHal* hal;
 	TcorePending *pending = NULL;
    	TcoreATRequest *req;
 
     dbg("function enter");
 
-	switch(type)
-	{
+	switch(type) {
 		case SS_CF_MODE_CFU:
 			reason = 0;
 		break;
@@ -2381,8 +2163,7 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 	}
     dbg("reason  = %d", reason);
 
-	switch(class)
-	{
+	switch(class) {
 		case SS_CLASS_ALL_TELE:
 			classx =7;
 		break;
@@ -2411,25 +2192,21 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 
 	//query status - mode set to 2
 	mode = 2;
-
 	user_data = g_new0(struct ss_confirm_info, 1);
 	user_data->resp = resp;
-
 	user_data->class = class;
 	user_data->flavor_type = type;
 
 	if(classx ==7)
-		cmd_str = g_strdup_printf("AT+CCFC=%d,%d%s", reason, mode,"\r");
+		cmd_str = g_strdup_printf("AT+CCFC=%d,%d", reason, mode);
 	else
-		cmd_str = g_strdup_printf("AT+CCFC=%d,%d,,,%d%s", reason, mode,classx,"\r");
+		cmd_str = g_strdup_printf("AT+CCFC=%d,%d,,,%d", reason, mode,classx);
 
 	dbg("request command : %s", cmd_str);
 
     hal = tcore_object_get_hal(o);
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, "+CCFC", TCORE_AT_MULTILINE);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
@@ -2437,8 +2214,7 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 	ret = _ss_request_message(pending, o, ur, on_response_ss_forwarding_get, user_data);
 	g_free(cmd_str);
 
-	if (!ret)
-	{
+	if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
@@ -2446,25 +2222,24 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 	return TCORE_RETURN_SUCCESS;
 }
 
-
 static TReturn s_ss_forwarding_activate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_forwarding_set(o, ur, TIZEN_SS_OPCO_ACTIVATE);
+	return _ss_forwarding_set(o, ur, SS_OPCO_ACTIVATE);
 }
 
 static TReturn s_ss_forwarding_deactivate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_forwarding_set(o, ur, TIZEN_SS_OPCO_DEACTIVATE);
+	return _ss_forwarding_set(o, ur, SS_OPCO_DEACTIVATE);
 }
 
 static TReturn s_ss_forwarding_register(CoreObject *o, UserRequest *ur)
 {
-	return _ss_forwarding_set(o, ur, TIZEN_SS_OPCO_REG);
+	return _ss_forwarding_set(o, ur, SS_OPCO_REG);
 }
 
 static TReturn s_ss_forwarding_deregister(CoreObject *o, UserRequest *ur)
 {
-	return _ss_forwarding_set(o, ur, TIZEN_SS_OPCO_DEREG);
+	return _ss_forwarding_set(o, ur, SS_OPCO_DEREG);
 }
 
 static TReturn s_ss_forwarding_get_status(CoreObject *o, UserRequest *ur)
@@ -2480,7 +2255,6 @@ static TReturn _ss_waiting_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 {
 	struct treq_ss_waiting *waiting = 0;
 	struct ss_confirm_info *user_data = 0;
-
 	gboolean ret = FALSE;
 	int mode = 0, classx = 0;
 	char* cmd_str;
@@ -2490,24 +2264,20 @@ static TReturn _ss_waiting_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 
     dbg("function enter ");
 	waiting = (struct treq_ss_waiting*) tcore_user_request_ref_data(ur, 0);
-
 	user_data = g_new0(struct ss_confirm_info, 1);
 
-	if(opco == TIZEN_SS_OPCO_ACTIVATE)
-    {
+	if(opco == SS_OPCO_ACTIVATE) {
 		user_data->resp = TRESP_SS_WAITING_ACTIVATE;
 		mode = 1;//enable
 	}
-	else if (opco == TIZEN_SS_OPCO_DEACTIVATE)
-    {
+	else if (opco == SS_OPCO_DEACTIVATE) {
 		user_data->resp = TRESP_SS_WAITING_DEACTIVATE;
 		mode =0; //disable
 	}
 	else
 		dbg("[ error ] unknown ss mode (0x%x)", opco);
 
-    switch(waiting->class)
-	{
+    switch(waiting->class) {
 		case SS_CLASS_ALL_TELE:
 			classx =7;
 		break;
@@ -2529,35 +2299,28 @@ static TReturn _ss_waiting_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 			dbg("unsupported class %d. set to default : 1", waiting->class);
 		break;
 	}
-     dbg("mode = %d classxx- %d", mode , classx);
+    dbg("mode = %d classxx- %d", mode , classx);
 
 	user_data->class = waiting->class;
 	user_data->flavor_type = (int)opco;
 
-	cmd_str = g_strdup_printf("AT+CCWA=1,%d,%d%s", mode, classx,"\r"); //always enable +CCWA: unsolicited cmd
+	cmd_str = g_strdup_printf("AT+CCWA=1,%d,%d", mode, classx); //always enable +CCWA: unsolicited cmd
 	dbg("request command : %s",cmd_str);
 
     hal = tcore_object_get_hal(o);
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_waiting_set, user_data);
-
 	g_free(cmd_str);
-
-	if (!ret)
-	{
+	if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
-
 }
 
 static TReturn _ss_waiting_get(CoreObject *o,
@@ -2567,18 +2330,16 @@ static TReturn _ss_waiting_get(CoreObject *o,
 
 {
 
-	struct ss_confirm_info *user_data = 0;
+    struct ss_confirm_info *user_data = 0;
 	gboolean ret = FALSE;
 	int classx; //mode,
 	char* cmd_str;
-
     TcoreHal* hal;
 	TcorePending *pending = NULL;
    	TcoreATRequest *req;
 
     dbg("function  enter")
-	switch(class)
-	{
+	switch(class) {
 		case SS_CLASS_ALL_TELE:
 			classx = 7;
 		break;
@@ -2607,39 +2368,33 @@ static TReturn _ss_waiting_get(CoreObject *o,
 	user_data->resp = resp;
 	user_data->class = class;
 
-	cmd_str = g_strdup_printf("AT+CCWA=1,2,%d%s", classx,"\r"); //always enable +CCWA: unsolicited cmd , mode is fixed to 2(query status)
+	cmd_str = g_strdup_printf("AT+CCWA=1,2,%d", classx); //always enable +CCWA: unsolicited cmd , mode is fixed to 2(query status)
 	dbg("request cmd : %s", cmd_str);
 
     hal = tcore_object_get_hal(o);
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, "+CCWA", TCORE_AT_MULTILINE);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_waiting_get, user_data);
-
 	g_free(cmd_str);
-
-	if (!ret)
-	{
+	if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn s_ss_waiting_activate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_waiting_set(o, ur, TIZEN_SS_OPCO_ACTIVATE);
+	return _ss_waiting_set(o, ur, SS_OPCO_ACTIVATE);
 }
 
 static TReturn s_ss_waiting_deactivate(CoreObject *o, UserRequest *ur)
 {
-	return _ss_waiting_set(o, ur, TIZEN_SS_OPCO_DEACTIVATE);
+	return _ss_waiting_set(o, ur, SS_OPCO_DEACTIVATE);
 }
 
 static TReturn s_ss_waiting_get_status(CoreObject *o, UserRequest *ur)
@@ -2667,15 +2422,12 @@ static TReturn s_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 	gboolean ret = FALSE;
 	char *cmd_prefix = NULL, *rsp_prefix = NULL, *cmd_str = NULL;
 	enum  telephony_ss_cli_type *user_data = 0;
-
     TcoreHal* hal;
 	TcorePending *pending = NULL;
    	TcoreATRequest *req;
 
 	cli = (struct treq_ss_cli*)tcore_user_request_ref_data(ur, 0);
-
-	switch(cli->type)
-     {
+	switch(cli->type) {
 		case SS_CLI_TYPE_CLIP:
 			cmd_prefix = "+CLIP";
 			rsp_prefix = "+CLIP";
@@ -2707,10 +2459,9 @@ static TReturn s_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 			return TCORE_RETURN_FAILURE;
 		break;
 	}
-
 	dbg("cmd_prefix : %s",cmd_prefix);
 
-	cmd_str = g_strdup_printf("AT%s?%s", cmd_prefix, "\r");
+	cmd_str = g_strdup_printf("AT%s?", cmd_prefix);
 	dbg("request cmd : %s", cmd_str);
 
 	user_data = g_new0(enum telephony_ss_cli_type, 1);
@@ -2720,29 +2471,21 @@ static TReturn s_ss_cli_get_status(CoreObject *o, UserRequest *ur)
    	pending = tcore_pending_new(o, 0);
 
 	req = tcore_at_request_new(cmd_str, rsp_prefix, TCORE_AT_SINGLELINE);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
-
 	tcore_pending_set_request_data(pending, 0, req);
 
 	ret = _ss_request_message(pending, o, ur, on_response_ss_cli_get, user_data);
-
 	g_free(cmd_str);
-
-    if (!ret)
-	{
+    if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn s_ss_send_ussd(CoreObject *o, UserRequest *ur)
 {
-
 	UssdSession *ussd_s = 0;
-
 	struct treq_ss_ussd *ussd = 0;
 	struct ss_confirm_info *user_data = 0;
 	gboolean ret = FALSE;
@@ -2753,24 +2496,20 @@ static TReturn s_ss_send_ussd(CoreObject *o, UserRequest *ur)
 
     dbg("function enter");
 	ussd = (struct treq_ss_ussd*)tcore_user_request_ref_data(ur, 0);
-
-	cmd_str = g_strdup_printf("AT+CUSD=1,\"%s\",%d%s", ussd->str, 0x0f,"\r"); //always enable +CUSD: unsolicited cmd. set to dcs to 0x0f. only supports HEX type
+	cmd_str = g_strdup_printf("AT+CUSD=1,\"%s\",%d", ussd->str, 0x0f); //always enable +CUSD: unsolicited cmd. set to dcs to 0x0f. only supports HEX type
 	dbg("request command : %s",cmd_str);
-
 
 	user_data = g_new0(struct ss_confirm_info, 1);
 	user_data->resp = TRESP_SS_SEND_USSD;
-
 	ussd_s = tcore_ss_ussd_get_session(o);
-	if(!ussd_s)
-    {
+	if(!ussd_s) {
         dbg("USSD session does not  exist");
 		tcore_ss_ussd_create_session(o, (enum tcore_ss_ussd_type)ussd->type, (void*)tcore_user_request_ref(ur), 0);
 	}
-    else
-	{
-		if(ussd->type == SS_USSD_TYPE_USER_INITIATED)
-        {
+    else {
+
+		if(ussd->type == SS_USSD_TYPE_USER_INITIATED) {
+
 		    dbg("[ error ] ussd session is already exist");
 			g_free(user_data);
 			return TCORE_RETURN_FAILURE;
@@ -2781,23 +2520,19 @@ static TReturn s_ss_send_ussd(CoreObject *o, UserRequest *ur)
 
     hal = tcore_object_get_hal(o);
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 
 	ret = _ss_request_message(pending, o, ur, on_confirmation_ss_ussd, user_data);
-
   	g_free(cmd_str);
 
-	if (!ret)
-	{
+	if (!ret) {
+
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -2837,21 +2572,15 @@ static TReturn s_ss_manage_call_send(CoreObject* o, UserRequest* ur, const char*
    	gboolean ret = FALSE;
 
    	pending = tcore_pending_new(o, 0);
-
 	req = tcore_at_request_new(cmd, NULL, TCORE_AT_NO_RESULT);
-
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
-
 	tcore_pending_set_request_data(pending, 0, req);
 
     ret = _ss_request_message(pending, o, ur, (TcorePendingResponseCallback)cb, user_data);
-
-    if (!ret)
-	{
+    if (!ret) {
 	    dbg("AT request sent failed ")
 		return TCORE_RETURN_FAILURE;
 	}
-
     return TCORE_RETURN_SUCCESS;
 }
 
@@ -2861,8 +2590,7 @@ static TReturn s_ss_manage_call_0_send(CoreObject* o, UserRequest* ur, ConfirmCa
    	gboolean ret = FALSE;
 
     dbg("function enter");
-
-	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=0", "\r");
+	cmd_str = g_strdup_printf("%s", "AT+CHLD=0");
 	dbg("cmd : %s, prefix(if any) : %s, cmd_len : %d",cmd_str, "N/A", strlen(cmd_str));
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
@@ -2876,7 +2604,7 @@ static TReturn s_ss_manage_call_1_send(CoreObject* o, UserRequest* ur, ConfirmCa
    	gboolean ret = FALSE;
 
     dbg("function enter");
-	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=1", "\r");
+	cmd_str = g_strdup_printf("%s", "AT+CHLD=1");
 	dbg("cmd : %s, prefix(if any) : %s, cmd_len : %d",cmd_str, "N/A", strlen(cmd_str));
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
@@ -2886,12 +2614,11 @@ static TReturn s_ss_manage_call_1_send(CoreObject* o, UserRequest* ur, ConfirmCa
 
 static TReturn s_ss_manage_call_1x_send(CoreObject* o, UserRequest* ur, const int id, ConfirmCallback cb, void* user_data)
 {
-
     char* cmd_str = NULL;
    	gboolean ret = FALSE;
 
     dbg("function enter");
-	cmd_str = g_strdup_printf("%s%d%s", "AT+CHLD=1", id,"\r");
+	cmd_str = g_strdup_printf("%s%d", "AT+CHLD=1", id);
 	dbg("cmd : %s, prefix(if any) : %s, cmd_len : %d",cmd_str, "N/A", strlen(cmd_str));
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
@@ -2905,8 +2632,7 @@ static TReturn s_ss_manage_call_2_send(CoreObject* o, UserRequest* ur, ConfirmCa
    	gboolean ret = FALSE;
 
     dbg("function enter");
-
-	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=2", "\r");
+	cmd_str = g_strdup_printf("%s", "AT+CHLD=2");
 	dbg("cmd : %s, prefix(if any) : %s, cmd_len : %d",cmd_str, "N/A", strlen(cmd_str));
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb,  user_data);
@@ -2921,8 +2647,7 @@ static TReturn s_ss_manage_call_2x_send(CoreObject* o, UserRequest* ur, const in
    	gboolean ret = FALSE;
 
     dbg("function enter");
-
-	cmd_str = g_strdup_printf("%s%d%s", "AT+CHLD=2", id,"\r");
+	cmd_str = g_strdup_printf("%s%d", "AT+CHLD=2", id);
 	dbg("cmd : %s, prefix(if any) : %s, cmd_len : %d",cmd_str, "N/A", strlen(cmd_str));
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb,  user_data);
@@ -2936,8 +2661,7 @@ static TReturn s_ss_manage_call_3_send(CoreObject* o, UserRequest* ur, ConfirmCa
     gboolean ret = FALSE;
 
     dbg("function enter");
-
-	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=3","\r");
+	cmd_str = g_strdup_printf("%s", "AT+CHLD=3");
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
    	g_free(cmd_str);
@@ -2951,7 +2675,7 @@ static TReturn s_ss_manage_call_4_send(CoreObject* o, UserRequest* ur, ConfirmCa
     gboolean ret = FALSE;
 
     dbg("function enter");
-	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=4", "\r");
+	cmd_str = g_strdup_printf("%s", "AT+CHLD=4");
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
    	g_free(cmd_str);
@@ -2965,7 +2689,7 @@ static TReturn s_ss_manage_call_4dn_send(CoreObject* o, UserRequest* ur, const c
     gboolean ret = FALSE;
 
     dbg("function enter");
-	cmd_str = g_strdup_printf("%s%s%s", "AT+CHLD=4", number,"\r");
+	cmd_str = g_strdup_printf("%s%s", "AT+CHLD=4", number);
 
     ret =  s_ss_manage_call_send(o, ur, cmd_str, cb, user_data);
    	g_free(cmd_str);
@@ -2992,10 +2716,7 @@ gboolean s_ss_init(TcorePlugin *p, TcoreHal *h)
 
 	tcore_call_control_set_operations(co, &call_ops);
 
-	//tcore_object_add_callback(so, EVENT_NOTI_SS_INFO, on_notification_ss_info, 0);
-	//tcore_object_add_callback(so, EVENT_NOTI_SS_USSD, on_notification_ss_ussd, 0);
-
-    tcore_object_add_callback(so, "+CSSU", on_notification_ss_info, 0);
+	tcore_object_add_callback(so, "+CSSU", on_notification_ss_info, 0);
     tcore_object_add_callback(so, "+CSSI", on_notification_ss_info, 0);
 	tcore_object_add_callback(so, "+CUSD", on_notification_ss_ussd, 0);
 

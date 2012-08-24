@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ * Contact: Madhavi Akella <madhavi.a@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
  * limitations under the License.
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <glib.h>
 
@@ -39,66 +39,6 @@
 #include "common/TelErr.h"
 #include "s_common.h"
 #include "s_sms.h"
-
-/*=============================================================
-							SMS PARAMETER_ID
-==============================================================*/
-#define TIZEN_SMSPARAMID_TELESERVICE_ID					0x01	/* Teleservice Identifier */
-#define TIZEN_SMSPARAMID_SERVICE_CATEGORY				0x02	/* Broadcast Service Category */
-#define TIZEN_SMSPARAMID_ADDRESS							0x03	/* Address */
-#define TIZEN_SMSPARAMID_SUBADDRESS						0x04	/* Subaddress */
-#define TIZEN_SMSPARAMID_BEARER_REPLY					0x05	/* Bearer Reply Option */
-#define TIZEN_SMSPARAMID_CAUSE_CODES					0x06	/* Cause Codes */
-#define TIZEN_SMSPARAMID_MESSAGE_ID						0x07	/* Message Identifier */
-#define TIZEN_SMSPARAMID_USER_DATA						0x08	/* User Data */
-#define TIZEN_SMSPARAMID_USER_RESPONSE_CODE			0x09	/* User Response Code */
-#define TIZEN_SMSPARAMID_MC_TIME_STAMP					0x0A	/* Message Center Time Stamp */
-#define TIZEN_SMSPARAMID_VALIDITY_PERIOD_ABS			0x0B	/* Validity Period - Absolute */
-#define TIZEN_SMSPARAMID_VALIDITY_PERIOD_REL			0x0C	/* Validiry Period - Relative */
-#define TIZEN_SMSPARAMID_DEFERRED_DELIVERY_ABS			0x0D	/* Deferred Delivery Time - Absolute */
-#define TIZEN_SMSPARAMID_DEFERRED_DELIVERY_REL			0x0E	/* Deferred Delivery Time - Relative */
-#define TIZEN_SMSPARAMID_PRIORITY							0x0F	/* Priority Indicator */
-#define TIZEN_SMSPARAMID_PRIVACY							0x10	/* Privacy Indicator */
-#define TIZEN_SMSPARAMID_REPLY_OPTION					0x11	/* Reply Option */
-#define TIZEN_SMSPARAMID_NUMBER_OF_MESSAGE				0x12	/* Number of Messages : Voice Mail Count */
-#define TIZEN_SMSPARAMID_ALERT_ON_DELIVERY				0x13	/* Alert on Message Delivery */
-#define TIZEN_SMSPARAMID_LANGUAGE						0x14	/* Langauge Indicator */
-#define TIZEN_SMSPARAMID_CALLBACK						0x15	/* Call Back Number */
-#define TIZEN_SMSPARAMID_DISPLAY_MODE					0x16	/* Display Mode */
-#define TIZEN_SMSPARAMID_MULTI_ENCODING_USER_DATA		0x17	/* Multiply Encoding User Data */
-#define TIZEN_SMSPARAMID_MEMORY_INDEX					0x18	/* Memory address stored in Phone Memory */
-#define TIZEN_SMSPARAMID_BEARER_DATA					0x19	/* Bearer data - raw data  */
-#define TIZEN_SMSPARAMID_SCPT_DATA                               		0x1A	/* Service Category Program Data */
-#define TIZEN_SMSPARAMID_SCPT_RESURLT                        		0x1B	/* Service Category Program Result */
-
-/*=============================================================
-						TIZEN_SMSPARAMID_MESSAGE_ID Types
-==============================================================*/
-#define TIZEN_MESSAGETYPE_DELIVER						0x01
-#define TIZEN_MESSAGETYPE_SUBMIT						0x02
-#define TIZEN_MESSAGETYPE_CANCEL						0x03
-#define TIZEN_MESSAGETYPE_DELIVERY_ACK				0x04
-#define TIZEN_MESSAGETYPE_USER_ACK					0x05
-
-/*=============================================================
-						TIZEN_SMSPARAMID_LANGUAGE Types
-==============================================================*/
-#define TIZEN_LANGUAGE_UNKNOWN					0x00
-#define TIZEN_LANGUAGE_ENGLISH					0x01
-#define TIZEN_LANGUAGE_FRENCH						0x02
-#define TIZEN_LANGUAGE_SPANISH					0x03
-#define TIZEN_LANGUAGE_JAPANESE					0x04
-#define TIZEN_LANGUAGE_KOREAN						0x05
-#define TIZEN_LANGUAGE_CHINESE					0x06
-#define TIZEN_LANGUAGE_HEBREW					0x07
-#define TIZEN_LANGUAGE_KOREAN1					0x40	/* Used in Korean 3 PCS's and STI */
-#define TIZEN_LANGUAGE_KOREAN_SKT				0xFE	/* Used in only SKT */
-
-/*=============================================================
-							CDMA-SMS Size
-==============================================================*/
-#define MAX_CDMA_SMS_DATA_SIZE				512		/* Maximum number of bytes SMSP Record size (Y + 28), y : 0 ~ 128 */
-#define MAX_CDMA_SMS_ADDRESS_SIZE			32		/* MAX sms destination(or origination ) address /call back number */
 
 /*=============================================================
 							GSM-SMS Size
@@ -140,13 +80,23 @@
 #define AT_MEMORY_FULL 				1		/* Memory Full */
 
 /*=============================================================
+		SIM CRSM SW1 and Sw2 Error definitions */
+
+#define AT_SW1_SUCCESS 0x90
+#define AT_SW2_SUCCESS 0
+#define AT_SW1_LEN_RESP 0x9F
+
+/*=============================================================*/
+
+
+/*=========================================================
 							Security
 ==============================================================*/
 #define MAX_SEC_PIN_LEN							8
 #define MAX_SEC_PUK_LEN							8
 #define MAX_SEC_PHONE_LOCK_PW_LEN				39		/* Maximum Phone Locking Password Length */
 #define MAX_SEC_SIM_DATA_STRING					256		/* Maximum Length of the DATA or RESPONSE. Restricted SIM Access, Generic SIM Access Message */
-#define MAX_SEC_NUM_LOCK_TYPE						8		/* Maximum number of Lock Type used in Lock Information Message */                                                                                        
+#define MAX_SEC_NUM_LOCK_TYPE						8		/* Maximum number of Lock Type used in Lock Information Message */
 #define MAX_SEC_IMS_AUTH_LEN						512		/* Maximum Length of IMS Authentication Message */
 
 /*=============================================================
@@ -167,12 +117,20 @@
     *(unsigned short int*)&(x) = data ;      \
 }
 
+void print_glib_list_elem(gpointer data, gpointer user_data);
 
-static TReturn Send_SmsSubmitTpdu(CoreObject *o, UserRequest *ur);
+gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
-/********************************************************************************
-Send Callback: Invoked when request is out from queue
-********************************************************************************/
+/* gaurav.kalra: For test */
+void print_glib_list_elem(gpointer data, gpointer user_data)
+{
+	char *item = (char *)data;
+	dbg("item: [%s]", item);
+}
+
+/*=============================================================
+							Send Callback
+==============================================================*/
 static void on_confirmation_sms_message_send(TcorePending *p, gboolean result, void *user_data)
 {
 	dbg("Entered Function. Request message out from queue");
@@ -193,9 +151,28 @@ static void on_confirmation_sms_message_send(TcorePending *p, gboolean result, v
 	dbg("Exiting Function. Nothing to return");
 }
 
-/************************************************************/
-/*********************  Utility for SMS  *************************/
-/************************************************************/
+/*=============================================================
+							Utilities
+==============================================================*/
+static void util_sms_free_memory(void *sms_ptr)
+{
+	dbg("Entry");
+
+	if(NULL != sms_ptr)
+	{
+		dbg("Freeing memory location: [%p]", sms_ptr);
+		free(sms_ptr);
+		sms_ptr = NULL;
+	}
+	else
+	{
+		err("Invalid memory location. Nothing to do.");
+	}
+
+	dbg("Exit");
+}
+
+#if 0
 static void util_sms_get_length_of_sca(int* nScLength) {
 	if (*nScLength % 2) {
 		*nScLength = (*nScLength / 2) + 1;
@@ -204,811 +181,6 @@ static void util_sms_get_length_of_sca(int* nScLength) {
 	}
 
 	return;
-}
-
-static TReturn util_sms_encode_submit_message(const struct telephony_sms_CdmaMsgInfo *pMsgInfo, unsigned char *output, unsigned int *pos)
-{
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-
-	struct telephony_sms_Is637OutSubmit *pSubmit = NULL;
-	unsigned int index = 0;
-	int i = 0;
-
-	// 1. check null pointer
-	if(pMsgInfo == NULL || output == NULL || pos == NULL)
-		return TCORE_RETURN_EINVAL;
-
-	// 2. check manatory parameter in the TelSmsMsgInfo_t
-	if(!((pMsgInfo->ParamMask & SMS_PARAM_TELESERVICE_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_ADDRESS_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)))
-				return TCORE_RETURN_EINVAL;
-
-	pSubmit = (struct telephony_sms_Is637OutSubmit *)&(pMsgInfo->MsgData.outSubmit);
-
-	printf("TIZEN_SMSPARAMID_TELESERVICE_ID\n");
-	printf("teleservice msg=%x\n", pSubmit->TeleService);
-	// 3. teleservice
-	output[index++] = TIZEN_SMSPARAMID_TELESERVICE_ID;
-	output[index++] = 2;
-	memcpy(output+index, &(pSubmit->TeleService), sizeof(unsigned short));
-	index += sizeof(unsigned short);
-
-	printf("TIZEN_SMSPARAMID_ADDRESS\n");
-	// 4. Destination address
-	output[index++] = TIZEN_SMSPARAMID_ADDRESS;
-	output[index++] = pSubmit->DstAddr.szAddrLength + 5;
-	output[index++] = (unsigned char)pSubmit->DstAddr.Digit;
-	output[index++] = (unsigned char)pSubmit->DstAddr.NumberMode;
-	output[index++] = (unsigned char)pSubmit->DstAddr.NumberType;
-	output[index++] = (unsigned char)pSubmit->DstAddr.NumberPlan;
-	output[index++] = (unsigned char)pSubmit->DstAddr.szAddrLength;
-	if(pSubmit->DstAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-		api_err = TCORE_RETURN_EINVAL;
-	else{
-		memcpy(output+ index, pSubmit->DstAddr.szAddress, pSubmit->DstAddr.szAddrLength);
-		index += pSubmit->DstAddr.szAddrLength;
-	}
-
-	printf("TIZEN_SMSPARAMID_SUBADDRESS\n");
-	// 5. Subaddress (optional)
-	if((api_err == TCORE_RETURN_SUCCESS)  && (pMsgInfo->ParamMask & SMS_PARAM_SUBADDRESS_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_SUBADDRESS;
-		output[index++] = pSubmit->DstSubAddr.szAddrLength + 3;
-		output[index++] = pSubmit->DstSubAddr.SubType;
-		output[index++] = pSubmit->DstSubAddr.Odd;
-		output[index++] = pSubmit->DstSubAddr.szAddrLength;
-		if(pSubmit->DstSubAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pSubmit->DstSubAddr.szAddress, pSubmit->DstSubAddr.szAddrLength);
-			index += pSubmit->DstSubAddr.szAddrLength;
-		}
-	}
-
-	printf("TIZEN_SMSPARAMID_BEARER_REPLY\n");
-	// 6. Bearer Reply Option
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_BEARER_REPLY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_BEARER_REPLY;
-		output[index++] = 1;
-		if(pSubmit->ReplySeqNumber >= 64)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pSubmit->ReplySeqNumber;
-	}
-
-	printf("TIZEN_SMSPARAMID_MESSAGE_ID\n");
-	printf("Message ID msg=%x\n",pSubmit->MsgId);
-	// 7. Message Id
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_MESSAGE_ID;
-		output[index++] = 3;
-		output[index++] = TIZEN_MESSAGETYPE_SUBMIT;
-		memcpy(output+ index, &(pSubmit->MsgId), sizeof(unsigned short));
-		index += sizeof(unsigned short);
-	}
-
-	printf("TIZEN_SMSPARAMID_USER_DATA\n");
-	// 8. User Data
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_USER_DATA_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_USER_DATA;
-		output[index++] = 2 + pSubmit->MsgLength;
-		output[index++] = pSubmit->MsgEncoding;
-		output[index++] = pSubmit->MsgLength;
-		if(pSubmit->MsgLength > SMS_MAXLENGTH_SMS_MO_USER_DATA)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pSubmit->szData, pSubmit->MsgLength);
-			index += pSubmit->MsgLength;
-		}
-	}
-
-	// 9. Deferred DeliveryTime Absolute
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_DEFERRED_DELIVERY_ABS_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_DEFERRED_DELIVERY_ABS;
-		output[index++] = 6;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.year;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.month;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.day;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.hours;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.minutes;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeAbs.seconds;
-	}
-
-	// 10. Deferred DeliveryTime Relative
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_DEFERRED_DELIVERY_REL_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_DEFERRED_DELIVERY_REL;
-		output[index++] = 1;
-		output[index++] = (unsigned char)pSubmit->DeferredDelTimeRel;
-	}
-
-	// 11. Priority Indicator
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_PRIORITY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_PRIORITY;
-		output[index++] = 1;
-		if((int)pSubmit->Privacy < SMS_PRIVACY_NOT_RESTRICTED || pSubmit->Privacy > SMS_PRIVACY_SECRET)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pSubmit->Priority;
-	}
-
-	// 12. Privacy Indicator
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_PRIVACY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_PRIVACY;
-		output[index++] = 1;
-		if((int)pSubmit->Priority < SMS_PRIORITY_NORMAL || pSubmit->Priority > SMS_PRIORITY_EMERGENCY)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pSubmit->Privacy;
-	}
-
-	// 13. Reply Option
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_REPLY_OPTION_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_REPLY_OPTION;
-		output[index++] = 2;
-		if(pSubmit->bUserAckRequest == 0 &&  pSubmit->bDeliveryAckRequest == 0)
-			api_err = TCORE_RETURN_EINVAL;
-		else {
-			output[index++] = (unsigned char)(pSubmit->bUserAckRequest);
-			output[index++] = (unsigned char)(pSubmit->bDeliveryAckRequest);
-		}
-	}
-
-	// 14. Alert on Message Delivery
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_ALERT_ON_DELIVERY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_ALERT_ON_DELIVERY;
-		output[index++] = 1;
-		if((int)pSubmit->AlertPriority< SMS_ALERT_PRIORITY_DEFAULT || pSubmit->AlertPriority > SMS_ALERT_PRIORITY_HIGH)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pSubmit->AlertPriority;
-	}
-
-	// 15. Language Indicator
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_LANGUAGE_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_LANGUAGE;
-		output[index++] = 1;
-		if((int)pSubmit->MsgLang< TIZEN_LANGUAGE_UNKNOWN || pSubmit->MsgLang > TIZEN_LANGUAGE_KOREAN_SKT)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pSubmit->MsgLang;
-	}
-
-	printf("TIZEN_SMSPARAMID_CALLBACK\n");
-	// 16. Callback Number
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_CALLBACK_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_CALLBACK;
-		output[index++] = 4 + pSubmit->CallBackNumber.szAddrLength;
-		output[index++] = pSubmit->CallBackNumber.Digit;
-		output[index++] = pSubmit->CallBackNumber.NumberType;
-		output[index++] = pSubmit->CallBackNumber.NumberPlan;
-		output[index++] = (unsigned char)pSubmit->CallBackNumber.szAddrLength;
-		printf("index before =%d, value=%x", (int)index, output[index-1]);
-		if(pSubmit->CallBackNumber.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pSubmit->CallBackNumber.szAddress, pSubmit->CallBackNumber.szAddrLength);
-
-			printf("index after =%d, value=%x\n", (int)index, output[index]);
-
-			for (i=0;i<11;i++)
-				printf("szAddr[%d]=%x\n", i, output[index+i]);
-			index += pSubmit->CallBackNumber.szAddrLength;
-		}
-	}
-
-	printf("output index: (0)=%x, (-1)=%x, (+1)=%x\n", output[index], output[index-1],output[index+1]);
-
-	*pos = index;
-
-	return api_err;
-}
-
-static TReturn util_sms_encode_cancel_message(const struct telephony_sms_CdmaMsgInfo *pMsgInfo, unsigned char *output, unsigned int *pos)
-{
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-	struct telephony_sms_Is637OutCancel *pCancel = NULL;
-	unsigned int index = 0;
-
-	// 1. check null pointer
-	if(pMsgInfo == NULL || output == NULL || pos == NULL)
-		return TCORE_RETURN_EINVAL;
-
-	// 2. check manatory parameter in the TelSmsMsgInfo_t
-	if(!((pMsgInfo->ParamMask & SMS_PARAM_TELESERVICE_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_ADDRESS_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)))
-		return TCORE_RETURN_EINVAL;
-
-	pCancel = (struct telephony_sms_Is637OutCancel *)&(pMsgInfo->MsgData.outCancel);
-
-	// 3. teleservice
-	output[index++] = TIZEN_SMSPARAMID_TELESERVICE_ID;
-	output[index++] = 2;
-	memcpy(output+index, &pCancel->TeleService, sizeof(unsigned short));
-	index += sizeof(unsigned short);
-
-
-	// 4. Destination address
-	output[index++] = TIZEN_SMSPARAMID_ADDRESS;
-	output[index++] = pCancel->DstAddr.szAddrLength + 5;
-	output[index++] = (unsigned char)pCancel->DstAddr.Digit;
-	output[index++] = (unsigned char)pCancel->DstAddr.NumberMode;
-	output[index++] = (unsigned char)pCancel->DstAddr.NumberType;
-	output[index++] = (unsigned char)pCancel->DstAddr.NumberPlan;
-	output[index++] = (unsigned char)pCancel->DstAddr.szAddrLength;
-	if(pCancel->DstAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-		api_err = TCORE_RETURN_EINVAL;
-	else{
-		memcpy(output+ index, pCancel->DstAddr.szAddress, pCancel->DstAddr.szAddrLength);
-		index += pCancel->DstAddr.szAddrLength;
-	}
-
-	// 5. Subaddress (optional)
-	if((api_err == TCORE_RETURN_SUCCESS)  && (pMsgInfo->ParamMask & SMS_PARAM_SUBADDRESS_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_SUBADDRESS;
-		output[index++] = pCancel->DstSubAddr.szAddrLength + 3;
-		output[index++] = pCancel->DstSubAddr.SubType;
-		output[index++] = pCancel->DstSubAddr.Odd;
-		output[index++] = pCancel->DstSubAddr.szAddrLength;
-		if(pCancel->DstSubAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pCancel->DstSubAddr.szAddress, pCancel->DstSubAddr.szAddrLength);
-			index += pCancel->DstSubAddr.szAddrLength;
-		}
-	}
-
-	// 6. Bearer Reply Option
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_BEARER_REPLY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_BEARER_REPLY;
-		output[index++] = 1;
-		if(pCancel->ReplySeqNumber >= 64)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pCancel->ReplySeqNumber;
-	}
-
-	// 7. Message Id
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_MESSAGE_ID;
-		output[index++] = 3;
-		output[index++] = TIZEN_MESSAGETYPE_CANCEL;
-		memcpy(output+ index, &pCancel->MsgId, sizeof(unsigned short));
-		index += sizeof(unsigned short);
-	}
-
-	*pos = index;
-
-	return api_err;
-}
-
-static TReturn util_sms_encode_user_ack_message(const struct telephony_sms_CdmaMsgInfo *pMsgInfo, unsigned char *output, unsigned int *pos)
-{
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-	struct telephony_sms_Is637OutAck *pUserAck = NULL;
-	unsigned int index = 0;
-
-	// 1. check null pointer
-	if(pMsgInfo == NULL || output == NULL || pos == NULL)
-		return TCORE_RETURN_EINVAL;
-
-	if(!((pMsgInfo->ParamMask & SMS_PARAM_TELESERVICE_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_ADDRESS_MASK) &&
-		(pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)))
-				return TCORE_RETURN_EINVAL;
-
-	pUserAck = (struct telephony_sms_Is637OutAck *)&(pMsgInfo->MsgData.outAck);
-
-	// 3. teleservice
-	output[index++] = TIZEN_SMSPARAMID_TELESERVICE_ID;
-	output[index++] = 2;
-	memcpy(output+index, &pUserAck->TeleService, sizeof(unsigned short));
-	index += sizeof(unsigned short);
-
-
-	// 4. Destination address
-	output[index++] = TIZEN_SMSPARAMID_ADDRESS;
-	output[index++] = pUserAck->DstAddr.szAddrLength + 5;
-	output[index++] = (unsigned char)pUserAck->DstAddr.Digit;
-	output[index++] = (unsigned char)pUserAck->DstAddr.NumberMode;
-	output[index++] = (unsigned char)pUserAck->DstAddr.NumberType;
-	output[index++] = (unsigned char)pUserAck->DstAddr.NumberPlan;
-	output[index++] = (unsigned char)pUserAck->DstAddr.szAddrLength;
-	if(pUserAck->DstAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-		api_err = TCORE_RETURN_EINVAL;
-	else{
-		memcpy(output+ index, pUserAck->DstAddr.szAddress, pUserAck->DstAddr.szAddrLength);
-		index += pUserAck->DstAddr.szAddrLength;
-	}
-
-	// 5. Subaddress (optional)
-	if((api_err == TCORE_RETURN_SUCCESS)  && (pMsgInfo->ParamMask & SMS_PARAM_SUBADDRESS_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_SUBADDRESS;
-		output[index++] = pUserAck->DstSubAddr.szAddrLength + 3;
-		output[index++] = pUserAck->DstSubAddr.SubType;
-		output[index++] = pUserAck->DstSubAddr.Odd;
-		output[index++] = pUserAck->DstSubAddr.szAddrLength;
-		if(pUserAck->DstSubAddr.szAddrLength > SMS_MAXLENGTH_SMS_ADDRESS)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pUserAck->DstSubAddr.szAddress, pUserAck->DstSubAddr.szAddrLength);
-			index += pUserAck->DstSubAddr.szAddrLength;
-		}
-	}
-
-	// 6. Bearer Reply Option
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_BEARER_REPLY_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_BEARER_REPLY;
-		output[index++] = 1;
-		if(pUserAck->ReplySeqNumber >= 64)
-			api_err = TCORE_RETURN_EINVAL;
-		else output[index++] = pUserAck->ReplySeqNumber;
-	}
-
-	// 7. Message Id
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_MESSAGE_ID_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_MESSAGE_ID;
-		output[index++] = 3;
-		output[index++] = TIZEN_MESSAGETYPE_USER_ACK;
-		memcpy(output+ index, &pUserAck->MsgId, sizeof(unsigned short));
-		index += sizeof(unsigned short);
-	}
-
-	// 8. User Data
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_USER_DATA_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_USER_DATA;
-		output[index++] = 2 + pUserAck->MsgEncoding;
-		output[index++] = pUserAck->MsgLength;
-		if(pUserAck->MsgLength > SMS_MAXLENGTH_SMS_MO_USER_DATA)
-			api_err = TCORE_RETURN_EINVAL;
-		else{
-			memcpy(output+ index, pUserAck->szData, pUserAck->MsgLength);
-			index += pUserAck->MsgLength;
-		}
-	}
-
-	// 9. User Response Code
-	if((api_err == TCORE_RETURN_SUCCESS) && (pMsgInfo->ParamMask & SMS_PARAM_USER_RESPONSE_CODE_MASK)){
-		output[index++] = TIZEN_SMSPARAMID_USER_RESPONSE_CODE;
-		output[index++] = 1;
-		output[index++] = pUserAck->UserResponseCode;
-	}
-
-	*pos = index;
-
-	return api_err;
-}
-
-static int util_sms_decode_inDeliver_message(unsigned char *incoming, unsigned int length, struct telephony_sms_CdmaMsgInfo *pMsgInfo)
-{
-	int rtn = TRUE;
-	unsigned int	index = 0;
-	unsigned int	ParamLen = 0;
-	struct telephony_sms_Is637InDeliver *InDeliver = NULL;
-
-	dbg("Parsing Bearer Data below, Total length[0x%x]", (unsigned int)length);
-
-	if(incoming == NULL || pMsgInfo == NULL)
-		return FALSE;
-
-	InDeliver = &(pMsgInfo->MsgData.inDeliver);
-
-	do{
-		if(incoming[index] == TIZEN_SMSPARAMID_USER_DATA){
-			int i=0;
-			dbg("ParamID[TIZEN_SMSPARAMID_USER_DATA=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->MsgEncoding = incoming[++index];
-			InDeliver->MsgLength = incoming[++index];
-			memcpy(InDeliver->szData, incoming+ ++index, InDeliver->MsgLength);
-			index += InDeliver->MsgLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_USER_DATA_MASK;
-			dbg("MsgEnconding[0x%x], MsgLength[%d]",
-				InDeliver->MsgEncoding, InDeliver->MsgLength);
-
-			for(i = 0 ; i < InDeliver->MsgLength ; i++)
-			{
-				dbg("Index[%d] Char[0x%x]", i, InDeliver->szData[i]);
-			}
-			dbg("Final Index[0x%x]", (unsigned int)index);
-
-
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_VALIDITY_PERIOD_ABS){
-			dbg("ParamID[TIZEN_SMSPARAMID_VALIDITY_PERIOD_ABS=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->ValidityPeriodAbs.year = incoming[++index];
-			InDeliver->ValidityPeriodAbs.month = incoming[++index];
-			InDeliver->ValidityPeriodAbs.day = incoming[++index];
-			InDeliver->ValidityPeriodAbs.hours = incoming[++index];
-			InDeliver->ValidityPeriodAbs.minutes = incoming[++index];
-			InDeliver->ValidityPeriodAbs.seconds = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_VALIDITY_PERIOD_ABS_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_VALIDITY_PERIOD_REL){
-			dbg("ParamID[TIZEN_SMSPARAMID_VALIDITY_PERIOD_REL=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->ValidityPeriodRel = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_VALIDITY_PERIOD_REL_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_MC_TIME_STAMP){
-			dbg("ParamID[TIZEN_SMSPARAMID_MC_TIME_STAMP=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->MessageCenterTimeStamp.year = incoming[++index];
-			InDeliver->MessageCenterTimeStamp.month = incoming[++index];
-			InDeliver->MessageCenterTimeStamp.day = incoming[++index];
-			InDeliver->MessageCenterTimeStamp.hours = incoming[++index];
-			InDeliver->MessageCenterTimeStamp.minutes = incoming[++index];
-			InDeliver->MessageCenterTimeStamp.seconds = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_MC_TIME_STAMP_MASK;
-		}
-
-		else if(incoming[index] == TIZEN_SMSPARAMID_PRIORITY){
-			dbg("ParamID[TIZEN_SMSPARAMID_PRIORITY=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->Priority = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_PRIORITY_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_PRIVACY){
-			dbg("ParamID[TIZEN_SMSPARAMID_PRIVACY=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->Privacy = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_PRIVACY_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_NUMBER_OF_MESSAGE){
-			dbg("ParamID[TIZEN_SMSPARAMID_NUMBER_OF_MESSAGE=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->NumMsg = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_NUMBER_OF_MESSAGE_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_ALERT_ON_DELIVERY){
-			dbg("ParamID[TIZEN_SMSPARAMID_ALERT_ON_DELIVERY=0x%x], ParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->AlertPriority = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_ALERT_ON_DELIVERY_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_LANGUAGE){
-			dbg("ParamID[TIZEN_SMSPARAMID_LANGUAGE=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->MsgLang = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_LANGUAGE_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_REPLY_OPTION){
-			dbg("ParamID[TIZEN_SMSPARAMID_REPLY_OPTION=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->bUserAckRequest = (int)incoming[++index];
-			InDeliver->bDeliveryAckRequest = (int)incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_REPLY_OPTION_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_CALLBACK){
-			dbg("ParamID[TIZEN_SMSPARAMID_CALLBACK=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->CallBackNumer.Digit = incoming[++index];
-			InDeliver->CallBackNumer.NumberType= incoming[++index];
-			InDeliver->CallBackNumer.NumberPlan = incoming[++index];
-			InDeliver->CallBackNumer.szAddrLength = incoming[++index];
-			memcpy(InDeliver->CallBackNumer.szAddress, incoming+ ++index, InDeliver->CallBackNumer.szAddrLength);
-			index+= InDeliver->CallBackNumer.szAddrLength;
-			pMsgInfo->ParamMask |= TIZEN_SMSPARAMID_CALLBACK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_DISPLAY_MODE){
-			dbg("ParamID[TIZEN_SMSPARAMID_DISPLAY_MODE=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			InDeliver->Display= incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_DISPLAY_MODE_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_MEMORY_INDEX){
-			dbg("ParamID[TIZEN_SMSPARAMID_MEMORY_INDEX=0x%x]\tindex + 4", incoming[index]);
-			index += 4;
-		}
-
-		else
-		{
-			dbg("Undefined SMS Parameter ID [0x%x] in the Bearer Data", incoming[index]);
-			rtn = FALSE;
-			break;
-		}
-	}while(!(index == length));
-
-	return rtn;
-}
-
-static int util_sms_decode_inAck_message(unsigned char *incoming, unsigned int length, struct telephony_sms_CdmaMsgInfo *pMsgInfo)
-{
-	int rtn = TRUE;
-	struct telephony_sms_Is637InAck *InAck = NULL;
-	unsigned int	index = 0;
-	unsigned int	ParamLen = 0;
-
-	if(incoming == NULL || pMsgInfo == NULL)
-		return FALSE;
-
-	InAck = &(pMsgInfo->MsgData.inAck);
-	do{
-		if(incoming[index] == TIZEN_SMSPARAMID_USER_DATA){
-			ParamLen = incoming[++index];	 //parameter length
-			InAck->MsgEncoding = incoming[++index];
-			InAck->MsgLength = incoming[++index];
-			memcpy(InAck->szData, incoming+ ++index, InAck->MsgLength);
-			index += InAck->MsgLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_USER_DATA_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_USER_RESPONSE_CODE){
-			ParamLen = incoming[++index];	 //parameter length
-			InAck->MsgEncoding = incoming[++index];
-			InAck->UserResponseCode = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_USER_RESPONSE_CODE_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_MC_TIME_STAMP){
-			ParamLen = incoming[++index];	 //parameter length
-			InAck->MessageCenterTimeStamp.year = incoming[++index];
-			InAck->MessageCenterTimeStamp.month = incoming[++index];
-			InAck->MessageCenterTimeStamp.day = incoming[++index];
-			InAck->MessageCenterTimeStamp.hours = incoming[++index];
-			InAck->MessageCenterTimeStamp.minutes = incoming[++index];
-			InAck->MessageCenterTimeStamp.seconds = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_MC_TIME_STAMP_MASK;
-		}
-		else{
-			rtn = FALSE;
-			break;
-		}
-	}while(!(index == length));
-
-	return rtn;
-}
-
-static int util_sms_decode_inDeliverAck_message(unsigned char *incoming, unsigned int length, struct telephony_sms_CdmaMsgInfo *pMsgInfo)
-{
-	int rtn = TRUE;
-	struct telephony_sms_Is637InDeliverAck *InDelAck = NULL;
-	unsigned int	index = 0;
-	unsigned int	ParamLen = 0;
-
-	if(incoming == NULL || pMsgInfo == NULL)
-		return FALSE;
-
-	InDelAck = &(pMsgInfo->MsgData.inDeliverAck);
-	do{
-		if(incoming[index] == TIZEN_SMSPARAMID_USER_DATA){
-			ParamLen = incoming[++index];	 //parameter length
-			InDelAck->MsgEncoding = incoming[++index];
-			InDelAck->MsgLength = incoming[++index];
-			memcpy(InDelAck->szData, incoming+ ++index, InDelAck->MsgLength);
-			index += InDelAck->MsgLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_USER_DATA_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_MC_TIME_STAMP){
-			ParamLen = incoming[++index];	 //parameter length
-			InDelAck->MessageCenterTimeStamp.year = incoming[++index];
-			InDelAck->MessageCenterTimeStamp.month = incoming[++index];
-			InDelAck->MessageCenterTimeStamp.day = incoming[++index];
-			InDelAck->MessageCenterTimeStamp.hours = incoming[++index];
-			InDelAck->MessageCenterTimeStamp.minutes = incoming[++index];
-			InDelAck->MessageCenterTimeStamp.seconds = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_MC_TIME_STAMP_MASK;
-		}
-		else{
-			rtn = FALSE;
-			break;
-		}
-	}while(!(index == length));
-
-	return rtn;
-}
-
-static int util_sms_decode_ptp_message(unsigned char *incoming, unsigned int length, struct telephony_sms_CdmaMsgInfo *pMsgInfo)
-{
-	int rtn = TRUE;
-	unsigned int	index = 0;
-	unsigned int	ParamLen = 0;
-	struct telephony_sms_Is637InDeliver *pCommon = NULL;
-	enum telephony_sms_CdmaMsgType type;
-
-	if(incoming == NULL || pMsgInfo == NULL)
-		return FALSE;
-
-	pCommon = &(pMsgInfo->MsgData.inDeliver);
-
-	do{
-		if(incoming[index] == TIZEN_SMSPARAMID_TELESERVICE_ID)
-		{
-			dbg("ParamID[TIZEN_SMSPARAMID_TELESERVICE_ID=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			memcpy(&pCommon->TeleService, incoming+ ++index, ParamLen);
-			index += ParamLen;
-			pMsgInfo->ParamMask |= SMS_PARAM_TELESERVICE_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_ADDRESS)
-		{
-			dbg("ParamID[TIZEN_SMSPARAMID_ADDRESS=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			pCommon->OrigAddr.Digit = incoming[++index];
-			pCommon->OrigAddr.NumberMode = incoming[++index];
-			pCommon->OrigAddr.NumberType = incoming[++index];
-			pCommon->OrigAddr.NumberPlan = incoming[++index];
-			pCommon->OrigAddr.szAddrLength = incoming[++index];
-			memcpy(pCommon->OrigAddr.szAddress, incoming+ ++index, pCommon->OrigAddr.szAddrLength);
-			index += pCommon->OrigAddr.szAddrLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_ADDRESS_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_SUBADDRESS)
-		{
-			dbg("ParamID[TIZEN_SMSPARAMID_SUBADDRESS=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			pCommon->OrigSubAddr.SubType =  incoming[++index];
-			pCommon->OrigSubAddr.Odd =  incoming[++index];
-			pCommon->OrigSubAddr.szAddrLength = incoming[++index];
-			memcpy(pCommon->OrigSubAddr.szAddress, incoming+ ++index, pCommon->OrigSubAddr.szAddrLength);
-			index += pCommon->OrigSubAddr.szAddrLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_SUBADDRESS_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_BEARER_REPLY)
-		{
-			dbg("ParamID[TIZEN_SMSPARAMID_BEARER_REPLY=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			pCommon->bBearerReplySeqRequest = (int)TRUE;
-			pCommon->ReplySeqNumber = incoming[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_BEARER_REPLY_MASK;
-		}
-		else if(incoming[index] == TIZEN_SMSPARAMID_MESSAGE_ID)
-		{
-			dbg("ParamID[TIZEN_SMSPARAMID_MESSAGE_ID=0x%x]\tParamLen[%d]", incoming[index], incoming[index+1]);
-			ParamLen = incoming[++index];	 //parameter length
-			type = incoming[++index];
-			pMsgInfo->MsgType = type;
-			memcpy(&pCommon->MsgId, incoming+ ++index, sizeof(unsigned short));
-			index += sizeof(unsigned short);
-			pMsgInfo->ParamMask |= SMS_PARAM_MESSAGE_ID_MASK;
-			switch(type)
-			{
-				case SMS_MESSAGETYPE_DELIVER:
-					dbg("SubParamID[SMS_MESSAGETYPE_DELIVER=0x%x]", type);
-					dbg("Current Index[0x%x], Parsing Length[0x%x], ParamLen[0x%x]", (unsigned int)index, (unsigned int)length, (unsigned int)ParamLen);
-
-					rtn = util_sms_decode_inDeliver_message(incoming+index, length - index, pMsgInfo);
-
-					break;
-				case SMS_MESSAGETYPE_DELIVERY_ACK:
-					dbg("SubParamID[SMS_MESSAGETYPE_DELIVERY_ACK=0x%x]", type);
-
-					rtn = util_sms_decode_inAck_message(incoming+index, length - index, pMsgInfo);
-
-					break;
-				case SMS_MESSAGETYPE_USER_ACK:
-					dbg("SubParamID[SMS_MESSAGETYPE_USER_ACK=0x%x]", type);
-
-					rtn = util_sms_decode_inDeliverAck_message(incoming+index, length - index, pMsgInfo);
-
-					break;
-				default:
-					dbg("Unknown Incoming Message Type = %d", type);
-					rtn = FALSE;
-					break;
-			}
-			index = length;
-		}
-		else
-		{
-			dbg("ParamID[Undefined]");
-			//rtn = FALSE;
-			break;
-		}
-
-	}while(!(index == length));
-
-	return rtn;
-}
-
-static int util_sms_decode_broadcast_message(unsigned char *bcmsg, unsigned int length, struct telephony_sms_CdmaMsgInfo *pMsgInfo)
-{
-	int rtn = TRUE;
-	unsigned int	index = 0;
-	unsigned int	ParamLen = 0;
-	struct telephony_sms_Is637InBroadCast *pOutput = NULL;
-
-	if(bcmsg == NULL || pMsgInfo == NULL)
-		return FALSE;
-
-	pOutput = &(pMsgInfo->MsgData.inBc);
-
-	do{
-		if(bcmsg[index] == TIZEN_SMSPARAMID_SERVICE_CATEGORY){
-			ParamLen = bcmsg[++index];	 //parameter length
-			memcpy(&pOutput->ServiceCategory, bcmsg+ ++index, ParamLen);
-			index += ParamLen;
-			pMsgInfo->ParamMask |= SMS_PARAM_SERVICE_CATEGORY_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_BEARER_REPLY){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->bBearerReplySeqRequest = (int)TRUE;
-			pOutput->ReplySeqNumber = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_BEARER_REPLY_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_MESSAGE_ID){
-			ParamLen = bcmsg[++index];	 //parameter length
-			memcpy(&pOutput->MsgId, bcmsg+ ++index, ParamLen);
-			index += ParamLen;
-			pMsgInfo->ParamMask |= SMS_PARAM_MESSAGE_ID_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_VALIDITY_PERIOD_ABS){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->ValidityPeriodAbs.year = bcmsg[++index];
-			pOutput->ValidityPeriodAbs.month = bcmsg[++index];
-			pOutput->ValidityPeriodAbs.day = bcmsg[++index];
-			pOutput->ValidityPeriodAbs.hours = bcmsg[++index];
-			pOutput->ValidityPeriodAbs.minutes = bcmsg[++index];
-			pOutput->ValidityPeriodAbs.seconds = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_VALIDITY_PERIOD_ABS_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_VALIDITY_PERIOD_REL){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->ValidityPeriodRel = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_VALIDITY_PERIOD_REL_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_MC_TIME_STAMP){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->MessageCenterTimeStamp.year = bcmsg[++index];
-			pOutput->MessageCenterTimeStamp.month = bcmsg[++index];
-			pOutput->MessageCenterTimeStamp.day = bcmsg[++index];
-			pOutput->MessageCenterTimeStamp.hours = bcmsg[++index];
-			pOutput->MessageCenterTimeStamp.minutes = bcmsg[++index];
-			pOutput->MessageCenterTimeStamp.seconds = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_MC_TIME_STAMP_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_PRIORITY){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->Priority= bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_PRIORITY_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_ALERT_ON_DELIVERY){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->AlertPriority = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_ALERT_ON_DELIVERY_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_LANGUAGE){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->MsgLang = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_LANGUAGE_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_DISPLAY_MODE){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->Display = bcmsg[++index];
-			index++;
-			pMsgInfo->ParamMask |= SMS_PARAM_DISPLAY_MODE_MASK;
-		}
-		else if(bcmsg[index] == TIZEN_SMSPARAMID_USER_DATA){
-			ParamLen = bcmsg[++index];	 //parameter length
-			pOutput->MsgEncoding = bcmsg[++index];
-			pOutput->MsgLength = bcmsg[++index];
-			memcpy(pOutput->szData, bcmsg+ ++index, pOutput->MsgLength);
-			index += pOutput->MsgLength;
-			pMsgInfo->ParamMask |= SMS_PARAM_USER_DATA_MASK;
-		}
-		else{
-			rtn = FALSE;
-			break;
-		}
-
-	}while(!(index == length));
-
-	return rtn;
 }
 
 static int util_sms_decode_smsParameters(unsigned char *incoming, unsigned int length, struct telephony_sms_Params *params)
@@ -1202,11 +374,11 @@ static int util_sms_decode_smsParameters(unsigned char *incoming, unsigned int l
 
 	return TRUE;
 }
+#endif
 
-/************************************************************/
-/************************  Events Cb  *************************/
-/************************************************************/
-
+/*=============================================================
+							Notifications
+==============================================================*/
 static gboolean on_event_sms_ready_status(CoreObject *o, const void *event_info, void *user_data)
 {
 	struct tnoti_sms_ready_status readyStatusInfo = {0,};
@@ -1215,7 +387,7 @@ static gboolean on_event_sms_ready_status(CoreObject *o, const void *event_info,
 	GSList* lines = NULL;
 	char *pResp = NULL;
 	//CoreObject *o = NULL;
-	
+
 	int rtn = -1 , status = 0;
 
 	dbg(" Func Entrance");
@@ -1243,7 +415,7 @@ static gboolean on_event_sms_ready_status(CoreObject *o, const void *event_info,
 	else
 	{
 		dbg("Response NOK");
-	}		
+	}
 
 	if (status == AT_SMS_DEVICE_READY)
 	{
@@ -1264,20 +436,10 @@ OUT:
 	return TRUE;
 }
 
-
-
 static gboolean on_event_sms_incom_msg(CoreObject *o, const void *event_info, void *user_data)
 {
-	struct property_sms_info *property;
-	
-
-	int rtn = -1, ScLength = 0, i = 0 , alpha = 0;
-	unsigned char format = 0;
-	unsigned char LastSemiOctect;
-
-	char * line1 = NULL, *line2 = NULL, *pResp = NULL;
+	int rtn = -1;
 	GSList *tokens = NULL;
-
 	GSList *lines = NULL;
 	char *line = NULL;
 	int length = 0;
@@ -1294,11 +456,11 @@ static gboolean on_event_sms_incom_msg(CoreObject *o, const void *event_info, vo
 		err("Invalid number of lines for +CMT. Must be 2");
 		return FALSE;
 	}
-	
+
 	line = (char *)g_slist_nth_data(lines, 0); /* Fetch Line 1 */
 
 	dbg("Line 1: [%s]", line);
-	
+
 	if (!line)
 	{
 		err("Line 1 is invalid");
@@ -1318,7 +480,7 @@ static gboolean on_event_sms_incom_msg(CoreObject *o, const void *event_info, vo
 	line = (char *)g_slist_nth_data(lines, 1); /* Fetch Line 2 */
 
 	dbg("Line 2: [%s]", line);
-	
+
 	if (!line)
 	{
 		err("Line 2 is invalid");
@@ -1342,35 +504,23 @@ static gboolean on_event_sms_incom_msg(CoreObject *o, const void *event_info, vo
 	util_hex_dump("      ", length, gsmMsgInfo.msgInfo.tpduData);
 
 	rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SMS_INCOM_MSG, sizeof(struct tnoti_sms_umts_msg), &gsmMsgInfo);
-	
+
 	return TRUE;
-}
-
-
-
-static void on_event_sms_send_ack(TcorePending *p, int data_len, const void *data, void *user_data)
-{
-    GSList *lines = NULL;
-	
-    lines = (GSList*)data;
-    return TRUE;
 }
 
 static gboolean on_event_sms_memory_status(CoreObject *o, const void *event_info, void *user_data)
 {
 	struct tnoti_sms_memory_status memStatusInfo = {0,};
 
-	int rtn = -1 ,memoryStatus = 0;
-	const TcoreATResponse *atResp = event_info;
+	int rtn = -1 ,memoryStatus = -1;
 	GSList *tokens=NULL;
 	GSList *lines=NULL;
-	char *line = NULL , pResp = NULL;
+	char *line = NULL , *pResp = NULL;
 
 	lines = (GSList *)event_info;
         if (1 != g_slist_length(lines))
         {
                 dbg("unsolicited msg but multiple line");
-		return;
         }
 
 	line = (char*)(lines->data);
@@ -1378,44 +528,34 @@ static gboolean on_event_sms_memory_status(CoreObject *o, const void *event_info
 
 	dbg(" Func Entrance");
 
-	if (atResp->success)
+	if (line)
 	{
 		dbg("Response OK");
-		line = (const char*)lines->data;
 		tokens = tcore_at_tok_new(line);
 		pResp = g_slist_nth_data(tokens, 0);
 
 		if(pResp)
 		{
-			memoryStatus = atoi(pResp);	
+			memoryStatus = atoi(pResp);
+			dbg("memoryStatus is %d",memoryStatus);
 		}
-		
-	}
-	switch(memoryStatus)
+
+	}else
 	{
-		case AT_MEMORY_AVAILABLE:
-			{
-				memStatusInfo.status = SMS_PHONE_MEMORY_STATUS_AVAILABLE;
-				break;
-			}
-			
-		case AT_MEMORY_FULL:
-			{
-				memStatusInfo.status = SMS_PHONE_MEMORY_STATUS_FULL;
-				break;
-			}
-		default:
-			{
-				memStatusInfo.status = -1;
-				break;
-			}
+		dbg("Response NOK");
+
 	}
+
+	if (memoryStatus == 0) //SIM Full condition
+	{
+		memStatusInfo.status = SMS_PHONE_MEMORY_STATUS_FULL;
+	}
+
 
 	dbg("memory status - %d",memStatusInfo.status);
 
 	rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SMS_MEMORY_STATUS, sizeof(struct tnoti_sms_memory_status), &memStatusInfo);
 	dbg(" Return value [%d]",rtn);
-
 	return TRUE;
 
 }
@@ -1427,7 +567,7 @@ static gboolean on_event_sms_cb_incom_msg(CoreObject *o, const void *event_info,
 	struct tnoti_sms_cellBroadcast_msg cbMsgInfo;
 
 	int rtn = -1 , length = 0;
-	char * line = NULL, *pdu = NULL, pResp = NULL;
+	char * line = NULL, *pdu = NULL, *pResp = NULL;
 	GSList *tokens = NULL;
 	GSList *lines = NULL;
 
@@ -1437,11 +577,6 @@ static gboolean on_event_sms_cb_incom_msg(CoreObject *o, const void *event_info,
 
 	memset(&cbMsgInfo, 0, sizeof(struct tnoti_sms_cellBroadcast_msg));
 
-	if (1 != g_slist_length(lines))
-	{
-		dbg("unsolicited msg but multiple lines");
-		goto OUT;
-	}
 	line = (char *)(lines->data);
 
 	if (line != NULL)
@@ -1484,26 +619,24 @@ static gboolean on_event_sms_cb_incom_msg(CoreObject *o, const void *event_info,
 	{
 			dbg("Response NOK");
 	}
-	
-	
+
+
 	dbg(" Return value [%d]",rtn);
 
-OUT:
-
-	return;
-
+	return TRUE;
 }
 
+/*=============================================================
+							Responses
+==============================================================*/
 static void on_response_sms_delete_msg_cnf(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	struct tresp_sms_delete_msg delMsgInfo = {0,};
 	UserRequest *ur = NULL;
 	const TcoreATResponse *atResp = data;
-	GSList *tokens=NULL;
-	char *line = NULL , pResp = NULL;
 
-	int rtn = -1 , RequestId = -1;
-	int index = (int *)user_data;
+	int rtn = -1;
+	int *index = (int *)user_data;
 
 	dbg(" Func Entrance");
 
@@ -1511,14 +644,14 @@ static void on_response_sms_delete_msg_cnf(TcorePending *p, int data_len, const 
 	if (atResp->success)
 	{
 		dbg("Response OK");
-		delMsgInfo.index = index;
+		delMsgInfo.index = *index;
 		delMsgInfo.result = SMS_SENDSMS_SUCCESS;
-		
+
 	}
 	else
 	{
-		dbg("Response NOK");	
-		delMsgInfo.index = index;
+		dbg("Response NOK");
+		delMsgInfo.index = *index;
 		delMsgInfo.result = SMS_DEVICE_FAILURE;
 
 	}
@@ -1536,7 +669,7 @@ static void on_response_sms_save_msg_cnf(TcorePending *p, int data_len, const vo
 	GSList *tokens = NULL;
 	char *line = NULL;
 	char *pResp = NULL;
-	int rtn = -1, index = -1;
+	int rtn = -1;
 
 	ur = tcore_pending_ref_user_request(p);
 	if (atResp->success)
@@ -1544,7 +677,7 @@ static void on_response_sms_save_msg_cnf(TcorePending *p, int data_len, const vo
 		dbg("Response OK");
 		if(atResp->lines)
 		{
-			line = (const char *)atResp->lines->data;
+			line = (char *)atResp->lines->data;
 			tokens = tcore_at_tok_new(line);
 			pResp = g_slist_nth_data(tokens, 0);
 			if (pResp)
@@ -1555,16 +688,16 @@ static void on_response_sms_save_msg_cnf(TcorePending *p, int data_len, const vo
 		 	}
 			else
 			{
-				dbg("No Tokens");	
+				dbg("No Tokens");
 				saveMsgInfo.index = -1;
 				saveMsgInfo.result = SMS_DEVICE_FAILURE;
 			}
-			 
+
 		}
 	}
 	else
 	{
-		dbg("Response NOK");	
+		dbg("Response NOK");
 		saveMsgInfo.index = -1;
 		saveMsgInfo.result = SMS_DEVICE_FAILURE;
 	}
@@ -1574,6 +707,7 @@ static void on_response_sms_save_msg_cnf(TcorePending *p, int data_len, const vo
 	return;
 }
 
+#if 0
 static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 
@@ -1581,7 +715,7 @@ static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const
 	UserRequest *ur = NULL;
 	const TcoreATResponse *atResp = data;
 	GSList *tokens=NULL;
-	char *line = NULL , pResp = NULL;
+	char *line = NULL , *pResp = NULL;
 	int rtn = -1;
 
 	dbg(" Func Entrance");
@@ -1590,9 +724,9 @@ static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const
 	if (atResp->success)
 	{
 		dbg("Response OK");
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
-			line = (const char*)atResp->lines->data;
+			line = (char*)atResp->lines->data;
 			tokens = tcore_at_tok_new(line);
 			 pResp = g_slist_nth_data(tokens, 0);
 			 if (pResp)
@@ -1601,7 +735,7 @@ static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const
 		 	}
 			else
 			{
-				dbg("No tokens");	
+				dbg("No tokens");
 				deliverReportInfo.result = SMS_DEVICE_FAILURE;
 			}
 		}else
@@ -1622,151 +756,113 @@ static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const
 	return;
 
 }
+#endif
 
-
-
-/*************************************************************/
-/***********************  Responses Cb  ************************/
-/************************************************************/
-static void on_response_send_umts_msg(TcorePending *p, int data_len, const void *data, void *user_data)
+static void on_response_send_umts_msg(TcorePending *plugin, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
-	UserRequest *ur;
-	struct tresp_sms_send_umts_msg respSendMsg;
-
-	GSList *tokens=NULL;
-	int error;
-	char *line = NULL;
-	int ret;
-	int err;
-
-	ur = tcore_pending_ref_user_request(p);
-
-	if (resp->success)
-		{
-			dbg("RESPONSE OK");
-			ret = Send_SmsSubmitTpdu(tcore_pending_ref_core_object(p), ur);
-
-			if(ret != (int)TCORE_RETURN_SUCCESS)
-			{
-				respSendMsg.result = SMS_INVALID_PARAMETER;
-				tcore_user_request_send_response(ur, TRESP_SMS_SEND_UMTS_MSG, sizeof(struct tresp_sms_send_umts_msg), &respSendMsg);
-			}	
-			
-		}
-	else
-		{
-			dbg("RESPONSE N OK");	
-			memset(&respSendMsg, 0, sizeof(struct tresp_sms_send_umts_msg));
-	
-			//failure case - consider this later
-			line = resp->final_response;
-	
-			respSendMsg.result = SMS_DEVICE_FAILURE;
-
-			tcore_user_request_send_response(ur, TRESP_SMS_SEND_UMTS_MSG, sizeof(struct tresp_sms_send_umts_msg), &respSendMsg);
-			
-		}
-}
-
-static void on_response_send_smsSubmitTpdu(TcorePending *p, int data_len, const void *data, void *user_data)
-{
-	dbg("Entered");
-
-	UserRequest *ur = NULL;
-	ur = tcore_pending_ref_user_request(p);
 	struct tresp_sms_send_umts_msg respUmtsInfo;
-	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+
 	char *line = NULL , *pResp = NULL;
-	int ret =0, result = 0;
-	int mr = 0;
-	int error = 0;
-	GSList* tokens = NULL;
+	int msg_ref = 0;
+	GSList *tokens = NULL;
 
-	//currently IMC provides only index and msgref
-	 memset(&respUmtsInfo, 0 , sizeof(struct tresp_sms_send_umts_msg));
-	
-	if(resp->success > 0)
+	dbg("Entry");
+
+	ur = tcore_pending_ref_user_request(plugin);
+
+	if(NULL == ur)
 	{
-		dbg("Response OK");
-		if(resp->lines) {
-			line = (const char *)resp->lines->data;
-			dbg("line is %s",line);
-			tokens = tcore_at_tok_new(line);
-			pResp = g_slist_nth_data(tokens, 0);
-			if (pResp != NULL)	
-			{
-				mr = atoi(pResp);
-				result = SMS_SENDSMS_SUCCESS;
-			}else
-			{
-				dbg("no MsgRef recieved");
-				result = SMS_DEVICE_FAILURE;
-			}
-		}else
-		{
-			dbg("No lines");	
-			result = SMS_DEVICE_FAILURE;
-		}
-	}else
-	{
-		//failure case - consider this later
-		dbg("Sent Status Response NOK");
-		result = SMS_DEVICE_FAILURE;
-	}
-		
-	ur = tcore_pending_ref_user_request(p);
-	if(ur)
-	{
+		err("No user request");
 
-
-		dbg(" MR : %d", mr);
-		respUmtsInfo.result = result;
-		tcore_user_request_send_response(ur, TRESP_SMS_SEND_UMTS_MSG, sizeof(struct tresp_sms_send_umts_msg), &respUmtsInfo);
-
-	}
-	else
-	{
-		dbg("no user_request");
-	}
-	
-
-	dbg("Exit");
-	
-}
-
-static void on_response_read_msg(TcorePending *p, int data_len, const void *data, void *user_data)
-{
-	UserRequest *ur;
-	struct tresp_sms_read_msg respReadMsg;
-	const TcoreATResponse *atResp = data;
-
-	GSList *tokens=NULL;
-	char * line = NULL, *pResp = NULL , *pdu = NULL;
-	int ScLength = 0;
-	unsigned char LastSemiOctect;
-	int rtn =0 , i =0;
-	int stat =0 , alpha =0 , length =0;
-	int index = (int *)user_data;
-
-	ur = tcore_pending_ref_user_request(p);
-	if (!ur)
-	{
-		dbg("no user_request");
+		dbg("Exit");
 		return;
 	}
 
-	if (atResp->success)
+	if(resp->success > 0)
+	{
+		dbg("Response OK");
+		if(resp->lines)
+		{
+			line = (char *)resp->lines->data;
+			dbg("line is %s",line);
+
+			tokens = tcore_at_tok_new(line);
+
+			pResp = g_slist_nth_data(tokens, 0);
+			if (pResp != NULL)
+			{
+				msg_ref = atoi(pResp);
+				dbg("Message Reference: %d", msg_ref);
+
+				respUmtsInfo.result = SMS_SENDSMS_SUCCESS;
+			}
+			else
+			{
+				dbg("No Message Reference received");
+				respUmtsInfo.result = SMS_DEVICE_FAILURE;
+			}
+		}
+		else
+		{
+			dbg("No lines");
+			respUmtsInfo.result = SMS_DEVICE_FAILURE;
+		}
+	}
+	else
+	{
+		dbg("Response NOK");
+		respUmtsInfo.result = SMS_DEVICE_FAILURE;
+	}
+
+	tcore_user_request_send_response(ur, TRESP_SMS_SEND_UMTS_MSG, sizeof(struct tresp_sms_send_umts_msg), &respUmtsInfo);
+
+	dbg("Exit");
+	return;
+}
+
+static void on_response_read_msg(TcorePending *plugin, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *atResp = data;
+	struct tresp_sms_read_msg respReadMsg;
+	UserRequest *ur = NULL;
+	GSList *tokens=NULL, *lines = NULL;
+	char * line = NULL, *pResp = NULL , *pdu = NULL, *temp_pdu = NULL;
+	int ScLength = 0;
+	int rtn = 0 , i = 0;
+	int stat = 0 , alpha = 0 , length = 0;
+	int index = (int)(uintptr_t)user_data;
+
+	dbg("Entry");
+	dbg("index: [%d]", index);
+	dbg("lines: [%p]", atResp->lines);
+
+	g_slist_foreach(atResp->lines, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
+
+	ur = tcore_pending_ref_user_request(plugin);
+	if (NULL == ur)
+	{
+		err("No user request");
+
+		dbg("Exit");
+		return;
+	}
+
+	dbg("success: [%02x]", atResp->success);
+
+	if (atResp->success > 0)
 	{
 		if (atResp->lines)
 		{
-			line = (char*)atResp->lines->data;
+			line = (char *)atResp->lines->data;
 
 			dbg("response Ok line is %s",line);
 
 			tokens = tcore_at_tok_new(line);
-			dbg(" length of tokens is %d\n", g_slist_length(atResp->lines));
-		
+			g_slist_foreach(tokens, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
+			dbg(" length of tokens is %d\n", g_slist_length(tokens));
+
 			pResp = g_slist_nth_data(tokens, 0);
 			if (pResp != NULL)
 			{
@@ -1778,31 +874,33 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 					case AT_REC_UNREAD:
 						respReadMsg.dataInfo.msgStatus = SMS_STATUS_UNREAD;
 						break;
+
 					case AT_REC_READ:
 						respReadMsg.dataInfo.msgStatus = SMS_STATUS_READ;
 						break;
+
 					case AT_STO_UNSENT:
 						respReadMsg.dataInfo.msgStatus = SMS_STATUS_UNSENT;
 						break;
+
 					case AT_STO_SENT:
 						respReadMsg.dataInfo.msgStatus = SMS_STATUS_SENT;
 						break;
-					case AT_ALL://TODO Need to verify the mapping
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_RESERVED;
-						break;
-					default://TODO Need to verify the mapping
+
+					case AT_ALL: //Fall Through
+					default: //Fall Through
 						respReadMsg.dataInfo.msgStatus = SMS_STATUS_RESERVED;
 						break;
 				}
 			}
-		
+
 			pResp = g_slist_nth_data(tokens, 1);
 			if (pResp != NULL)
 			{
 				alpha = atoi(pResp);
 				dbg("alpha is %d",alpha);
 			}
-		
+
 			pResp = g_slist_nth_data(tokens, 2);
 			if (pResp != NULL)
 			{
@@ -1810,13 +908,19 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 				dbg("length is %d",length);
 			}
 
-			pdu = g_slist_nth_data(tokens, 3);
-			if (pdu != NULL)
+			lines = atResp->lines;
+			lines = lines->next;
+			line = (char *)lines->data;
+			tokens = tcore_at_tok_new(line);
+
+			temp_pdu = g_slist_nth_data(tokens, 0);
+			if (temp_pdu != NULL)
 			{
-				dbg("pdu is %s",pdu);
+				dbg("temp pdu is %s",temp_pdu);
+				pdu = util_hexStringToBytes(temp_pdu);
 				ScLength = (int)pdu[0];
 
-				respReadMsg.dataInfo.simIndex = index; //Retrieving index stored as part of req userdata 
+				respReadMsg.dataInfo.simIndex = index; //Retrieving index stored as part of req userdata
 
 
 			if(0 == ScLength)
@@ -1830,10 +934,12 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 
 					memset(respReadMsg.dataInfo.smsData.sca, 0, TAPI_SIM_SMSP_ADDRESS_LEN);
 
-					//if(read_data.SmsData.MsgLength > SMS_SMDATA_SIZE_MAX)
-					//{
+					/*
+					if(read_data.SmsData.MsgLength > SMS_SMDATA_SIZE_MAX)
+					{
 						respReadMsg.dataInfo.smsData.msgLength = SMS_SMDATA_SIZE_MAX;
-					//}
+					}
+					*/
 
 					memcpy(respReadMsg.dataInfo.smsData.tpduData, &pdu[2], respReadMsg.dataInfo.smsData.msgLength);
 					respReadMsg.result = SMS_SUCCESS;
@@ -1851,12 +957,13 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 			else		//SCLength is Not 0
 			{
 				respReadMsg.dataInfo.smsData.msgLength =  (length - (ScLength+1));
+				dbg("data msg len is %d", respReadMsg.dataInfo.smsData.msgLength);
 
 				if ((respReadMsg.dataInfo.smsData.msgLength >0) && (0xff >= respReadMsg.dataInfo.smsData.msgLength))
 				{
 					memcpy(respReadMsg.dataInfo.smsData.sca, (char*)pdu,(ScLength+1));
 
-					LastSemiOctect = pdu[ScLength + 1] & 0xf0;
+					/*LastSemiOctect = pdu[ScLength + 1] & 0xf0;
 					if(LastSemiOctect == 0xf0)
 					{
 						respReadMsg.dataInfo.smsData.sca[0] = (ScLength-1)*2 - 1;
@@ -1865,11 +972,13 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 					{
 						respReadMsg.dataInfo.smsData.sca[0] = (ScLength-1)*2;
 					}
+					*/
+					
 
-					//if(read_data.SmsData.MsgLength > SMS_SMDATA_SIZE_MAX)
-					//{
-						respReadMsg.dataInfo.smsData.msgLength = SMS_SMDATA_SIZE_MAX;
-					//}
+					//if(respReadMsg.dataInfo.smsData.msgLength > SMS_SMDATA_SIZE_MAX)
+				//	{
+					//	respReadMsg.dataInfo.smsData.msgLength = SMS_SMDATA_SIZE_MAX;
+				//	}
 
 					for(i=0;i<(ScLength+1);i++)
 					{
@@ -1878,6 +987,8 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 
 					memcpy(respReadMsg.dataInfo.smsData.tpduData, &pdu[ScLength+1], respReadMsg.dataInfo.smsData.msgLength);
 					respReadMsg.result = SMS_SUCCESS;
+
+					dbg("read tpdu is %s sca is %s pdu %s",respReadMsg.dataInfo.smsData.tpduData, respReadMsg.dataInfo.smsData.sca,pdu);
 
 					rtn = tcore_user_request_send_response(ur, TRESP_SMS_READ_MSG, sizeof(struct tresp_sms_read_msg), &respReadMsg);
 				}
@@ -1905,26 +1016,24 @@ static void on_response_read_msg(TcorePending *p, int data_len, const void *data
 		dbg("Response NOK");
 	}
 	return;
-
 }
-
 
 static void on_response_get_msg_indices(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur = NULL;
-	struct tresp_sms_get_storedMsgCnt * respStoredMsgCnt = NULL;
-	int ctr = 0;
+	struct tresp_sms_get_storedMsgCnt * respStoredMsgCnt_prev = NULL;
+	struct tresp_sms_get_storedMsgCnt respStoredMsgCnt;
 	const TcoreATResponse *atResp = data;
 	GSList *tokens = NULL;
-	GSList *lines = NULL;
 	char *line = NULL , *pResp = NULL;
-	int usedCnt = 0, totalCnt = 0, result = 0, noOfLines = 0 , i = 0;
+	int noOfLines = 0 , i = 0;
 
 	//memset(&respStoredMsgCnt, 0, sizeof(struct tresp_sms_get_storedMsgCnt));
 
-	respStoredMsgCnt = (struct tresp_sms_get_storedMsgCnt *)user_data;
+	respStoredMsgCnt_prev = (struct tresp_sms_get_storedMsgCnt *)user_data;
 	ur = tcore_pending_ref_user_request(p);
 
+	respStoredMsgCnt.result = SMS_SENDSMS_SUCCESS;
 
 	if (atResp->success)
         {
@@ -1936,49 +1045,70 @@ static void on_response_get_msg_indices(TcorePending *p, int data_len, const voi
 			if (noOfLines > SMS_GSM_SMS_MSG_NUM_MAX)
 				noOfLines = SMS_GSM_SMS_MSG_NUM_MAX;
 
-                        line = (const char*)atResp->lines->data;
-                        dbg("line and no of lines is %s %d",line, noOfLines);
-                        tokens = tcore_at_tok_new(line);
-             
-	
+                        dbg("no of lines is %d", noOfLines);
+
+			g_slist_foreach(atResp->lines, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
+
      			for (i = 0; i < noOfLines ; i++)
      			{
-				line = (char *)(lines->data);
+				line = (char *)g_slist_nth_data(atResp->lines, i); /* Fetch Line i */
+
+				dbg("line %d is %s", i, line);
+
 				if (line != NULL)
 				{
 					tokens = tcore_at_tok_new(line);
+
+					g_slist_foreach(tokens, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
+
 					pResp = g_slist_nth_data(tokens, 0);
 					if (pResp != NULL)
 					{
-						respStoredMsgCnt->storedMsgCnt.indexList[i] = atoi(pResp);
-						lines = lines->next;
+						respStoredMsgCnt.storedMsgCnt.indexList[i] = atoi(pResp);
 					}
 					else
 					{
-						respStoredMsgCnt->result = SMS_DEVICE_FAILURE;
-						dbg("pResp is NULL");
-				
+						respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
+						dbg("pResp of line %d is NULL", i);
+
 					}
 				}
 				else
 				{
-					respStoredMsgCnt->result = SMS_DEVICE_FAILURE;
-					dbg("line is NULL");
+					respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
+					dbg("line %d is NULL", i);
 				}
      			}
 		}
 		else
 		{
-			dbg("No lines");
+			dbg("No lines.");
+			/* Check if used count is zero */
+			if(respStoredMsgCnt_prev->storedMsgCnt.usedCount == 0)
+				respStoredMsgCnt.result = SMS_SENDSMS_SUCCESS;
+			else
+				respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
 		}
 	}
 	else
 	{
 		dbg("Respnose NOK");
+		respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
 	}
-	
-	
-	tcore_user_request_send_response(ur, TRESP_SMS_GET_STORED_MSG_COUNT, sizeof(struct tresp_sms_get_storedMsgCnt), respStoredMsgCnt);
+
+	for(i = 0; i < noOfLines ; i++)
+		dbg("index: [%d]", respStoredMsgCnt.storedMsgCnt.indexList[i]);
+
+	respStoredMsgCnt.storedMsgCnt.totalCount = respStoredMsgCnt_prev->storedMsgCnt.totalCount;
+	respStoredMsgCnt.storedMsgCnt.usedCount = respStoredMsgCnt_prev->storedMsgCnt.usedCount;
+
+	dbg("total: [%d]", respStoredMsgCnt.storedMsgCnt.totalCount);
+	dbg("used: [%d]", respStoredMsgCnt.storedMsgCnt.usedCount);
+	dbg("result: [%d]", respStoredMsgCnt.result);
+
+	util_sms_free_memory(respStoredMsgCnt_prev);
+
+	tcore_user_request_send_response(ur, TRESP_SMS_GET_STORED_MSG_COUNT, sizeof(struct tresp_sms_get_storedMsgCnt), &respStoredMsgCnt);
 
 
 }
@@ -1986,64 +1116,68 @@ static void on_response_get_msg_indices(TcorePending *p, int data_len, const voi
 static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur = NULL, *ur_dup = NULL;
-	struct tresp_sms_get_storedMsgCnt respStoredMsgCnt;
-	int ctr = 0;
+	struct tresp_sms_get_storedMsgCnt *respStoredMsgCnt = NULL;
 	const TcoreATResponse *atResp = data;
 	GSList *tokens=NULL;
-	char *line = NULL , *pResp = NULL , *cmd_str = NULL, *atReq = NULL;
+	char *line = NULL , *pResp = NULL , *cmd_str = NULL;
+	TcoreATRequest *atReq = NULL;
 	int usedCnt = 0, totalCnt = 0, result = 0;
 
 	TcorePending *pending_new = NULL;
 	CoreObject *o = NULL;
 
-	memset(&respStoredMsgCnt, 0, sizeof(struct tresp_sms_get_storedMsgCnt));
+	dbg("Entered");
+
+	respStoredMsgCnt = malloc(sizeof(struct tresp_sms_get_storedMsgCnt));
 
 	ur = tcore_pending_ref_user_request(p);
 	ur_dup = tcore_user_request_ref(ur);
 	o = tcore_pending_ref_core_object(p);
 
-	if (atResp->success)
+	if (atResp->success > 0)
 	{
 		dbg("Response OK");
-		if(atResp->lines) 
+		if(NULL != atResp->lines)
 		{
-			line = (const char*)atResp->lines->data;
+			line = (char *)atResp->lines->data;
 			dbg("line is %s",line);
+
 			tokens = tcore_at_tok_new(line);
-			 pResp = g_slist_nth_data(tokens, 0);
-			 if (pResp)
+			pResp = g_slist_nth_data(tokens, 0);
+
+			if (pResp)
 		 	{
-		 			usedCnt =atoi(pResp);
-					dbg("used cnt is %d",usedCnt);
-					
+		 		usedCnt =atoi(pResp);
+				dbg("used cnt is %d",usedCnt);
+
 			}
-			 pResp = g_slist_nth_data(tokens, 1);
-			 if (pResp)
+
+			pResp = g_slist_nth_data(tokens, 1);
+			if (pResp)
 		 	{
-		 			totalCnt =atoi(pResp);
-					result = SMS_SENDSMS_SUCCESS;
-					
-					respStoredMsgCnt.storedMsgCnt.usedCount = usedCnt;
-					respStoredMsgCnt.storedMsgCnt.totalCount = totalCnt;
-					respStoredMsgCnt.result = result;
-					dbg("used %d, total %d, result %d",usedCnt, totalCnt,result);
+		 		totalCnt =atoi(pResp);
+				result = SMS_SENDSMS_SUCCESS;
 
+				respStoredMsgCnt->storedMsgCnt.usedCount = usedCnt;
+				respStoredMsgCnt->storedMsgCnt.totalCount = totalCnt;
+				respStoredMsgCnt->result = result;
 
-					// This is required  because CPMS does not give index list. So need to store the above in user req and again issue CMGL
-// commented to avoid parser malfunction hyKo 120819
+				dbg("used %d, total %d, result %d",usedCnt, totalCnt,result);
 
-					pending_new = tcore_pending_new(o,0);
-					cmd_str = g_strdup_printf("AT+CMGL\r");;
-					dbg("cmd str is %s",cmd_str);
-					atReq = tcore_at_request_new((const char*)cmd_str, "+CMGL:", TCORE_AT_MULTILINE);
-					tcore_pending_set_request_data(pending_new, 0,atReq);
-					// Setting user data so as to send consolidated response to GetStoredMsgCnt notification
-					tcore_pending_set_response_callback(pending_new, on_response_get_msg_indices, (void *)&respStoredMsgCnt);
-					tcore_pending_link_user_request(pending_new, ur_dup);
-					tcore_pending_set_send_callback(pending_new, on_confirmation_sms_message_send, NULL);
-					tcore_hal_send_request(tcore_object_get_hal(o), pending_new);
+				pending_new = tcore_pending_new(o, 0);
+				cmd_str = g_strdup_printf("AT+CMGL=4\r");
+				atReq = tcore_at_request_new((const char *)cmd_str, "+CMGL:", TCORE_AT_MULTILINE);
 
-					return;
+				dbg("cmd str is %s",cmd_str);
+
+				tcore_pending_set_request_data(pending_new, 0,atReq);
+				tcore_pending_set_response_callback(pending_new, on_response_get_msg_indices, (void *)respStoredMsgCnt);
+				tcore_pending_link_user_request(pending_new, ur_dup);
+				tcore_pending_set_send_callback(pending_new, on_confirmation_sms_message_send, NULL);
+				tcore_hal_send_request(tcore_object_get_hal(o), pending_new);
+
+				dbg("Exit");
+				return;
 
 			}
 		}else
@@ -2052,17 +1186,10 @@ static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const vo
 				result = SMS_DEVICE_FAILURE;
 		}
 	}
-	else
-	{
-		dbg("Response NOK");
-	}
 
-	respStoredMsgCnt.storedMsgCnt.usedCount = usedCnt;
-	respStoredMsgCnt.storedMsgCnt.totalCount = totalCnt;
-	respStoredMsgCnt.result = result;
-	//TODO - index list needs to be populated
-//	tcore_user_request_send_response(ur, TRESP_SMS_GET_STORED_MSG_COUNT, sizeof(struct tresp_sms_get_storedMsgCnt), &respStoredMsgCnt);
+	err("Response NOK");
 
+	dbg("Exit");
 	return;
 }
 
@@ -2070,7 +1197,6 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 {
 	//Response is expected in this format +CSCA: <sca>,<tosca>
 
-	TcorePlugin *plugin;
 	UserRequest *ur;
 	struct tresp_sms_get_sca respGetSca;
 	GSList *tokens=NULL;
@@ -2078,9 +1204,6 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 	//copies the AT response data to resp
 	const TcoreATResponse *atResp = data;
 	char *line = NULL, *sca = NULL, *typeOfAddress = NULL;
-
-	int err = 0;
-	int response = 0;
 
 	// +CSCA: <sca number>,<sca type>
 
@@ -2090,9 +1213,9 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 	if (atResp->success)
 	{
 		dbg("Response OK");
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
-			line = (const char*)atResp->lines->data;
+			line = (char*)atResp->lines->data;
 			tokens = tcore_at_tok_new(line);
 			sca = g_slist_nth_data(tokens, 0);
 			typeOfAddress = g_slist_nth_data(tokens, 1);
@@ -2104,15 +1227,15 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 						{
 							respGetSca.scaAddress.typeOfNum = SIM_TON_INTERNATIONAL;
 						}
-					else	
+					else
 						{
 							respGetSca.scaAddress.typeOfNum = SIM_TON_NATIONAL;
 						}
 					respGetSca.scaAddress.numPlanId = 0;
-		
+
 					memcpy(respGetSca.scaAddress.diallingNum, sca, strlen(sca));
 
-					dbg("len %d, sca %s, TON %d, NPI %d",respGetSca.scaAddress.dialNumLen,respGetSca.scaAddress.diallingNum,respGetSca.scaAddress.typeOfNum,respGetSca.scaAddress.numPlanId); 
+					dbg("len %d, sca %s, TON %d, NPI %d",respGetSca.scaAddress.dialNumLen,respGetSca.scaAddress.diallingNum,respGetSca.scaAddress.typeOfNum,respGetSca.scaAddress.numPlanId);
 					respGetSca.result = SMS_SENDSMS_SUCCESS;
 			}
 		}
@@ -2122,28 +1245,26 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 		dbg("Response NOK");
 		respGetSca.result = SMS_DEVICE_FAILURE;
 	}
-	
+
 	tcore_user_request_send_response(ur, TRESP_SMS_GET_SCA, sizeof(struct tresp_sms_get_sca), &respGetSca);
 	return;
-	
+
 }
 
 static void on_response_set_sca(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
 	/*
-	Response is expected in this format 
+	Response is expected in this format
 	OK
 		or
 	+CMS ERROR: <err>
 	*/
-	
+
 	//CoreObject *obj = user_data;
 	UserRequest *ur;
 	//copies the AT response data to resp
 	const TcoreATResponse *atResp = data;
-	char * line = NULL;
 	struct tresp_sms_set_sca respSetSca;
-	int err = 0, response = 0;
 
 	memset(&respSetSca, 0, sizeof(struct tresp_sms_set_sca));
 
@@ -2153,7 +1274,7 @@ static void on_response_set_sca(TcorePending *pending, int data_len, const void 
 		dbg("no user_request");
 		return;
 	}
-	
+
 	if (atResp->success >0)
 	{
 		dbg("RESPONSE OK");
@@ -2170,7 +1291,6 @@ static void on_response_set_sca(TcorePending *pending, int data_len, const void 
 	return;
 }
 
-
 static void on_response_get_cb_config(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur;
@@ -2178,9 +1298,8 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 	const TcoreATResponse *atResp = data;
 	GSList *tokens=NULL;
 
-	int msgid_length = 0 , msgCount = 0;
 	int i = 0, mode =0 , result = 0;
-	char *mid = NULL, *dcs = NULL, *pResp = NULL, *line = NULL, *res = NULL;
+	char *mid = NULL, *pResp = NULL, *line = NULL, *res = NULL;
 	char delim[] = ",";
 
 	memset(&respGetCbConfig, 0, sizeof(struct tresp_sms_get_cb_config));
@@ -2195,12 +1314,12 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 	if (atResp->success)
 	{
 		dbg("Response OK");
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
-			line = (const char*)atResp->lines->data;
+			line = (char*)atResp->lines->data;
 			if (line != NULL)
 			{
-				dbg("line is %s",line);	
+				dbg("line is %s",line);
 				tokens = tcore_at_tok_new(line);
 				pResp = g_slist_nth_data(tokens, 0);
 				if (pResp)
@@ -2211,11 +1330,11 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 					if (pResp)
 					{
 						mid = strtok(pResp, delim); i = 0;
-							while( res != NULL ) 
+							while( res != NULL )
 							{
 						    		res = strtok( NULL, delim );
     						  		dbg("mid is %s%s\n", mid,res);
-								if (result!= NULL)
+								if (res != NULL)
 								{
 									if (strlen(res) >0)
 										{
@@ -2243,8 +1362,8 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 				dbg("line is NULL");
 				result = SMS_DEVICE_FAILURE;
 			}
-			
-			
+
+
 		}
 		else
 		{
@@ -2268,22 +1387,18 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 static void on_response_set_cb_config(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
 	/*
-	Response is expected in this format 
+	Response is expected in this format
 	OK
 		or
 	+CMS ERROR: <err>
 	*/
 
-	CoreObject *obj = user_data;
 	UserRequest *ur;
 	const TcoreATResponse *resp = data;
-	
-	GQueue *queue;
-	int err;
 	int response;
 	const char *line = NULL;
 	GSList *tokens=NULL;
-	
+
 	struct tresp_sms_set_cb_config respSetCbConfig = {0,};
 
 	memset(&respSetCbConfig, 0, sizeof(struct tresp_sms_set_cb_config));
@@ -2293,7 +1408,7 @@ static void on_response_set_cb_config(TcorePending *pending, int data_len, const
 	if(resp->success > 0)
 	{
 		dbg("RESPONSE OK");
-		
+
 	}
 	else
 	{
@@ -2328,11 +1443,6 @@ static void on_response_set_mem_status(TcorePending *p, int data_len, const void
 	UserRequest *ur;
 	struct tresp_sms_set_mem_status respSetMemStatus = {0,};
 	const TcoreATResponse *resp = data;
-	int err = 0, response = 0;
-	const char *line = NULL;
-	GSList *tokens=NULL;
-	
-	struct tresp_sms_set_cb_config respSetCbConfig = {0,};
 
 	memset(&respSetMemStatus, 0, sizeof(struct tresp_sms_set_mem_status));
 
@@ -2340,13 +1450,13 @@ static void on_response_set_mem_status(TcorePending *p, int data_len, const void
 	{
 		dbg("RESPONSE OK");
 		respSetMemStatus.result = SMS_SENDSMS_SUCCESS;
-		
+
 	}
 	else
 	{
 		dbg("RESPONSE NOK");
 		respSetMemStatus.result = SMS_DEVICE_FAILURE;
-	}	
+	}
 
 	ur = tcore_pending_ref_user_request(p);
 	if (!ur)
@@ -2360,13 +1470,12 @@ static void on_response_set_mem_status(TcorePending *p, int data_len, const void
 	return;
 }
 
-
 static void on_response_set_msg_status(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur;
 	struct tresp_sms_set_msg_status respMsgStatus = {0,};
 	const TcoreATResponse *atResp = data;
-        int err = 0, response = 0, sw1 =0 , sw2 = 0;
+        int response = 0, sw1 =0 , sw2 = 0;
         const char *line = NULL;
         char *pResp = NULL;
         GSList *tokens=NULL;
@@ -2398,7 +1507,7 @@ static void on_response_set_msg_status(TcorePending *pending, int data_len, cons
                         if (pResp != NULL)
                         {
                                 sw2 = atoi(pResp);
-                                if ((sw1 == 144) && (sw2 == 0))
+                                if ((sw1 == AT_SW1_SUCCESS) && (sw2 == 0))
                                 {
                                         respMsgStatus.result = SMS_SENDSMS_SUCCESS;
                                 }
@@ -2418,7 +1527,7 @@ static void on_response_set_msg_status(TcorePending *pending, int data_len, cons
 
         		if (pResp != NULL)
                         {
-                                response = pResp;
+                                response = atoi(pResp);
                                 dbg("response is %s", response);
                         }
 
@@ -2445,24 +1554,22 @@ static void on_response_set_msg_status(TcorePending *pending, int data_len, cons
 
 static void on_response_get_sms_params(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	dbg("Entry");
-
 	UserRequest *ur;
-	struct tresp_sms_get_params respGetParams = {0,};
+	struct tresp_sms_get_params respGetParams;
 	const TcoreATResponse *atResp = data;
-	int err = 0, response = 0, sw1 =0 , sw2 = 0;
+	int response = 0, sw1 =0 , sw2 = 0;
 	const char *line = NULL;
 	char *pResp = NULL;
 	GSList *tokens=NULL;
-	
+
 	memset(&respGetParams, 0, sizeof(struct tresp_sms_set_params));
 	ur = tcore_pending_ref_user_request(pending);
-		
+
 	if(atResp->success > 0)
 	{
 		dbg("RESPONSE OK");
 
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
 			line = (const char*)atResp->lines->data;
 			tokens = tcore_at_tok_new(line);
@@ -2470,6 +1577,7 @@ static void on_response_get_sms_params(TcorePending *pending, int data_len, cons
 			if (pResp != NULL)
 			{
 				sw1 = atoi(pResp);
+				dbg("sw1 is %d",sw1);
 			}
 			else
 			{
@@ -2480,7 +1588,8 @@ static void on_response_get_sms_params(TcorePending *pending, int data_len, cons
 			if (pResp != NULL)
 			{
 				sw2 = atoi(pResp);
-				if ((sw1 == 144) && (sw2 == 0))
+				//if ((sw1 == 144) && (sw2 == 0))
+				if (sw1 == AT_SW1_SUCCESS)
 				{
 					respGetParams.result = SMS_SENDSMS_SUCCESS;
 				}
@@ -2494,15 +1603,15 @@ static void on_response_get_sms_params(TcorePending *pending, int data_len, cons
 			{
 				dbg("sw2 is NULL");
 				respGetParams.result = SMS_DEVICE_FAILURE;
-				
+
 			}
 			pResp = g_slist_nth_data(tokens, 3);
 			if (pResp != NULL)
 			{
-				response = pResp;
+				response = atoi(pResp);
 				dbg("response is %s", response);
 			}
-			
+
 		}
 	}
 	else
@@ -2517,25 +1626,23 @@ static void on_response_get_sms_params(TcorePending *pending, int data_len, cons
 
 static void on_response_set_sms_params(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	dbg("Entry");
-	
 	UserRequest *ur;
 	struct tresp_sms_set_params respSetParams = {0,};
 	const TcoreATResponse *atResp = data;
-	int err = 0, response = 0, sw1 =0 , sw2 = 0;
+	int response = 0, sw1 =0 , sw2 = 0;
 	const char *line = NULL;
 	char *pResp = NULL;
 	GSList *tokens=NULL;
-	
+
 
 	memset(&respSetParams, 0, sizeof(struct tresp_sms_set_params));
 	ur = tcore_pending_ref_user_request(pending);
-		
+
 	if(atResp->success > 0)
 	{
 		dbg("RESPONSE OK");
 
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
 			line = (const char*)atResp->lines->data;
 			tokens = tcore_at_tok_new(line);
@@ -2553,7 +1660,7 @@ static void on_response_set_sms_params(TcorePending *pending, int data_len, cons
 			if (pResp != NULL)
 			{
 				sw2 = atoi(pResp);
-				if ((sw1 == 144) && (sw2 == 0))
+				if ((sw1 == AT_SW1_SUCCESS) && (sw2 == AT_SW2_SUCCESS))
 				{
 					respSetParams.result = SMS_SENDSMS_SUCCESS;
 				}
@@ -2567,22 +1674,22 @@ static void on_response_set_sms_params(TcorePending *pending, int data_len, cons
 			{
 				dbg("sw2 is NULL");
 				respSetParams.result = SMS_DEVICE_FAILURE;
-				
+
 			}
 			pResp = g_slist_nth_data(tokens, 3);
 			if (pResp != NULL)
 			{
-				response = pResp;
+				response = atoi(pResp);
 				dbg("response is %s", response);
 			}
-			
+
 		}
 	}
 	else
 	{
 		dbg("RESPONSE NOK");
 		respSetParams.result = SMS_DEVICE_FAILURE;
-	}	
+	}
 
 	tcore_user_request_send_response(ur, TRESP_SMS_SET_PARAMS , sizeof(struct tresp_sms_set_params), &respSetParams);
 
@@ -2592,17 +1699,16 @@ static void on_response_set_sms_params(TcorePending *pending, int data_len, cons
 
 static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	dbg("Entry");
 
 	UserRequest *ur = NULL;
 	struct tresp_sms_get_paramcnt respGetParamCnt = {0,};
 	const TcoreATResponse *atResp = data;
-	dbg("Entry");
 	char *line = NULL , *pResp = NULL;
-	int ret = 0;
 	int sw1 = 0 , sw2 = 0;
 	int sim_type = SIM_TYPE_USIM; //TODO need to check how to handle this
 	GSList *tokens=NULL;
+
+	dbg("Entry");
 
 	ur = tcore_pending_ref_user_request(p);
 
@@ -2610,9 +1716,12 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 	{
 		dbg("RESPONSE OK");
 
-		if(atResp->lines) 
+		if(atResp->lines)
 		{
-			line = (const char*)atResp->lines->data;
+			line = (char*)atResp->lines->data;
+
+			dbg("line is %s",line);
+
 			tokens = tcore_at_tok_new(line);
 			pResp = g_slist_nth_data(tokens, 0);
 			if (pResp != NULL)
@@ -2642,20 +1751,20 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 			{
 				dbg("sw2 is NULL");
 				respGetParamCnt.result = SMS_DEVICE_FAILURE;
-				
+
 			}
 			pResp = g_slist_nth_data(tokens, 3);
 			if (pResp != NULL)
 			{
-				char *hexData;	
+				char *hexData;
 				char *recordData;
-				
+
 				hexData  = pResp;
 				if (pResp)
 				dbg("response is %s", pResp);
-				
+
 				/*1. SIM access success case*/
-				if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91) 
+				if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91)
 				{
 					unsigned char tag_len = 0; /*	1 or 2 bytes ??? */
 					unsigned short record_len = 0;
@@ -2673,7 +1782,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 
 					recordData = util_hexStringToBytes(hexData);
 					util_hex_dump("    ", strlen(hexData)/2, recordData);
-		
+
 					ptr_data = (unsigned char *)recordData;
 
 					if (sim_type ==  SIM_TYPE_USIM) {
@@ -2760,7 +1869,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 							break;
 						}
 					}
-					else 
+					else
 					{
 						dbg("INVALID FCP received - DEbug!");
 						return;
@@ -2779,7 +1888,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 					} else {
 						dbg("INVALID FCP received - DEbug!");
 						free(recordData);
-						//ReleaseResponse();						
+						//ReleaseResponse();
 						return;
 					}
 
@@ -2856,7 +1965,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 					} else {
 						dbg("INVALID FCP received[0x%x] - DEbug!", *ptr_data);
 						free(recordData);
-							
+
 						return;
 					}
 
@@ -2906,7 +2015,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 					return;
 				}
 			}
-			else if (sim_type == SIM_TYPE_GSM) 
+			else if (sim_type == SIM_TYPE_GSM)
 			{
 				unsigned char gsm_specific_file_data_len = 0;
 				/*	ignore RFU byte1 and byte2 */
@@ -2985,8 +2094,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 						dbg(" not handled file type");
 						break;
 				}
-			} 
-			else 
+			}
+			else
 			{
 				dbg(" Card Type - UNKNOWN  [%d]", sim_type);
 			}
@@ -2995,17 +2104,23 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 
 			respGetParamCnt.recordCount = num_of_records;
 			respGetParamCnt.result = SMS_SUCCESS;
-			
+
 			free(recordData);
 		}
-		else 
+		else
 		{
 			/*2. SIM access fail case*/
 			dbg("SIM access fail");
 			respGetParamCnt.result = SMS_UNKNOWN;
 		}
+		}else
+		{
+			dbg("presp is NULL");
 		}
-			
+
+		}else
+		{
+			dbg("line is blank");
 		}
 	}
 	else
@@ -3014,862 +2129,893 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 		respGetParamCnt.result = SMS_DEVICE_FAILURE;
 	}
 
-	
+
 	tcore_user_request_send_response(ur, TRESP_SMS_GET_PARAMCNT, sizeof(struct tresp_sms_get_paramcnt), &respGetParamCnt);
 
 	dbg("Exit");
 	return;
 }
-/********************************************************/
-/******************** Str Utility Functions *******************/
 
-
-
-
-
-
-/********************************************************/
-/***********************  Requests ************************/
-/********************************************************/
+/*=============================================================
+							Requests
+==============================================================*/
 static TReturn send_umts_msg(CoreObject *obj, UserRequest *ur)
 {
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
-	char *cmd_str = NULL;
-	
 	TcorePending *pending = NULL;
 	const struct treq_sms_send_umts_msg *sendUmtsMsg = NULL;
-	GQueue *queue = NULL;
 
-	Storage *strg = NULL;
-	int mode = 0x00;
-	Server *s = NULL;
-
-	unsigned char optMask = 0;
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-
-	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
-
-	dbg("new pending(TIZEN_SMS_SEND_MSG)");
-	sendUmtsMsg = tcore_user_request_ref_data(ur, NULL);
-	
-	// AT command to select MoreMessagesToSend. In the response, actual send AT cmd will be sent
-	cmd_str = g_strdup_printf("AT+CMMS=%d\r", sendUmtsMsg->more);
-	atreq = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
-	tcore_pending_set_request_data(pending,0,atreq);
-	tcore_pending_set_timeout(pending, 0);
-	tcore_pending_set_response_callback(pending, on_response_send_umts_msg, hal);
-	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-
-
-	tcore_hal_send_request(hal, pending);
-	return TCORE_RETURN_SUCCESS;
-}
-
-
-static TReturn Send_SmsSubmitTpdu(CoreObject *o, UserRequest *ur)
-{
-	TcorePlugin *p = NULL;
-	TcoreHal *h = NULL;
-	TcorePending *pending = NULL;
-	const struct treq_sms_send_umts_msg *sendUmtsMsg = NULL;
-	
-	char *cmd_str = NULL;
-	char tpdu[2*MAX_GSM_SMS_TPDU_SIZE];
+	char buf[512];
 	int ScLength = 0;
-	int tpduDataLen = 0;
-	int i = 0;
+	int pdu_len = 0;
 
-	TcoreATRequest *atreq = NULL;
-	TReturn api_err = TCORE_RETURN_SUCCESS;
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	sendUmtsMsg = tcore_user_request_ref_data(ur, NULL);
+  	hal = tcore_object_get_hal(obj);
+	if(NULL == sendUmtsMsg || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("sendUmtsMsg: [%p], hal: [%p]", sendUmtsMsg, hal);
 
-  	h = tcore_object_get_hal(o);
-	pending = tcore_pending_new(o, 0);
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
 
-	if (!sendUmtsMsg || !h)
-		return TCORE_RETURN_ENOSYS;
+	dbg("msgLength: [%d]", sendUmtsMsg->msgDataPackage.msgLength);
+	util_hex_dump("    ", (SMS_SMDATA_SIZE_MAX+1), (void *)sendUmtsMsg->msgDataPackage.tpduData);
+	util_hex_dump("    ", SMS_SMSP_ADDRESS_LEN, (void *)sendUmtsMsg->msgDataPackage.sca);
 
-	/* Populate data */
-	dbg("[tcore_SMS] MoreToSend[0x%x](1:Persist, 2:NotPersist) MsgLen[%d]",sendUmtsMsg->more, sendUmtsMsg->msgDataPackage.msgLength);
-	for(i=0; i<sendUmtsMsg->msgDataPackage.msgLength; i++)
-		dbg("[%02x]", sendUmtsMsg->msgDataPackage.tpduData[i]);
+	ScLength = (int)sendUmtsMsg->msgDataPackage.sca[0];
 
-	ScLength = sendUmtsMsg->msgDataPackage.sca[0];
+	dbg("ScLength: [%d]", ScLength);
 
 	if ((sendUmtsMsg->msgDataPackage.msgLength > 0)
-		&& (SMS_SMDATA_SIZE_MAX > sendUmtsMsg->msgDataPackage.msgLength)
+		&& (sendUmtsMsg->msgDataPackage.msgLength <= SMS_SMDATA_SIZE_MAX)
 		&& (ScLength <= SMS_MAX_SMS_SERVICE_CENTER_ADDR))
 	{
-			memset(tpdu, 0, sizeof(2*MAX_GSM_SMS_TPDU_SIZE));
-		
-			if(ScLength == 0) /* ScAddress not specified */
-			{
-				tpduDataLen = 2;
-				tpdu[0] = '0';
-				tpdu[1] = '0';
-			}
-			else
-			{
-			#ifndef TAPI_CODE_SUBJECT_TO_CHANGE
-				dbg("SC length in Tx is %d - before", ScLength);
+		if(ScLength == 0) //ScAddress not specified
+		{
+			buf[0] = '0';
+			buf[1] = '0';
+			pdu_len = 2;
+		}
+		else
+		{
+		#ifndef TAPI_CODE_SUBJECT_TO_CHANGE
+			dbg("SC length in Tx is %d - before", ScLength);
 
-				util_sms_get_length_of_sca(&ScLength);
+			util_sms_get_length_of_sca(&ScLength);
 
-				dbg(" SC length in Tx is %d - after", ScLength);
+			dbg(" SC length in Tx is %d - after", ScLength);
 
-				tpdu[0] = ScLength + 1;
-				memcpy(&(tpdu[1]), &(sendUmtsMsg->msgDataPackage.sca[1]), (ScLength + 1));
+			buf[0] = ScLength + 1;
+			memcpy(&(buf[1]), &(sendUmtsMsg->msgDataPackage.sca[1]), (ScLength + 1));
 
-				tpduDataLen = 2 + ScLength;
-			#else
-				dbg("Specifying SCA in TPDU is currently not supported");
+			pdu_len = 2 + ScLength;
+		#else
+			dbg("Specifying SCA in TPDU is currently not supported");
 
-				tpduDataLen = 2;
-				tpdu[0] = '0';
-				tpdu[1] = '0';
-			#endif
-			}
+			buf[0] = '0';
+			buf[1] = '0';
+			pdu_len = 2;
+		#endif
+		}
 
-			for(i=0; i<(sendUmtsMsg->msgDataPackage.msgLength*2); i+=2) 
-			{
-				char value = 0;
+		util_byte_to_hex((const char *)sendUmtsMsg->msgDataPackage.tpduData, (char *)&buf[pdu_len], sendUmtsMsg->msgDataPackage.msgLength);
 
-				value = (sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0xf0 ) >> 4;
-				if(value < 0xA)
-					tpdu[i+tpduDataLen] = ((sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0xf0 ) >> 4) + '0';
-				else tpdu[i+tpduDataLen] = ((sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0xf0 ) >> 4) + 'A' -10;
+		pdu_len = pdu_len + 2*sendUmtsMsg->msgDataPackage.msgLength;
 
-				value = sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0x0f;
-				if(value < 0xA)
-					tpdu[i+1+tpduDataLen] = (sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0x0f ) + '0';
-				else tpdu[i+1+tpduDataLen] = (sendUmtsMsg->msgDataPackage.tpduData[i/2] & 0x0f ) + 'A' -10;
+		buf[pdu_len] = '\0'; //Ensure termination
 
-			}
+		dbg("pdu_len: [%d]", pdu_len);
+		util_hex_dump("    ", sizeof(buf), (void *)buf);
 
-			tpduDataLen = tpduDataLen + 2*sendUmtsMsg->msgDataPackage.msgLength;
-			
-			/* AT+CMGS=<length><CR>PDU is given<ctrl-Z/ESC> */
-			cmd_str = g_strdup_printf("AT+CMGS=%d%s%s\x1A%s", sendUmtsMsg->msgDataPackage.msgLength, "\r", tpdu, "\r");
-			dbg("cmd_str is %p", cmd_str);
-			dbg("tpdu %s", tpdu);
-			for(i=0; i<strlen(cmd_str); i++)
-				dbg("cmd_str data: [%x]", cmd_str[i]);
+		//AT+CMGS=<length><CR>PDU is given<ctrl-Z/ESC>
+		cmd_str = g_strdup_printf("AT+CMGS=%d%s%s\x1A%s", sendUmtsMsg->msgDataPackage.msgLength, "\r", buf, "\r");
+		atreq = tcore_at_request_new((const char *)cmd_str, "+CMGS:", TCORE_AT_SINGLELINE);
+		pending = tcore_pending_new(obj, 0);
 
-			dbg("TPDU data_len: %d", tpduDataLen);
-			
-			for(i=0; i<tpduDataLen; i++)
-				dbg("[%02x]", tpdu[i]);
-			
-			atreq = tcore_at_request_new(cmd_str, "+CMGS:", TCORE_AT_SINGLELINE);
+		if(NULL == cmd_str || NULL == atreq || NULL == pending)
+		{
+			err("Out of memory. Unable to proceed");
+			dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-			tcore_pending_set_request_data(pending, 0, atreq);
-			tcore_pending_set_response_callback(pending, on_response_send_smsSubmitTpdu, NULL);
-			tcore_pending_link_user_request(pending, ur);
+			//free memory we own
+			g_free(cmd_str);
+			util_sms_free_memory(atreq);
+			util_sms_free_memory(pending);
 
-			tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-			
-			api_err = tcore_hal_send_request(h, pending);	
-			
+			dbg("Exit");
+			return TCORE_RETURN_ENOMEM;
+		}
+
+		util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+		tcore_pending_set_request_data(pending, 0, atreq);
+		tcore_pending_set_response_callback(pending, on_response_send_umts_msg, NULL);
+		tcore_pending_link_user_request(pending, ur);
+		tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+		tcore_hal_send_request(hal, pending);
+
+		g_free(cmd_str);
+
+		dbg("Exit");
+		return TCORE_RETURN_SUCCESS;
 	}
-	else
-	{
-		dbg("[tcore_SMS] Invalid Data Length");
-		api_err = TCORE_RETURN_SMS_INVALID_DATA_LEN;
-	}
-	
-	return api_err;
 
+	err("Invalid Data len");
+	dbg("Exit");
+	return TCORE_RETURN_SMS_INVALID_DATA_LEN;
 }
 
 static TReturn read_msg(CoreObject *obj, UserRequest *ur)
 {
-	TcorePlugin *plugin = NULL;
-	TcoreATRequest *atreq = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
+	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_read_msg *readMsg = NULL;
-	const char * cmd_str = NULL;
 
-	dbg("new pending(TIZEN_SMS_READ_MSG)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	readMsg = tcore_user_request_ref_data(ur, NULL);
-
 	hal = tcore_object_get_hal(obj);
+	if(NULL == readMsg || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("readMsg: [%p], hal: [%p]", readMsg, hal);
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("index: [%d]", readMsg->index);
+
+	cmd_str = g_strdup_printf("AT+CMGR=%d\r", (readMsg->index + 1)); //IMC index is one ahead of TAPI
+	atreq = tcore_at_request_new((const char *)cmd_str, "\e+CMGR:", TCORE_AT_SINGLELINE);
 	pending = tcore_pending_new(obj, 0);
 
-	if (!readMsg || !hal)
-		return TCORE_RETURN_ENOSYS;
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	cmd_str = g_strdup_printf("AT+CMGR=%d\r", (readMsg->index + 1)); /* IMC index is one ahead of Samsung */
-		
-	dbg("cmd str is %s",cmd_str);
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
 
-	atreq = tcore_at_request_new((const char *)cmd_str, "\e+CMGR:", TCORE_AT_SINGLELINE);
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+	tcore_pending_set_request_data(pending, 0, atreq);
+	tcore_pending_set_response_callback(pending, on_response_read_msg, (void *)(uintptr_t)(readMsg->index)); //storing index as user data for response
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
 
 	g_free(cmd_str);
 
-	tcore_pending_set_request_data(pending, 0, atreq);
-	tcore_pending_set_response_callback(pending, on_response_read_msg, &(readMsg->index)); //storing index as user data
-	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-
-	return tcore_hal_send_request(hal, pending);
-
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn save_msg(CoreObject *obj, UserRequest *ur)
-{	
-
-	TcorePlugin *plugin = NULL;
-	TcoreATRequest *atreq = NULL;
+{
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
+	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_save_msg *saveMsg = NULL;
-	const char *cmd_str = NULL;
-	char pdu[MAX_GSM_SMS_TPDU_SIZE]; /* SCA + PDU */
+	int ScLength = 0, pdu_len = 0, stat = 0;
+	char buf[512];
 
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-	int ScLength = 0, pduLength = 0, stat = 0;
-
-	dbg("new pending(TIZEN_SMS_SAVE_MSG)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	saveMsg = tcore_user_request_ref_data(ur, NULL);
-
 	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
+	if(NULL == saveMsg || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("saveMsg: [%p], hal: [%p]", saveMsg, hal);
 
-	if (!saveMsg ||  !hal)
-		return TCORE_RETURN_ENOSYS;
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
 
-	dbg("Index value %x is not ensured. CP will allocate index automatically", saveMsg->simIndex);
+	dbg("Index value %d is not ensured. CP will allocate index automatically", saveMsg->simIndex);
 	dbg("msgStatus: %x", saveMsg->msgStatus);
+	dbg("msgLength: [%d]", saveMsg->msgDataPackage.msgLength);
+	util_hex_dump("    ", (SMS_SMDATA_SIZE_MAX+1), (void *)saveMsg->msgDataPackage.tpduData);
+	util_hex_dump("    ", SMS_SMSP_ADDRESS_LEN, (void *)saveMsg->msgDataPackage.sca);
 
 	switch (saveMsg->msgStatus) {
 		case SMS_STATUS_READ:
 			stat = AT_REC_READ;
 			break;
+
 		case SMS_STATUS_UNREAD:
 			stat = AT_REC_UNREAD;
 			break;
+
 		case SMS_STATUS_SENT:
 			stat = AT_STO_SENT;
 			break;
+
 		case SMS_STATUS_UNSENT:
 			stat = AT_STO_UNSENT;
 			break;
+
 		default:
 			err("Invalid msgStatus");
-			api_err = TCORE_RETURN_EINVAL;
-			
-			dbg("Exiting with api_err: %x", api_err);
-			return api_err;
+			dbg("Exit");
+			return TCORE_RETURN_EINVAL;
 	}
 
-	if ((saveMsg->msgDataPackage.msgLength > 0) && (SMS_SMDATA_SIZE_MAX > saveMsg->msgDataPackage.msgLength)) {
+	if ((saveMsg->msgDataPackage.msgLength > 0)
+		&& (saveMsg->msgDataPackage.msgLength <= SMS_SMDATA_SIZE_MAX))
+	{
+		ScLength = (int)saveMsg->msgDataPackage.sca[0];
 
-		/* Initialize PDU */
-		memset(pdu, 0x00, MAX_GSM_SMS_TPDU_SIZE);
-		
-		ScLength = saveMsg->msgDataPackage.sca[0];
-
-		if(ScLength == 0) {
+		if(ScLength == 0)
+		{
 			dbg("ScLength is zero");
-			pduLength = 1;
+			buf[0] = '0';
+			buf[1] = '0';
+			pdu_len = 2;
 		}
 		else {
+		#ifndef TAPI_CODE_SUBJECT_TO_CHANGE
 			dbg("ScLength (Useful semi-octets) %d", ScLength);
 
 			util_sms_get_length_of_sca(&ScLength); /* Convert useful semi-octets to useful octets */
 
 			dbg("ScLength (Useful octets) %d", ScLength);
 
-			pdu[0] = ScLength + 1; /* ScLength */
-			memcpy(&(pdu[1]), &(saveMsg->msgDataPackage.sca[1]), ScLength+1); /* ScType + ScAddress */
+			buf[0] = ScLength + 1; /* ScLength */
+			memcpy(&(buf[1]), &(saveMsg->msgDataPackage.sca[1]), ScLength+1); /* ScType + ScAddress */
 
-			pduLength = 2 + ScLength;
+			pdu_len = 2 + ScLength;
+		#endif
+			dbg("Specifying SCA is currently not supported");
+			buf[0] = '0';
+			buf[1] = '0';
+			pdu_len = 2;
 		}
 
-		/* SMS PDU */
-		memcpy(&(pdu[pduLength]), saveMsg->msgDataPackage.tpduData, saveMsg->msgDataPackage.msgLength);
+		util_byte_to_hex((const char *)saveMsg->msgDataPackage.tpduData, (char *)&(buf[pdu_len]), saveMsg->msgDataPackage.msgLength);
 
-		pduLength = pduLength + saveMsg->msgDataPackage.msgLength;
+		pdu_len = pdu_len + 2*saveMsg->msgDataPackage.msgLength;
 
-		dbg("pduLength: %d", pduLength);
+		buf[pdu_len] = '\0'; //Ensure termination
 
-		{
-			int i;
-			for(i=0; i<pduLength; i++)
-				dbg("SMS-PDU: [%x]", pdu[i]);
-		}
+		dbg("pdu_len: [%d]", pdu_len);
+		util_hex_dump("    ", sizeof(buf), (void *)buf);
 
-		/* +CMGW=<length>[,<stat>]<CR>PDU is given<ctrl-Z/ESC> */
-		cmd_str = g_strdup_printf("AT+CMGW=%d,%d%s%s%x%s", pduLength, stat, "\r", pdu, 0x1A, "\r");
-
-		g_printf("cmd_str: %s", cmd_str);
-		
+		//AT+CMGW=<length>[,<stat>]<CR>PDU is given<ctrl-Z/ESC>
+		cmd_str = g_strdup_printf("AT+CMGW=%d,%d%s%s\x1A%s", saveMsg->msgDataPackage.msgLength, stat, "\r", buf, "\r");
+		pending = tcore_pending_new(obj, 0);
 		atreq = tcore_at_request_new((const char *)cmd_str, "+CMGW", TCORE_AT_SINGLELINE);
 
-		g_free(cmd_str);
-	
+		if(NULL == cmd_str || NULL == atreq || NULL == pending)
+		{
+			err("Out of memory. Unable to proceed");
+			dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+			//free memory we own
+			g_free(cmd_str);
+			util_sms_free_memory(atreq);
+			util_sms_free_memory(pending);
+
+			dbg("Exit");
+			return TCORE_RETURN_ENOMEM;
+		}
+
+		util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
 		tcore_pending_set_request_data(pending, 0, atreq);
 		tcore_pending_set_response_callback(pending, on_response_sms_save_msg_cnf, NULL);
 		tcore_pending_link_user_request(pending, ur);
 		tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+		tcore_hal_send_request(hal, pending);
 
-		api_err = tcore_hal_send_request(hal, pending);
+		g_free(cmd_str);
+
+		dbg("Exit");
+		return TCORE_RETURN_SUCCESS;
 	}
-	else {
-		dbg("Invalid Data Length for SaveMessage");
-		api_err = TCORE_RETURN_SMS_INVALID_DATA_LEN;
-	}
 
-	dbg("Exiting with api_err: %x", api_err);
-	return api_err;
-
+	err("Invalid Data len");
+	dbg("Exit");
+	return TCORE_RETURN_SMS_INVALID_DATA_LEN;
 }
 
 static TReturn delete_msg(CoreObject *obj, UserRequest *ur)
 {
-
-	TcorePlugin *plugin= NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_delete_msg *deleteMsg = NULL;
-	GQueue *queue = NULL;
-	const char * cmd_str = NULL;
-	int index = 0;
 
-	dbg("new pending(TIZEN_SMS_DEL_MSG)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	deleteMsg = tcore_user_request_ref_data(ur, NULL);
-
 	hal = tcore_object_get_hal(obj);
+	if(NULL == deleteMsg || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("deleteMsg: [%p], hal: [%p]", deleteMsg, hal);
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("index: %d", deleteMsg->index);
+
+	cmd_str =g_strdup_printf("AT+CMGD=%d,0\r", deleteMsg->index);
 	pending = tcore_pending_new(obj, 0);
+	atreq = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	if (!deleteMsg || !hal)
-		return TCORE_RETURN_ENOSYS;
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
 
-	index = deleteMsg->index;
-	
-	cmd_str =g_strdup_printf("AT+CMGD=%d,0\r",deleteMsg->index);
-	atreq = tcore_at_request_new((const char*)cmd_str, NULL, TCORE_AT_NO_RESULT);
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
 
 	tcore_pending_set_request_data(pending, 0, atreq);
-	tcore_pending_set_response_callback(pending, on_response_sms_delete_msg_cnf, (void *)&index);
+	tcore_pending_set_response_callback(pending, on_response_sms_delete_msg_cnf, (void *)(uintptr_t)(deleteMsg->index)); //storing index as user data for response
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
 
-	return tcore_hal_send_request(hal, pending);
+	g_free(cmd_str);
 
-
-
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn get_storedMsgCnt(CoreObject *obj, UserRequest *ur)
 {
-	TReturn ret_code = TCORE_RETURN_UNKNOWN;
-
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
-	TcorePending *pending = NULL;
 	TcoreATRequest *atreq = NULL;
-	
-	const struct treq_sms_get_msg_count *getStoredMsgCnt = NULL;
-	const char *cmd_str = NULL;
+	TcorePending *pending = NULL;
 
-	dbg("new pending(TIZEN_SMS_GET_STORED_MSG_COUNT)");
-
-	getStoredMsgCnt = tcore_user_request_ref_data(ur, NULL);
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
+	if(NULL == hal)
+	{
+		err("NULL HAL. Unable to proceed");
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
 
 	cmd_str = g_strdup_printf("AT+CPMS=\"SM\",\"SM\",\"SM\"%c", CR);
+	pending = tcore_pending_new(obj, 0);
 	atreq = tcore_at_request_new((const char *)cmd_str, "+CPMS", TCORE_AT_SINGLELINE);
 
-	/* NULL checkpoint */
-	if (!hal || !pending || !cmd_str || !atreq)
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
 	{
-		err("Pointer is NULL. hal:[%p], pending:[%p], cmd_str:[%p], atreq:[%p]", hal, pending, cmd_str, atreq);
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-		if(pending)
-		{
-			dbg("Freeing pending");
-			free(pending);
-		}
-		if(cmd_str)
-		{
-			dbg("Freeing cmd_str");
-			g_free(cmd_str);
-		}
-		if(atreq)
-		{
-			dbg("Freeing atreq");
-			free(atreq);
-		}
-
-		ret_code = TCORE_RETURN_FAILURE;
-		dbg("Exiting Function with ret_code: [%x]", ret_code);
-		return ret_code;
-	}
-
-	if(cmd_str) /* Already copied in AT-Request */
-	{
-		dbg("Freeing cmd_str");
+		//free memory we own
 		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
 	}
-	
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
 	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_response_callback(pending, on_response_get_storedMsgCnt, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	ret_code = tcore_hal_send_request(hal, pending);
-	
-	dbg("Exiting Function with ret_code: [%x]", ret_code);
-	return ret_code;
+	tcore_hal_send_request(hal, pending);
+
+	g_free(cmd_str);
+
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn get_sca(CoreObject *obj, UserRequest *ur)
 {
-
-	//TODO - Need to make this a blocking call??
-	
-	TcorePlugin *plugin = NULL;
+	gchar * cmd_str = NULL;
 	TcoreHal *hal = NULL;
-	TcorePending *pending = NULL;
 	TcoreATRequest *atreq = NULL;
-	struct tresp_sms_get_sca *respGetSca;
-	const char * cmd_str = NULL;
+	TcorePending *pending = NULL;
+	const struct treq_sms_get_sca *getSca = NULL;
 
-	dbg("new pending(TIZEN_SMS_GET_SCA)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
-	//index is not supported as input param for GetSCA AT command.Hence ignoring
-	respGetSca = tcore_user_request_ref_data(ur, NULL);
-
+	getSca = tcore_user_request_ref_data(ur, NULL);
 	hal = tcore_object_get_hal(obj);
+	if(NULL == getSca || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("getSca: [%p], hal: [%p]", getSca, hal);
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("Index value %d is not ensured. CP doesn't support specifying index values for SCA", getSca->index);
+
+	cmd_str = g_strdup_printf("AT+CSCA?\r");
 	pending = tcore_pending_new(obj, 0);
+	atreq = tcore_at_request_new((const char *)cmd_str, "+CSCA", TCORE_AT_SINGLELINE);
 
-	if (!respGetSca || !hal)
-		return TCORE_RETURN_ENOSYS;
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	cmd_str = g_strdup_printf("AT+CSCA?\r");;
-	atreq = tcore_at_request_new((const char*)cmd_str, "+CSCA", TCORE_AT_SINGLELINE);
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
 
-	tcore_pending_set_request_data(pending, 0,atreq);
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_response_callback(pending, on_response_get_sca, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
 
+	g_free(cmd_str);
 
-	return tcore_hal_send_request(hal, pending);
-
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
-static TReturn set_sca(CoreObject *object, UserRequest *ur)
+static TReturn set_sca(CoreObject *obj, UserRequest *ur)
 {
-
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
-	TcorePending *pending = NULL;
 	TcoreATRequest *atreq = NULL;
-
+	TcorePending *pending = NULL;
 	const struct treq_sms_set_sca *setSca = NULL;
-	char* cmd_str = NULL;
 	int addrType = 0;
-	
 
-	dbg("new pending(TIZEN_SMS_SET_SCA)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	setSca = tcore_user_request_ref_data(ur, NULL);
+	hal = tcore_object_get_hal(obj);
+	if(NULL == setSca || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("setSca: [%p], hal: [%p]", setSca, hal);
 
-	if(setSca->index != 0){
-		dbg("Index except 0 is supported");
-		return TCORE_RETURN_EINVAL;	// TAPI_API_NOT_SUPPORTED;
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
 	}
 
-	hal = tcore_object_get_hal(object);
-	pending = tcore_pending_new(object, 0);
-	
-	if (!setSca || !hal)
-		return TCORE_RETURN_ENOSYS;
+	dbg("Index value %d is not ensured. CP will decide index automatically", setSca->index);
+	dbg("dialNumLen: %u", setSca->scaInfo.dialNumLen);
+	dbg("typeOfNum: %d", setSca->scaInfo.typeOfNum);
+	dbg("numPlanId: %d", setSca->scaInfo.numPlanId);
+	util_hex_dump("    ", (SMS_SMSP_ADDRESS_LEN+1), (void *)setSca->scaInfo.diallingNum);
 
 	addrType = ((setSca->scaInfo.typeOfNum << 4) | setSca->scaInfo.numPlanId) | 0x80;
 
-	//TODO Need to clarify about dialing NumLen
 	cmd_str = g_strdup_printf("AT+CSCA=%s,%d", setSca->scaInfo.diallingNum, addrType);
-	atreq = tcore_at_request_new((const char*)cmd_str, NULL, TCORE_AT_NO_RESULT);
-	
+	pending = tcore_pending_new(obj, 0);
+	atreq = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
+
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
 	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_response_callback(pending, on_response_set_sca, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
 
+	g_free(cmd_str);
 
-	return tcore_hal_send_request(hal, pending);
-
-
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn get_cb_config(CoreObject *obj, UserRequest *ur)
 {
-	//Format of AT command is 	AT+CSCB?
-	//Possible response is +CSCB : <mode>,<mids>,<dcss>
-	//OK
-
-	TcorePlugin *plugin = NULL;
-	TcoreHal *hal = NULL;
-	
-	TcoreATRequest *atreq;
-	TcorePending *pending = NULL;
-	
-	const struct treq_sms_get_cb_config *getCbConfig = NULL;
-
-	dbg("new pending(TIZEN_SMS_GET_CBS_CFG)");
-
-	getCbConfig = tcore_user_request_ref_data(ur, NULL);
-
-	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
-
-	if (!hal) // request data is NULL, so do not NULL check for getCbConfig
-	{
-		dbg("[ERR]  pointer is NULL, getCbConfig=0x%x, h=0x%x", getCbConfig, hal);
-		return TCORE_RETURN_ENOSYS;
-	}
-
-	atreq = tcore_at_request_new("AT+CSCB?", "+CSCB", TCORE_AT_SINGLELINE);
-	tcore_pending_set_request_data(pending, 0, atreq);
-	tcore_pending_set_response_callback(pending, on_response_get_cb_config, NULL);
-	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	tcore_pending_link_user_request(pending, ur);
-
-	return tcore_hal_send_request(hal, pending);
-
-}
-
-static TReturn set_cb_config(CoreObject *obj, UserRequest *ur)
-{
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 
-	const struct treq_sms_set_cb_config *setCbConfig = NULL;
-	char *cmd_str = NULL;
-	gchar *mids_str = NULL;
-	GString *mids_GString = NULL;
-	int err = 0, response = 0, ctr = 0;
-
-	dbg("new pending(TIZEN_SMS_SET_CBS_CFG)");
-
-	setCbConfig = tcore_user_request_ref_data(ur, NULL);
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	hal = tcore_object_get_hal(obj);
+	if(NULL == hal)
+	{
+		err("NULL HAL. Unable to proceed");
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	cmd_str = g_strdup_printf("AT+CSCB?");
 	pending = tcore_pending_new(obj, 0);
+	atreq = tcore_at_request_new((const char *)cmd_str, "+CSCB", TCORE_AT_SINGLELINE);
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	
-	if (!setCbConfig || !hal)
-		return TCORE_RETURN_ENOSYS;
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
 
-	if (setCbConfig->bCBEnabled == FALSE) /* AT+CSCB=0: Disable CBS */
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+	tcore_pending_set_request_data(pending, 0, atreq);
+	tcore_pending_set_response_callback(pending, on_response_get_cb_config, NULL);
+	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_hal_send_request(hal, pending);
+
+	g_free(cmd_str);
+
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn set_cb_config(CoreObject *obj, UserRequest *ur)
+{
+	gchar *cmd_str = NULL;
+	gchar *mids_str = NULL;
+	GString *mids_GString = NULL;
+
+	TcoreHal *hal = NULL;
+	TcoreATRequest *atreq = NULL;
+	TcorePending *pending = NULL;
+	const struct treq_sms_set_cb_config *setCbConfig = NULL;
+	int loop_ctr = 0;
+
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
+
+	setCbConfig = tcore_user_request_ref_data(ur, NULL);
+	hal = tcore_object_get_hal(obj);
+	if(NULL == setCbConfig || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("setCbConfig: [%p], hal: [%p]", setCbConfig, hal);
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("bCBEnabled: %d", setCbConfig->bCBEnabled);
+	dbg("selectedId: %x", setCbConfig->selectedId);
+	dbg("msgIdMaxCount: %x", setCbConfig->msgIdMaxCount);
+	dbg("msgIdCount: %d", setCbConfig->msgIdCount);
+	util_hex_dump("    ", SMS_GSM_SMS_CBMI_LIST_SIZE_MAX, (void *)setCbConfig->msgIDs);
+
+	if (setCbConfig->bCBEnabled == FALSE) //AT+CSCB=0: Disable CBS
 	{
 		cmd_str = g_strdup_printf("AT+CSCB=0\r");
 	}
 	else
 	{
-		if(setCbConfig->selectedId == SMS_CBMI_SELECTED_SOME) /* AT+CSCB=0,<mids>,<dcss>: Enable CBS for specified <mids> and <dcss> */
+		if(setCbConfig->selectedId == SMS_CBMI_SELECTED_SOME) //AT+CSCB=0,<mids>,<dcss>: Enable CBS for specified <mids> and <dcss>
 		{
 			dbg("Enabling specified CBMIs");
 			mids_GString = g_string_new(g_strdup_printf("%d", setCbConfig->msgIDs[0]));
-			
-			for(ctr=1; ctr <setCbConfig->msgIdCount; ctr++)
+
+			for(loop_ctr=1; loop_ctr <setCbConfig->msgIdCount; loop_ctr++)
 			{
 				mids_GString = g_string_append(mids_GString, ",");
-				mids_GString = g_string_append(mids_GString, g_strdup_printf("%d", setCbConfig->msgIDs[ctr]));
+				mids_GString = g_string_append(mids_GString, g_strdup_printf("%d", setCbConfig->msgIDs[loop_ctr]));
 			}
 
 			mids_str = g_string_free(mids_GString, FALSE);
-			//cmd_str = g_strdup_printf("AT+CSCB=0,\"%s\"\r", mids_str);
+			cmd_str = g_strdup_printf("AT+CSCB=0,\"%s\"\r", mids_str);
 
-			//Temporary work around to test from UI. Enabling all - To be removed later
-			cmd_str = g_strdup_printf("AT+CSCB=1\r");
 			g_free(mids_str);
 		}
-		else if (setCbConfig->selectedId == SMS_CBMI_SELECTED_ALL) /* AT+CSCB=1: Enable CBS for all <mids> and <dcss> */
+		else if (setCbConfig->selectedId == SMS_CBMI_SELECTED_ALL) //AT+CSCB=1: Enable CBS for all <mids> and <dcss>
 		{
 			dbg("Enabling all CBMIs");
 			cmd_str = g_strdup_printf("AT+CSCB=1\r");
 		}
 	}
-	
-	dbg("cmd_str: %s", cmd_str);
-	
-	atreq = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
 
-	g_free(cmd_str);
-	
+	pending = tcore_pending_new(obj, 0);
+	atreq = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
 	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_response_callback(pending, on_response_set_cb_config, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	
 	tcore_hal_send_request(hal, pending);
 
+	g_free(cmd_str);
+
+	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
-	
 }
 
 static TReturn set_mem_status(CoreObject *obj, UserRequest *ur)
 {
-
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
-	TcoreATRequest *atreq;
+	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
-
 	const struct treq_sms_set_mem_status *setMemStatus = NULL;
-	char* cmd_str = NULL;
 	int memoryStatus = 0;
 
-	dbg("new pending(TIZEN_SMS_SET_MEM_STATUS)");
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	setMemStatus = tcore_user_request_ref_data(ur, NULL);
-
 	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
+	if(NULL == setMemStatus || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("setMemStatus: [%p], hal: [%p]", setMemStatus, hal);
 
-
-	if (!setMemStatus || !hal)
-		return TCORE_RETURN_ENOSYS;
-
-	if(setMemStatus->memory_status < SMS_PDA_MEMORY_STATUS_AVAILABLE ||
-		setMemStatus->memory_status > SMS_PDA_MEMORY_STATUS_FULL)
+		dbg("Exit");
 		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("memory_status: %d", setMemStatus->memory_status);
+
+	if(setMemStatus->memory_status < SMS_PDA_MEMORY_STATUS_AVAILABLE
+		|| setMemStatus->memory_status > SMS_PDA_MEMORY_STATUS_FULL)
+	{
+		err("Invalid memory_status");
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
 
 	switch (setMemStatus->memory_status)
 	{
 		case SMS_PDA_MEMORY_STATUS_AVAILABLE:
 			memoryStatus = AT_MEMORY_AVAILABLE;
 			break;
+
 		case SMS_PDA_MEMORY_STATUS_FULL:
 			memoryStatus = AT_MEMORY_FULL;
 			break;
+
 		default:
-			memoryStatus = -1;
-			break;
+			err("Invalid memory_status");
+			dbg("Exit");
+			return TCORE_RETURN_EINVAL;
 	}
 
-
-	cmd_str = g_strdup_printf("AT+XTESM=%d",memoryStatus);
+	cmd_str = g_strdup_printf("AT+XTESM=%d", memoryStatus);
+	pending = tcore_pending_new(obj, 0);
 	atreq = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
 
-	dbg("cmd str is %s",cmd_str);
-		
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
 
 	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_response_callback(pending, on_response_set_mem_status, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
+	tcore_hal_send_request(hal, pending);
 
+	g_free(cmd_str);
 
-	return tcore_hal_send_request(hal, pending);
-	
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn get_pref_brearer(CoreObject *obj, UserRequest *ur)
 {
 	dbg("Entry");
 
+	err("Functionality not implemented");
+
 	dbg("Exit");
-	return TCORE_RETURN_SUCCESS;
+	return TCORE_RETURN_ENOSYS;
 }
 
 static TReturn set_pref_brearer(CoreObject *obj, UserRequest *ur)
 {
 	dbg("Entry");
 
+	err("Functionality not implemented");
+
 	dbg("Exit");
-	return TCORE_RETURN_SUCCESS;
+	return TCORE_RETURN_ENOSYS;
 }
 
 static TReturn set_delivery_report(CoreObject *obj, UserRequest *ur)
 {
-	TcorePlugin *plugin = NULL;
-	TcoreHal *hal = NULL;
-	TcoreATRequest *atreq;
-	TcorePending *pending = NULL;
-	const struct treq_sms_set_delivery_report *deliveryReport = NULL;
-	struct property_sms_info *property = NULL;
-	GQueue *queue = NULL;
-	char pdu[MAX_GSM_SMS_TPDU_SIZE];
+	dbg("Entry");
 
-	TReturn api_err = TCORE_RETURN_SUCCESS;
-	int scaLen = 0 , length = 0;
-	unsigned short nRpCause = 0;
-	char *cmd_str = NULL ;
+	err("CP takes care of SMS ack to network automatically. AP doesn't need to invoke this API.");
 
-       //Format  -	+CNMA[=<n>[,<length>[<CR>PDU is given<ctrl-Z/ESC>]]]
-	dbg("new pending(IPC_SMS_SET_DELIVER_REPORT)");
-
-	deliveryReport = tcore_user_request_ref_data(ur, NULL);
-
-	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
-
-	if (!deliveryReport || !hal)
-		return TCORE_RETURN_ENOSYS;
-
-	//pdu = (treq_sms_set_delivery_report *) calloc (1,sizeof(treq_sms_set_delivery_report));
-
-	if ((deliveryReport->dataInfo.msgLength > 0) && (MAX_GSM_SMS_TPDU_SIZE > deliveryReport->dataInfo.msgLength)) 
-	{
-			//pending = tcore_pending_new(obj, 0);
-			//atreq = tcore_at_request_new("AT+CNMA", NULL, TCORE_AT_NO_RESULT);
-
-		scaLen = deliveryReport->dataInfo.sca[0];
-		if(scaLen == 0){
-			memcpy(pdu, deliveryReport->dataInfo.sca, scaLen+2);
-		}
-		else{
-			scaLen = deliveryReport->dataInfo.sca[0];
-
-			dbg(" SC length in tx is %d - before", scaLen);
-
-			util_sms_get_length_of_sca(&scaLen);
-
-			dbg(" SC length in tx is %d - after", scaLen);
-
-			//1Copy SCA to the pdu stream first
-			pdu[0] = scaLen + 1;
-			memcpy(&(pdu[1]), &(deliveryReport->dataInfo.sca[1]), scaLen+1);
-		}
-
-		length = (deliveryReport->dataInfo.msgLength) + (scaLen + 2);
-
-		nRpCause = (unsigned short) deliveryReport->rspType;
-
-		dbg(" data len is %d",length);
-
-		if ((deliveryReport->dataInfo.msgLength < SMS_SMDATA_SIZE_MAX)) {
-			//2Copy rest of the SMS-DELIVER TPDU
-			memcpy(&(pdu[scaLen + 2]), deliveryReport->dataInfo.tpduData,	deliveryReport->dataInfo.msgLength);
-		} else {
-			dbg(" SCA len is %d", scaLen);
-			api_err = TCORE_RETURN_SMS_INVALID_DATA_LEN;
-			return api_err;
-		}
-
-
-			if(deliveryReport->rspType == SMS_SENDSMS_SUCCESS)
-			{
-				//cmd_str = g_strdup_printf("AT+CNMA=1,%d\r%s\x1A\r", length,pdu);
-				cmd_str = g_strdup_printf("AT+CNMA=1\r");
-			}
-			else
-			{
-				cmd_str = g_strdup_printf("AT+CNMA=2\r");
-			}
-	
-			atreq = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
-
-			tcore_pending_set_request_data(pending, 0, atreq);
-			tcore_pending_set_timeout(pending, 0);
-			tcore_pending_set_response_callback(pending, on_response_sms_deliver_rpt_cnf, NULL);
-			tcore_pending_link_user_request(pending, ur);
-
-			return tcore_hal_send_request(hal, pending);
-
-		}
-	else {
-		dbg(" Invalid Data Length for DeliverReportSet");
-		api_err = TCORE_RETURN_SMS_INVALID_DATA_LEN;
-	}
-
-	return api_err;
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
 static TReturn set_msg_status(CoreObject *obj, UserRequest *ur)
 {
-	dbg("Entry");
+	gchar *cmd_str = NULL;
+	char encoded_data[176];
 
-	TcorePlugin *plugin = NULL;
 	TcoreHal *hal = NULL;
-	TcoreATRequest *atreq;
+	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_set_msg_status *msg_status = NULL;
-	char *cmd_str = NULL, *encoded_data = NULL;	
 
-	encoded_data = calloc(176,1);
-
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	msg_status = tcore_user_request_ref_data(ur, NULL);
+	hal = tcore_object_get_hal(obj);
+	if(NULL == msg_status || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("msg_status: [%p], hal: [%p]", msg_status, hal);
 
-	dbg("msg status %d and index %d",msg_status->msgStatus, msg_status->index);
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
+	}
+
+	dbg("msgStatus: [%x], index [%x]", msg_status->msgStatus, msg_status->index);
 
 	switch (msg_status->msgStatus)
 	{
 		case SMS_STATUS_READ:
-			encoded_data[0] = encoded_data[0] | 0x01;
+			encoded_data[0] = 0x01;
 			break;
-		
+
 		case SMS_STATUS_UNREAD:
-			encoded_data[0] = encoded_data[0] | 0x03;
+			encoded_data[0] = 0x03;
 			break;
 
 		case SMS_STATUS_UNSENT:
-			encoded_data[0] = encoded_data[0] | 0x07;
+			encoded_data[0] = 0x07;
 			break;
-	
+
 		case SMS_STATUS_SENT:
-			encoded_data[0] = encoded_data[0] | 0x05;
+			encoded_data[0] = 0x05;
 			break;
 
 		case SMS_STATUS_DELIVERED:
-			encoded_data[0] = encoded_data[0] | 0x1D;
+			encoded_data[0] = 0x1D;
 			break;
+
 		case SMS_STATUS_DELIVERY_UNCONFIRMED:
-			encoded_data[0] = encoded_data[0] | 0xD;
+			encoded_data[0] = 0xD;
 			break;
-		case SMS_STATUS_MESSAGE_REPLACED:
-		case SMS_STATUS_RESERVED:
-			encoded_data[0] = encoded_data[0] | 0x03;
-			break;		
+
+		case SMS_STATUS_MESSAGE_REPLACED: //Fall Through
+		case SMS_STATUS_RESERVED: //Fall Through
+			encoded_data[0] = 0x03;
+			break;
 	}
 
-	memset(&encoded_data[1] , 0xff, 175);
-	
+	memset(&encoded_data[1], 0xff, 175);
 
-	hal = tcore_object_get_hal(obj);
+	//AT+CRSM=command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>[,<pathid>]]]]
+	cmd_str = g_strdup_printf("AT+CRSM=220,28476,%d, 4, 176 %s\r", (msg_status->index+1), encoded_data);
+	atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
 	pending = tcore_pending_new(obj, 0);
-
-	if (!hal)
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
 	{
-		dbg("[ERR]  pointer is NULL, h=0x%x", hal);
-		return TCORE_RETURN_ENOSYS;
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
 	}
 
-	// AT+CRSM=<command>,<fildid>,<p1>,<p2+C29,<p3> TODO
-	cmd_str = g_strdup_printf("AT+CRSM=220,0x6F3C,%d, 4, 176 %s\r", msg_status->index, encoded_data);
-	dbg("cmd str is %s",cmd_str);
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
 
-	atreq = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
-	
-	tcore_pending_set_request_data(pending, 0,atreq);
+	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_response_callback(pending, on_response_set_msg_status, NULL);
 	tcore_pending_link_user_request(pending, ur);
-
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	
 	tcore_hal_send_request(hal, pending);
-	free(cmd_str);
+
+	g_free(cmd_str);
 
 	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
@@ -3877,46 +3023,55 @@ static TReturn set_msg_status(CoreObject *obj, UserRequest *ur)
 
 static TReturn get_sms_params(CoreObject *obj, UserRequest *ur)
 {
-	dbg("Entry");
-
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_get_params *getSmsParams = NULL;
-	char *cmd_str = NULL;
-	
+
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
+
 	getSmsParams = tcore_user_request_ref_data(ur, NULL);
-
 	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
-
-	if (!getSmsParams || !hal)
+	if(NULL == getSmsParams || NULL == hal)
 	{
-		dbg("[ERR]  pointer is NULL, getSmsParams=0x%x, h=0x%x", getSmsParams, hal);
-		return TCORE_RETURN_ENOSYS;
+		err("NULL input. Unable to proceed");
+		dbg("getSmsParams: [%p], hal: [%p]", getSmsParams, hal);
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
 	}
 
-	// AT+CRSM=<command>,<fildid>,<p1>,<p2+C29,<p3> 
-	
-	//cmd_str = g_strdup_printf("AT+CRSM=%d,%x,%d,4 40%s", 178, 0x6F42, getSmsParams->index + 1, "\r");
-	
-	cmd_str = g_strdup_printf("AT+CRSM=178,0x6F42,%d,4,0\r",getSmsParams->index);
+	//AT+CRSM=command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>[,<pathid>]]]]
+	cmd_str = g_strdup_printf("AT+CRSM=178,28482,%d,4,28\r", (getSmsParams->index + 1));
+	atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
+	pending = tcore_pending_new(obj, 0);
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	
-	atreq = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
-	dbg("cmd str is %s",cmd_str);
-	
-	tcore_pending_set_request_data(pending, 0,atreq);
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_response_callback(pending, on_response_get_sms_params, NULL);
 	tcore_pending_link_user_request(pending, ur);
-
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	 
 	tcore_hal_send_request(hal, pending);
-	free(cmd_str);
-	
+
+	g_free(cmd_str);
 
 	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
@@ -3924,116 +3079,172 @@ static TReturn get_sms_params(CoreObject *obj, UserRequest *ur)
 
 static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 {
-	dbg("Entry");
-	
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
+	char *encoded_data = NULL;
+	char *temp_data = NULL, *dest_addr = NULL, *svc_addr = NULL;
+
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
 	const struct treq_sms_set_params *setSmsParams = NULL;
-	char *cmd_str = NULL, *encoded_data = NULL ,*temp_data = NULL;
-	int len = 0, i = 0, iSize = sizeof(struct treq_sms_set_params);
+	int len = 0, alpha_id_len = 0,param_size = sizeof(struct treq_sms_set_params), encoded_data_len = 0;
 
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	setSmsParams = tcore_user_request_ref_data(ur, NULL);
-	
-	temp_data = calloc(iSize,1);
+	hal = tcore_object_get_hal(obj);
+	if(NULL == setSmsParams || NULL == hal)
+	{
+		err("NULL input. Unable to proceed");
+		dbg("setSmsParams: [%p], hal: [%p]", setSmsParams, hal);
 
-	
-	memcpy(temp_data,(void *)(setSmsParams+6), (iSize-6));	
-	len = strlen(temp_data);
+     	temp_data = calloc(param_size,1);
 
+	alpha_id_len = setSmsParams->params.alphaIdLen;
+	dbg("alpha id len is %d", alpha_id_len);
+
+        memcpy(temp_data,&(setSmsParams->params.szAlphaId),alpha_id_len);
+	memcpy((temp_data+alpha_id_len), &(setSmsParams->params.paramIndicator), 1);	
+
+	dest_addr = calloc(sizeof(struct telephony_sms_AddressInfo),1);
+	svc_addr = calloc(sizeof(struct telephony_sms_AddressInfo),1);
+
+	if (setSmsParams->params.tpDestAddr.dialNumLen == 0)
+	{
+		dbg("dest_addr is not present");
+		dest_addr[0] = 0;
+		
+	}else
+	{
+		dest_addr[0] = setSmsParams->params.tpDestAddr.dialNumLen;
+		dest_addr[1] = (((setSmsParams->params.tpDestAddr.typeOfNum << 4) | setSmsParams->params.tpDestAddr.numPlanId) | 0x80);
+		memcpy(&(dest_addr[2]),setSmsParams->params.tpDestAddr.diallingNum,setSmsParams->params.tpDestAddr.dialNumLen);
+		dbg("dest_addr is %s",dest_addr);
+ 
+	} 
+
+       if (setSmsParams->params.tpSvcCntrAddr.dialNumLen == 0)
+        {
+                dbg("svc_addr is not present");
+                svc_addr[0] = 0;
+                
+        }else
+        {
+                svc_addr[0] = setSmsParams->params.tpSvcCntrAddr.dialNumLen;
+                svc_addr[1] = (((setSmsParams->params.tpSvcCntrAddr.typeOfNum << 4) | setSmsParams->params.tpSvcCntrAddr.numPlanId) | 0x80);
+                memcpy(&(svc_addr[2]),&(setSmsParams->params.tpSvcCntrAddr.diallingNum),setSmsParams->params.tpSvcCntrAddr.dialNumLen);
+                dbg("svc_addr is %s %s",svc_addr, setSmsParams->params.tpSvcCntrAddr.diallingNum);
+ 
+        } 
+
+ 	memcpy((temp_data+alpha_id_len+1), dest_addr, setSmsParams->params.tpDestAddr.dialNumLen);
+        memcpy((temp_data+alpha_id_len+setSmsParams->params.tpDestAddr.dialNumLen+1), svc_addr, setSmsParams->params.tpSvcCntrAddr.dialNumLen);
+
+        memcpy((temp_data+alpha_id_len+setSmsParams->params.tpDestAddr.dialNumLen+1+setSmsParams->params.tpSvcCntrAddr.dialNumLen), &(setSmsParams->params.tpProtocolId), 1);
+
+        memcpy((temp_data+alpha_id_len+setSmsParams->params.tpDestAddr.dialNumLen+2+setSmsParams->params.tpSvcCntrAddr.dialNumLen), &(setSmsParams->params.tpDataCodingScheme), 1);
+
+        memcpy((temp_data+alpha_id_len+setSmsParams->params.tpDestAddr.dialNumLen+3+setSmsParams->params.tpSvcCntrAddr.dialNumLen), &(setSmsParams->params.tpValidityPeriod), 1);
+        len = strlen(temp_data);
+
+	dbg("temp data and len %s %d",temp_data, len);
+
+       
 	//EFsmsp file size is 28 +Y bytes (Y is alpha id size)
         encoded_data = calloc((setSmsParams->params.alphaIdLen+28),1);
 
+	util_byte_to_hex((const char *)temp_data, (char *)encoded_data,encoded_data_len);
+
 	hal = tcore_object_get_hal(obj);
 	pending = tcore_pending_new(obj, 0);
 
-	if (!setSmsParams || !hal)
+	if(NULL == cmd_str || NULL == atreq || NULL == pending)
 	{
-		dbg("[ERR]  pointer is NULL, setSmsParams=0x%x, h=0x%x", setSmsParams, hal);
-		return TCORE_RETURN_ENOSYS;
+		err("Out of memory. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
+
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		util_sms_free_memory(temp_data);
+		util_sms_free_memory(encoded_data);
+
+		dbg("Exit");
+		return TCORE_RETURN_ENOMEM;
 	}
 
-	// AT+CRSM=<command>,<fildid>,<p1>,<p2+C29,<p3> 
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
 
-	for(i=0; i<(len*2); i+=2)
-        {
-         	char value = 0;
-
-                value = (temp_data[i/2] & 0xf0 ) >> 4;
-                                if(value < 0xA)
-                                        encoded_data[i+len] = ((temp_data[i/2] & 0xf0 ) >> 4) + '0';
-                                else encoded_data[i+len] = ((temp_data[i/2] & 0xf0 ) >> 4) + 'A' -10;
-
-                                value = temp_data[i/2] & 0x0f;
-                                if(value < 0xA)
-                                        encoded_data[i+1+len] = (temp_data[i/2] & 0x0f ) + '0';
-                                else encoded_data[i+1+len] = (temp_data[i/2] & 0x0f ) + 'A' -10;
-
-         }
-
-
-
-
-	cmd_str = g_strdup_printf("AT+CRSM=220,0x6F42,%x,4,0,%x%x%x%x%x%x%x", 220, 0x6F42, setSmsParams->params.recordIndex, setSmsParams->params.szAlphaId,setSmsParams->params.paramIndicator,setSmsParams->params.tpDestAddr,setSmsParams->params.tpSvcCntrAddr,setSmsParams->params.tpProtocolId,setSmsParams->params.tpDataCodingScheme,setSmsParams->params.tpValidityPeriod, "\r"); 
-
-	dbg("cmd str is %s",cmd_str);
-	atreq = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
-	
-	tcore_pending_set_request_data(pending, 0,atreq);
+	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_response_callback(pending, on_response_set_sms_params, NULL);
 	tcore_pending_link_user_request(pending, ur);
-
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	
 	tcore_hal_send_request(hal, pending);
-	free(cmd_str);
 
-	
+	g_free(cmd_str);
+	util_sms_free_memory(temp_data);
+	util_sms_free_memory(encoded_data);
 
 	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
+	}
+	return TRUE;	
 }
+
 static TReturn get_paramcnt(CoreObject *obj, UserRequest *ur)
 {
-	dbg("Entry");
-
-	TcorePlugin *plugin = NULL;
+	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
 	TcorePending *pending = NULL;
-	const struct treq_sms_get_paramcnt *getParamCnt = NULL;
-	char *cmd_str = NULL;
-	
-	getParamCnt = tcore_user_request_ref_data(ur, NULL);
+
+	dbg("Entry");
+	dbg("CoreObject: [%p]", obj);
+	dbg("UserRequest: [%p]", ur);
 
 	hal = tcore_object_get_hal(obj);
-	pending = tcore_pending_new(obj, 0);
-
-	if (!hal)
+	if(NULL == hal)
 	{
-		dbg("[ERR]  pointer is NULL, h=0x%x", hal);
-		return TCORE_RETURN_ENOSYS;
+		err("NULL HAL. Unable to proceed");
+
+		dbg("Exit");
+		return TCORE_RETURN_EINVAL;
 	}
 
-	// AT+CRSM=<command>,<fildid>,<p1>,<p2+C29,<p3>, EFsmsp: 0x6F42 
+	//AT+CRSM=command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>[,<pathid>]]]]
 	cmd_str = g_strdup_printf("AT+CRSM=192, %d%s", 0x6F42, "\r");
+	atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
+	pending = tcore_pending_new(obj, 0);
 
-	atreq = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
-	dbg("cmd str is %s",cmd_str);
+	if (NULL == cmd_str || NULL == atreq || NULL == pending)
+	{
+		err("NULL pointer. Unable to proceed");
+		dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
 
-	
-	tcore_pending_set_request_data(pending, 0,atreq);
+		//free memory we own
+		g_free(cmd_str);
+		util_sms_free_memory(atreq);
+		util_sms_free_memory(pending);
+
+		dbg("Exit");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
+
+	tcore_pending_set_request_data(pending, 0, atreq);
 	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_response_callback(pending, on_response_get_paramcnt, NULL);
 	tcore_pending_link_user_request(pending, ur);
-
 	tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-	
 	tcore_hal_send_request(hal, pending);
-	free(cmd_str);
+
+	g_free(cmd_str);
 
 	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
@@ -4041,8 +3252,7 @@ static TReturn get_paramcnt(CoreObject *obj, UserRequest *ur)
 
 static struct tcore_sms_operations sms_ops =
 {
-	//.send_umts_msg = send_umts_msg,	
-	.send_umts_msg = Send_SmsSubmitTpdu,
+	.send_umts_msg = send_umts_msg,
 	.read_msg = read_msg,
 	.save_msg = save_msg,
 	.delete_msg = delete_msg,
@@ -4059,66 +3269,72 @@ static struct tcore_sms_operations sms_ops =
 	.get_sms_params = get_sms_params,
 	.set_sms_params = set_sms_params,
 	.get_paramcnt = get_paramcnt,
-	//.send_cdma_msg = send_cdma_msg,
 };
 
-gboolean s_sms_init(TcorePlugin *plugin,  TcoreHal *hal)
+gboolean s_sms_init(TcorePlugin *plugin, TcoreHal *hal)
 {
 	CoreObject *obj = NULL;
 	struct property_sms_info *data = NULL;
 	GQueue *work_queue = NULL;
+
 	dbg("Entry");
-	
+	dbg("plugin: [%p]", plugin);
+	dbg("hal: [%p]", hal);
+
 	obj = tcore_sms_new(plugin, "umts_sms", &sms_ops, hal);
-	if (!obj) {
+
+	data = calloc(sizeof(struct property_sms_info), 1);
+
+	if (NULL == obj || NULL == data)
+	{
+		err("Unable to initialize. Exiting");
+		s_sms_exit(plugin);
+
+		dbg("Exit");
 		return FALSE;
 	}
 
 	work_queue = g_queue_new();
 	tcore_object_link_user_data(obj, work_queue);
 
-	tcore_object_add_callback(obj, "\e+CMTI" , on_event_sms_incom_msg, NULL);
-	tcore_object_add_callback(obj, "\e+CMT" , on_event_sms_incom_msg, NULL);
+	//Registering for SMS notifications
+	tcore_object_add_callback(obj, "\e+CMTI", on_event_sms_incom_msg, NULL);
+	tcore_object_add_callback(obj, "\e+CMT", on_event_sms_incom_msg, NULL);
 
-	tcore_object_add_callback(obj, "\e+CDS" , on_event_sms_incom_msg, NULL);
-	tcore_object_add_callback(obj, "\e+CDSI" , on_event_sms_incom_msg, NULL);
+	tcore_object_add_callback(obj, "\e+CDS", on_event_sms_incom_msg, NULL);
+	tcore_object_add_callback(obj, "\e+CDSI", on_event_sms_incom_msg, NULL);
 
-	tcore_object_add_callback(obj, "+XTESM",  on_event_sms_memory_status, NULL);
+	tcore_object_add_callback(obj, "+XSMSMMSTAT", on_event_sms_memory_status, NULL);
 
-	tcore_object_add_callback(obj, "\e+CBMI" , on_event_sms_cb_incom_msg, NULL); 	
-	tcore_object_add_callback(obj, "\e+CBM" , on_event_sms_cb_incom_msg, NULL);
+	tcore_object_add_callback(obj, "\e+CBMI", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_add_callback(obj, "\e+CBM", on_event_sms_cb_incom_msg, NULL);
 	tcore_object_add_callback(obj, "+XSIM", on_event_sms_ready_status, NULL);
 
-	//tcore_at_add_notification(&coreAt, "+XSIMSTATE", 0 , on_event_sms_incom_msg, NULL);
-
-	data = calloc(sizeof(struct property_sms_info), 1);
 	tcore_plugin_link_property(plugin, "SMS", data);
-
-	/* Make registration settings via AT commands necessary to recieve unsolicited noti */
 
 	dbg("Exit");
 	return TRUE;
 }
 
-
-void s_sms_exit(TcorePlugin *p)
+void s_sms_exit(TcorePlugin *plugin)
 {
-	CoreObject *o;
-	struct property_sms_info *data;
-	dbg("Entry");
+	CoreObject *obj = NULL;
+	struct property_sms_info *data = NULL;
 
-	o = tcore_plugin_ref_core_object(p, "umts_sms");
-	if (!o) {
+	dbg("Entry");
+	dbg("plugin: [%p]", plugin);
+
+	obj = tcore_plugin_ref_core_object(plugin, "umts_sms");
+	if (NULL == obj)
+	{
+		err("NULL core object. Nothing to do.");
 		return;
 	}
-	tcore_sms_free(o);
+	tcore_sms_free(obj);
 
-	data = tcore_plugin_ref_property(p, "SMS");
-	if (data) {
-		free(data);
-	}
+	data = tcore_plugin_ref_property(plugin, "SMS");
+	util_sms_free_memory(data);
 
 	dbg("Exit");
 	return;
 }
-

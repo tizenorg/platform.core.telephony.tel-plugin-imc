@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ * Contact: Madhavi Akella <madhavi.a@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@
 
 #ifndef __S_SMS_H__
 #define __S_SMS_H__
-
 
 gboolean s_sms_init(TcorePlugin *p, TcoreHal *h);
 void s_sms_exit(TcorePlugin *p);
