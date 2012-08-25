@@ -48,6 +48,9 @@
                     MASK((width), (offset), (data)) << -(shift) :  \
                     MASK((width), (offset), (data)) >>  (((unsigned) (shift)))) \
 
+char _util_unpackb(const char *src, int pos, int len);
+char _util_convert_byte_hexChar (char val);
+gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
 void util_hex_dump(char *pad, int size, const void *data)
 {

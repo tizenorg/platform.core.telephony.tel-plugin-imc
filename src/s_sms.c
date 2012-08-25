@@ -758,21 +758,21 @@ static void on_response_sms_deliver_rpt_cnf(TcorePending *p, int data_len, const
 }
 #endif
 
-static void on_response_send_umts_msg(TcorePending *plugin, int data_len, const void *data, void *user_data)
+static void on_response_send_umts_msg(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	const TcoreATResponse *resp = data;
-	struct tresp_sms_send_umts_msg respUmtsInfo;
-	UserRequest *ur = NULL;
+	const TcoreATResponse *at_response = data;
+	struct tresp_sms_send_umts_msg resp_umts;
+	UserRequest *user_req = NULL;
 
-	char *line = NULL , *pResp = NULL;
 	int msg_ref = 0;
 	GSList *tokens = NULL;
+	char *gslist_line = NULL, *line_token = NULL;
 
 	dbg("Entry");
 
-	ur = tcore_pending_ref_user_request(plugin);
+	user_req = tcore_pending_ref_user_request(pending);
 
-	if(NULL == ur)
+	if(NULL == user_req)
 	{
 		err("No user request");
 
@@ -780,68 +780,69 @@ static void on_response_send_umts_msg(TcorePending *plugin, int data_len, const 
 		return;
 	}
 
-	if(resp->success > 0)
+	memset(&resp_umts, 0x00, sizeof(resp_umts));
+
+	if(at_response->success > 0) //success
 	{
 		dbg("Response OK");
-		if(resp->lines)
+		if(at_response->lines)	//lines present in at_response
 		{
-			line = (char *)resp->lines->data;
-			dbg("line is %s",line);
+			gslist_line = (char *)at_response->lines->data;
+			dbg("gslist_line: [%s]", gslist_line);
 
-			tokens = tcore_at_tok_new(line);
+			tokens = tcore_at_tok_new(gslist_line); //extract tokens
 
-			pResp = g_slist_nth_data(tokens, 0);
-			if (pResp != NULL)
+			line_token = g_slist_nth_data(tokens, 0);
+			if (line_token != NULL)
 			{
-				msg_ref = atoi(pResp);
-				dbg("Message Reference: %d", msg_ref);
+				msg_ref = atoi(line_token);
+				dbg("Message Reference: [%d]", msg_ref);
 
-				respUmtsInfo.result = SMS_SENDSMS_SUCCESS;
+				resp_umts.result = SMS_SENDSMS_SUCCESS;
 			}
 			else
 			{
 				dbg("No Message Reference received");
-				respUmtsInfo.result = SMS_DEVICE_FAILURE;
+				resp_umts.result = SMS_DEVICE_FAILURE;
 			}
 		}
-		else
+		else //no lines in at_response
 		{
 			dbg("No lines");
-			respUmtsInfo.result = SMS_DEVICE_FAILURE;
+			resp_umts.result = SMS_DEVICE_FAILURE;
 		}
 	}
-	else
+	else //failure
 	{
 		dbg("Response NOK");
-		respUmtsInfo.result = SMS_DEVICE_FAILURE;
+		resp_umts.result = SMS_DEVICE_FAILURE;
 	}
 
-	tcore_user_request_send_response(ur, TRESP_SMS_SEND_UMTS_MSG, sizeof(struct tresp_sms_send_umts_msg), &respUmtsInfo);
+	tcore_user_request_send_response(user_req, TRESP_SMS_SEND_UMTS_MSG, sizeof(resp_umts), &resp_umts);
 
 	dbg("Exit");
 	return;
 }
 
-static void on_response_read_msg(TcorePending *plugin, int data_len, const void *data, void *user_data)
+static void on_response_read_msg(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	const TcoreATResponse *atResp = data;
-	struct tresp_sms_read_msg respReadMsg;
-	UserRequest *ur = NULL;
-	GSList *tokens=NULL, *lines = NULL;
-	char * line = NULL, *pResp = NULL , *pdu = NULL, *temp_pdu = NULL;
-	int ScLength = 0;
-	int rtn = 0 , i = 0;
-	int stat = 0 , alpha = 0 , length = 0;
+	const TcoreATResponse *at_response = data;
+	struct tresp_sms_read_msg resp_read_msg;
+	UserRequest *user_req = NULL;
+
+	GSList *tokens=NULL;
+	char *gslist_line = NULL, *line_token = NULL, *byte_pdu = NULL, *hex_pdu = NULL;
+	int sca_length = 0;
+	int msg_status = 0, alpha_id = 0, pdu_len = 0;
 	int index = (int)(uintptr_t)user_data;
 
 	dbg("Entry");
 	dbg("index: [%d]", index);
-	dbg("lines: [%p]", atResp->lines);
+	dbg("lines: [%p]", at_response->lines);
+	g_slist_foreach(at_response->lines, print_glib_list_elem, NULL); //for debug log
 
-	g_slist_foreach(atResp->lines, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
-
-	ur = tcore_pending_ref_user_request(plugin);
-	if (NULL == ur)
+	user_req = tcore_pending_ref_user_request(pending);
+	if (NULL == user_req)
 	{
 		err("No user request");
 
@@ -849,271 +850,263 @@ static void on_response_read_msg(TcorePending *plugin, int data_len, const void 
 		return;
 	}
 
-	dbg("success: [%02x]", atResp->success);
+	memset(&resp_read_msg, 0x00, sizeof(resp_read_msg));
 
-	if (atResp->success > 0)
+	if (at_response->success > 0)
 	{
-		if (atResp->lines)
+		dbg("Response OK");
+		if (at_response->lines)
 		{
-			line = (char *)atResp->lines->data;
+			//fetch first line
+			gslist_line = (char *)at_response->lines->data;
 
-			dbg("response Ok line is %s",line);
+			dbg("gslist_line: [%s]", gslist_line);
 
-			tokens = tcore_at_tok_new(line);
+			tokens = tcore_at_tok_new(gslist_line);
+			dbg("Number of tokens: [%d]", g_slist_length(tokens));
 			g_slist_foreach(tokens, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
-			dbg(" length of tokens is %d\n", g_slist_length(tokens));
 
-			pResp = g_slist_nth_data(tokens, 0);
-			if (pResp != NULL)
+			line_token = g_slist_nth_data(tokens, 0); //First Token: Message Status
+			if (line_token != NULL)
 			{
-				//ToDO msg status mapping needs to be done
-				stat = atoi(pResp);
-				dbg("stat is %d",stat);
-				switch (stat)
+				msg_status = atoi(line_token);
+				dbg("msg_status is %d",msg_status);
+				switch (msg_status)
 				{
 					case AT_REC_UNREAD:
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_UNREAD;
+						resp_read_msg.dataInfo.msgStatus = SMS_STATUS_UNREAD;
 						break;
 
 					case AT_REC_READ:
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_READ;
+						resp_read_msg.dataInfo.msgStatus = SMS_STATUS_READ;
 						break;
 
 					case AT_STO_UNSENT:
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_UNSENT;
+						resp_read_msg.dataInfo.msgStatus = SMS_STATUS_UNSENT;
 						break;
 
 					case AT_STO_SENT:
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_SENT;
+						resp_read_msg.dataInfo.msgStatus = SMS_STATUS_SENT;
 						break;
 
 					case AT_ALL: //Fall Through
 					default: //Fall Through
-						respReadMsg.dataInfo.msgStatus = SMS_STATUS_RESERVED;
+						resp_read_msg.dataInfo.msgStatus = SMS_STATUS_RESERVED;
 						break;
 				}
 			}
 
-			pResp = g_slist_nth_data(tokens, 1);
-			if (pResp != NULL)
+			line_token = g_slist_nth_data(tokens, 1); //Second Token: AlphaID
+			if (line_token != NULL)
 			{
-				alpha = atoi(pResp);
-				dbg("alpha is %d",alpha);
+				alpha_id = atoi(line_token);
+				dbg("AlphaID: [%d]", alpha_id);
 			}
 
-			pResp = g_slist_nth_data(tokens, 2);
-			if (pResp != NULL)
+			line_token = g_slist_nth_data(tokens, 2); //Third Token: Length
+			if (line_token != NULL)
 			{
-				length = atoi(pResp);
-				dbg("length is %d",length);
+				pdu_len = atoi(line_token);
+				dbg("Length: [%d]", pdu_len);
 			}
 
-			lines = atResp->lines;
-			lines = lines->next;
-			line = (char *)lines->data;
-			tokens = tcore_at_tok_new(line);
+			//fetch second line
+			gslist_line = (char *)at_response->lines->next->data;
 
-			temp_pdu = g_slist_nth_data(tokens, 0);
-			if (temp_pdu != NULL)
+			dbg("gslist_line: [%s]", gslist_line);
+
+			tokens = tcore_at_tok_new(gslist_line);
+			dbg("Number of tokens: [%d]", g_slist_length(tokens));
+			g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
+
+			hex_pdu = g_slist_nth_data(tokens, 0); //Fetch SMS PDU
+			if (NULL != hex_pdu)
 			{
-				dbg("temp pdu is %s",temp_pdu);
-				pdu = util_hexStringToBytes(temp_pdu);
-				ScLength = (int)pdu[0];
+				util_hex_dump("    ", sizeof(hex_pdu), (void *)hex_pdu);
 
-				respReadMsg.dataInfo.simIndex = index; //Retrieving index stored as part of req userdata
+				byte_pdu = util_hexStringToBytes(hex_pdu);
 
+				sca_length = (int)byte_pdu[0];
 
-			if(0 == ScLength)
-			{
+				resp_read_msg.dataInfo.simIndex = index; //Retrieving index stored as user_data
 
-				respReadMsg.dataInfo.smsData.msgLength =  length  - (ScLength+1) ;
-
-				if ((respReadMsg.dataInfo.smsData.msgLength >0) && (0xff >= respReadMsg.dataInfo.smsData.msgLength))
+				if(0 == sca_length)
 				{
 					dbg("SCA Length is 0");
 
-					memset(respReadMsg.dataInfo.smsData.sca, 0, TAPI_SIM_SMSP_ADDRESS_LEN);
+					resp_read_msg.dataInfo.smsData.msgLength =  pdu_len  - (sca_length+1);
+					dbg("msgLength: [%d]", resp_read_msg.dataInfo.smsData.msgLength);
 
-					/*
-					if(read_data.SmsData.MsgLength > SMS_SMDATA_SIZE_MAX)
+					if ((resp_read_msg.dataInfo.smsData.msgLength > 0)
+						&& (resp_read_msg.dataInfo.smsData.msgLength <= 0xff))
 					{
-						respReadMsg.dataInfo.smsData.msgLength = SMS_SMDATA_SIZE_MAX;
-					}
-					*/
+						memset(resp_read_msg.dataInfo.smsData.sca, 0, TAPI_SIM_SMSP_ADDRESS_LEN);
+						memcpy(resp_read_msg.dataInfo.smsData.tpduData, &byte_pdu[2], resp_read_msg.dataInfo.smsData.msgLength);
 
-					memcpy(respReadMsg.dataInfo.smsData.tpduData, &pdu[2], respReadMsg.dataInfo.smsData.msgLength);
-					respReadMsg.result = SMS_SUCCESS;
-
-					rtn = tcore_user_request_send_response(ur, TRESP_SMS_READ_MSG, sizeof(struct tresp_sms_read_msg), &respReadMsg);
-				}
-				else
-				{
-					dbg("Invalid Message Length");
-					respReadMsg.result = SMS_INVALID_PARAMETER_FORMAT;
-					rtn = tcore_user_request_send_response(ur, TRESP_SMS_READ_MSG, sizeof(struct tresp_sms_read_msg), &respReadMsg);
-				}
-
-			}
-			else		//SCLength is Not 0
-			{
-				respReadMsg.dataInfo.smsData.msgLength =  (length - (ScLength+1));
-				dbg("data msg len is %d", respReadMsg.dataInfo.smsData.msgLength);
-
-				if ((respReadMsg.dataInfo.smsData.msgLength >0) && (0xff >= respReadMsg.dataInfo.smsData.msgLength))
-				{
-					memcpy(respReadMsg.dataInfo.smsData.sca, (char*)pdu,(ScLength+1));
-
-					/*LastSemiOctect = pdu[ScLength + 1] & 0xf0;
-					if(LastSemiOctect == 0xf0)
-					{
-						respReadMsg.dataInfo.smsData.sca[0] = (ScLength-1)*2 - 1;
+						resp_read_msg.result = SMS_SUCCESS;
 					}
 					else
 					{
-						respReadMsg.dataInfo.smsData.sca[0] = (ScLength-1)*2;
+						err("Invalid Message Length");
+
+						resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 					}
-					*/
-					
-
-					//if(respReadMsg.dataInfo.smsData.msgLength > SMS_SMDATA_SIZE_MAX)
-				//	{
-					//	respReadMsg.dataInfo.smsData.msgLength = SMS_SMDATA_SIZE_MAX;
-				//	}
-
-					for(i=0;i<(ScLength+1);i++)
-					{
-						dbg("SCA is [%2x] ", respReadMsg.dataInfo.smsData.sca[i]);
-					}
-
-					memcpy(respReadMsg.dataInfo.smsData.tpduData, &pdu[ScLength+1], respReadMsg.dataInfo.smsData.msgLength);
-					respReadMsg.result = SMS_SUCCESS;
-
-					dbg("read tpdu is %s sca is %s pdu %s",respReadMsg.dataInfo.smsData.tpduData, respReadMsg.dataInfo.smsData.sca,pdu);
-
-					rtn = tcore_user_request_send_response(ur, TRESP_SMS_READ_MSG, sizeof(struct tresp_sms_read_msg), &respReadMsg);
 				}
 				else
 				{
-					dbg("Invalid Message Length");
-					respReadMsg.result = SMS_INVALID_PARAMETER_FORMAT;
-					rtn = tcore_user_request_send_response(ur, TRESP_SMS_READ_MSG, sizeof(struct tresp_sms_read_msg), &respReadMsg);
-				}
+					dbg("SCA Length is not 0");
 
+					resp_read_msg.dataInfo.smsData.msgLength =  (pdu_len - (sca_length+1));
+					dbg("msgLength: [%d]", resp_read_msg.dataInfo.smsData.msgLength);
+
+					if ((resp_read_msg.dataInfo.smsData.msgLength > 0)
+						&& (resp_read_msg.dataInfo.smsData.msgLength <= 0xff))
+					{
+						memcpy(resp_read_msg.dataInfo.smsData.sca, (char *)byte_pdu, (sca_length+1));
+						memcpy(resp_read_msg.dataInfo.smsData.tpduData, &byte_pdu[sca_length+1], resp_read_msg.dataInfo.smsData.msgLength);
+
+						util_hex_dump("    ", SMS_SMSP_ADDRESS_LEN, (void *)resp_read_msg.dataInfo.smsData.sca);
+						util_hex_dump("    ", (SMS_SMDATA_SIZE_MAX + 1), (void *)resp_read_msg.dataInfo.smsData.tpduData);
+						util_hex_dump("    ", sizeof(byte_pdu), (void *)byte_pdu);
+
+						resp_read_msg.result = SMS_SUCCESS;
+					}
+					else
+					{
+						err("Invalid Message Length");
+
+						resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
+					}
+				}
+			}
+			else
+			{
+				dbg("NULL PDU");
+				resp_read_msg.result = SMS_PHONE_FAILURE;
 			}
 		}
 		else
 		{
-			dbg("Read PDU Is NULL");
-		}
-		}
-		else
-		{
-			dbg("No lines in AT response");
+			dbg("No lines");
+			resp_read_msg.result = SMS_PHONE_FAILURE;
 		}
 	}
 	else
 	{
-		dbg("Response NOK");
+		err("Response NOK");
+		resp_read_msg.result = SMS_PHONE_FAILURE;
 	}
+
+	tcore_user_request_send_response(user_req, TRESP_SMS_READ_MSG, sizeof(resp_read_msg), &resp_read_msg);
+
+	dbg("Exit");
 	return;
 }
 
-static void on_response_get_msg_indices(TcorePending *p, int data_len, const void *data, void *user_data)
+static void on_response_get_msg_indices(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	UserRequest *ur = NULL;
-	struct tresp_sms_get_storedMsgCnt * respStoredMsgCnt_prev = NULL;
-	struct tresp_sms_get_storedMsgCnt respStoredMsgCnt;
-	const TcoreATResponse *atResp = data;
+	const TcoreATResponse *at_response = data;
+	struct tresp_sms_get_storedMsgCnt resp_stored_msg_cnt;
+	UserRequest *user_req = NULL;
+	struct tresp_sms_get_storedMsgCnt *resp_stored_msg_cnt_prev = NULL;
+
 	GSList *tokens = NULL;
-	char *line = NULL , *pResp = NULL;
-	int noOfLines = 0 , i = 0;
+	char *gslist_line = NULL, *line_token = NULL;
+	int gslist_line_count = 0, ctr_loop = 0;
 
-	//memset(&respStoredMsgCnt, 0, sizeof(struct tresp_sms_get_storedMsgCnt));
+	dbg("Entry");
 
-	respStoredMsgCnt_prev = (struct tresp_sms_get_storedMsgCnt *)user_data;
-	ur = tcore_pending_ref_user_request(p);
+	resp_stored_msg_cnt_prev = (struct tresp_sms_get_storedMsgCnt *)user_data;
+	user_req = tcore_pending_ref_user_request(pending);
 
-	respStoredMsgCnt.result = SMS_SENDSMS_SUCCESS;
+	memset(&resp_stored_msg_cnt, 0x00, sizeof(resp_stored_msg_cnt));
 
-	if (atResp->success)
-        {
-                dbg("Response OK");
-                if(atResp->lines)
-                {
-			noOfLines = g_slist_length(atResp->lines);
+	if (at_response->success)
+	{
+		dbg("Response OK");
+		if(at_response->lines)
+		{
+			gslist_line_count = g_slist_length(at_response->lines);
 
-			if (noOfLines > SMS_GSM_SMS_MSG_NUM_MAX)
-				noOfLines = SMS_GSM_SMS_MSG_NUM_MAX;
+			if (gslist_line_count > SMS_GSM_SMS_MSG_NUM_MAX)
+				gslist_line_count = SMS_GSM_SMS_MSG_NUM_MAX;
 
-                        dbg("no of lines is %d", noOfLines);
+			dbg("Number of lines: [%d]", gslist_line_count);
+			g_slist_foreach(at_response->lines, print_glib_list_elem, NULL); //for debug log
 
-			g_slist_foreach(atResp->lines, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
-
-     			for (i = 0; i < noOfLines ; i++)
+			for (ctr_loop = 0; ctr_loop < gslist_line_count ; ctr_loop++)
      			{
-				line = (char *)g_slist_nth_data(atResp->lines, i); /* Fetch Line i */
+				gslist_line = (char *)g_slist_nth_data(at_response->lines, ctr_loop); /* Fetch Line i */
 
-				dbg("line %d is %s", i, line);
+				dbg("gslist_line [%d] is [%s]", ctr_loop, gslist_line);
 
-				if (line != NULL)
+				if (NULL != gslist_line)
 				{
-					tokens = tcore_at_tok_new(line);
+					tokens = tcore_at_tok_new(gslist_line);
 
 					g_slist_foreach(tokens, print_glib_list_elem, NULL); /* gaurav.kalra: For test */
 
-					pResp = g_slist_nth_data(tokens, 0);
-					if (pResp != NULL)
+					line_token = g_slist_nth_data(tokens, 0);
+					if (NULL != line_token)
 					{
-						respStoredMsgCnt.storedMsgCnt.indexList[i] = atoi(pResp);
+						resp_stored_msg_cnt.storedMsgCnt.indexList[ctr_loop] = atoi(line_token);
 					}
 					else
 					{
-						respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
-						dbg("pResp of line %d is NULL", i);
+						resp_stored_msg_cnt.result = SMS_DEVICE_FAILURE;
+						dbg("line_token of gslist_line [%d] is NULL", ctr_loop);
 
+						break;
 					}
 				}
 				else
 				{
-					respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
-					dbg("line %d is NULL", i);
+					resp_stored_msg_cnt.result = SMS_DEVICE_FAILURE;
+					dbg("gslist_line [%d] is NULL", ctr_loop);
+
+					break;
 				}
      			}
 		}
 		else
 		{
 			dbg("No lines.");
-			/* Check if used count is zero */
-			if(respStoredMsgCnt_prev->storedMsgCnt.usedCount == 0)
-				respStoredMsgCnt.result = SMS_SENDSMS_SUCCESS;
+			if(resp_stored_msg_cnt_prev->storedMsgCnt.usedCount == 0) //Check if used count is zero
+			{
+				resp_stored_msg_cnt.result = SMS_SENDSMS_SUCCESS;
+			}
 			else
-				respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
+			{
+				resp_stored_msg_cnt.result = SMS_DEVICE_FAILURE;
+			}
 		}
 	}
 	else
 	{
 		dbg("Respnose NOK");
-		respStoredMsgCnt.result = SMS_DEVICE_FAILURE;
+		resp_stored_msg_cnt.result = SMS_DEVICE_FAILURE;
 	}
 
-	for(i = 0; i < noOfLines ; i++)
-		dbg("index: [%d]", respStoredMsgCnt.storedMsgCnt.indexList[i]);
+	resp_stored_msg_cnt.storedMsgCnt.totalCount = resp_stored_msg_cnt_prev->storedMsgCnt.totalCount;
+	resp_stored_msg_cnt.storedMsgCnt.usedCount = resp_stored_msg_cnt_prev->storedMsgCnt.usedCount;
 
-	respStoredMsgCnt.storedMsgCnt.totalCount = respStoredMsgCnt_prev->storedMsgCnt.totalCount;
-	respStoredMsgCnt.storedMsgCnt.usedCount = respStoredMsgCnt_prev->storedMsgCnt.usedCount;
+	util_sms_free_memory(resp_stored_msg_cnt_prev);
 
-	dbg("total: [%d]", respStoredMsgCnt.storedMsgCnt.totalCount);
-	dbg("used: [%d]", respStoredMsgCnt.storedMsgCnt.usedCount);
-	dbg("result: [%d]", respStoredMsgCnt.result);
+	dbg("total: [%d]", resp_stored_msg_cnt.storedMsgCnt.totalCount);
+	dbg("used: [%d]", resp_stored_msg_cnt.storedMsgCnt.usedCount);
+	dbg("result: [%d]", resp_stored_msg_cnt.result);
+	for(ctr_loop = 0; ctr_loop < gslist_line_count; ctr_loop++)
+	{
+		dbg("index: [%d]", resp_stored_msg_cnt.storedMsgCnt.indexList[ctr_loop]);
+	}
 
-	util_sms_free_memory(respStoredMsgCnt_prev);
+	tcore_user_request_send_response(user_req, TRESP_SMS_GET_STORED_MSG_COUNT, sizeof(resp_stored_msg_cnt), &resp_stored_msg_cnt);
 
-	tcore_user_request_send_response(ur, TRESP_SMS_GET_STORED_MSG_COUNT, sizeof(struct tresp_sms_get_storedMsgCnt), &respStoredMsgCnt);
-
-
+	dbg("Exit");
+	return;
 }
 
-static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const void *data, void *user_data)
+static void on_response_get_storedMsgCnt(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur = NULL, *ur_dup = NULL;
 	struct tresp_sms_get_storedMsgCnt *respStoredMsgCnt = NULL;
@@ -1130,9 +1123,9 @@ static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const vo
 
 	respStoredMsgCnt = malloc(sizeof(struct tresp_sms_get_storedMsgCnt));
 
-	ur = tcore_pending_ref_user_request(p);
+	ur = tcore_pending_ref_user_request(pending);
 	ur_dup = tcore_user_request_ref(ur);
-	o = tcore_pending_ref_core_object(p);
+	o = tcore_pending_ref_core_object(pending);
 
 	if (atResp->success > 0)
 	{
@@ -1149,7 +1142,6 @@ static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const vo
 		 	{
 		 		usedCnt =atoi(pResp);
 				dbg("used cnt is %d",usedCnt);
-
 			}
 
 			pResp = g_slist_nth_data(tokens, 1);
@@ -1195,49 +1187,64 @@ static void on_response_get_storedMsgCnt(TcorePending *p, int data_len, const vo
 
 static void on_response_get_sca(TcorePending *pending, int data_len, const void *data, void *user_data)
 {
-	//Response is expected in this format +CSCA: <sca>,<tosca>
-
-	UserRequest *ur;
+	const TcoreATResponse *at_response = data;
 	struct tresp_sms_get_sca respGetSca;
-	GSList *tokens=NULL;
+	UserRequest *user_req = NULL;
 
-	//copies the AT response data to resp
-	const TcoreATResponse *atResp = data;
-	char *line = NULL, *sca = NULL, *typeOfAddress = NULL;
+	GSList *tokens = NULL;
+	char *gslist_line = NULL, *sca_addr = NULL, *sca_toa = NULL;
 
-	// +CSCA: <sca number>,<sca type>
+	dbg("Entry");
 
-	memset(&respGetSca, 0, sizeof(struct tresp_sms_get_sca));
+	memset(&respGetSca, 0, sizeof(respGetSca));
 
-	ur = tcore_pending_ref_user_request(pending);
-	if (atResp->success)
+	user_req = tcore_pending_ref_user_request(pending);
+
+	if (at_response->success)
 	{
 		dbg("Response OK");
-		if(atResp->lines)
+		if(at_response->lines)
 		{
-			line = (char*)atResp->lines->data;
-			tokens = tcore_at_tok_new(line);
-			sca = g_slist_nth_data(tokens, 0);
-			typeOfAddress = g_slist_nth_data(tokens, 1);
-			if ((sca) && (typeOfAddress))
+			gslist_line = (char *)at_response->lines->data;
+
+			tokens = tcore_at_tok_new(gslist_line);
+			sca_addr = g_slist_nth_data(tokens, 0);
+			sca_toa = g_slist_nth_data(tokens, 1);
+
+			if ((NULL != sca_addr)
+				&& (NULL != sca_toa))
 			{
-					dbg("sca and address type are %s %s", sca, typeOfAddress);
-					respGetSca.scaAddress.dialNumLen = strlen(sca);
-					if(atoi(typeOfAddress) == 145)
-						{
-							respGetSca.scaAddress.typeOfNum = SIM_TON_INTERNATIONAL;
-						}
-					else
-						{
-							respGetSca.scaAddress.typeOfNum = SIM_TON_NATIONAL;
-						}
-					respGetSca.scaAddress.numPlanId = 0;
+				dbg("sca_addr: [%s]. sca_toa: [%s]", sca_addr, sca_toa);
 
-					memcpy(respGetSca.scaAddress.diallingNum, sca, strlen(sca));
+				respGetSca.scaAddress.dialNumLen = strlen(sca_addr);
 
-					dbg("len %d, sca %s, TON %d, NPI %d",respGetSca.scaAddress.dialNumLen,respGetSca.scaAddress.diallingNum,respGetSca.scaAddress.typeOfNum,respGetSca.scaAddress.numPlanId);
-					respGetSca.result = SMS_SENDSMS_SUCCESS;
+				if(145 == atoi(sca_toa))
+				{
+					respGetSca.scaAddress.typeOfNum = SIM_TON_INTERNATIONAL;
+				}
+				else
+				{
+					respGetSca.scaAddress.typeOfNum = SIM_TON_NATIONAL;
+				}
+
+				respGetSca.scaAddress.numPlanId = 0;
+
+				memcpy(respGetSca.scaAddress.diallingNum, sca_addr, strlen(sca_addr));
+
+				dbg("len [%d], sca_addr [%s], TON [%d], NPI [%d]", respGetSca.scaAddress.dialNumLen, respGetSca.scaAddress.diallingNum, respGetSca.scaAddress.typeOfNum, respGetSca.scaAddress.numPlanId);
+
+				respGetSca.result = SMS_SENDSMS_SUCCESS;
 			}
+			else
+			{
+				err("sca_addr OR sca_toa NULL");
+				respGetSca.result = SMS_DEVICE_FAILURE;
+			}
+		}
+		else
+		{
+			dbg("NO Lines");
+			respGetSca.result = SMS_DEVICE_FAILURE;
 		}
 	}
 	else
@@ -1246,9 +1253,10 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 		respGetSca.result = SMS_DEVICE_FAILURE;
 	}
 
-	tcore_user_request_send_response(ur, TRESP_SMS_GET_SCA, sizeof(struct tresp_sms_get_sca), &respGetSca);
-	return;
+	tcore_user_request_send_response(user_req, TRESP_SMS_GET_SCA, sizeof(respGetSca), &respGetSca);
 
+	dbg("Exit");
+	return;
 }
 
 static void on_response_set_sca(TcorePending *pending, int data_len, const void *data, void *user_data)
@@ -3106,7 +3114,7 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	dbg("alpha id len is %d", alpha_id_len);
 
         memcpy(temp_data,&(setSmsParams->params.szAlphaId),alpha_id_len);
-	memcpy((temp_data+alpha_id_len), &(setSmsParams->params.paramIndicator), 1);	
+	memcpy((temp_data+alpha_id_len), &(setSmsParams->params.paramIndicator), 1);
 
 	dest_addr = calloc(sizeof(struct telephony_sms_AddressInfo),1);
 	svc_addr = calloc(sizeof(struct telephony_sms_AddressInfo),1);
@@ -3115,29 +3123,29 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	{
 		dbg("dest_addr is not present");
 		dest_addr[0] = 0;
-		
+
 	}else
 	{
 		dest_addr[0] = setSmsParams->params.tpDestAddr.dialNumLen;
 		dest_addr[1] = (((setSmsParams->params.tpDestAddr.typeOfNum << 4) | setSmsParams->params.tpDestAddr.numPlanId) | 0x80);
 		memcpy(&(dest_addr[2]),setSmsParams->params.tpDestAddr.diallingNum,setSmsParams->params.tpDestAddr.dialNumLen);
 		dbg("dest_addr is %s",dest_addr);
- 
-	} 
+
+	}
 
        if (setSmsParams->params.tpSvcCntrAddr.dialNumLen == 0)
         {
                 dbg("svc_addr is not present");
                 svc_addr[0] = 0;
-                
+
         }else
         {
                 svc_addr[0] = setSmsParams->params.tpSvcCntrAddr.dialNumLen;
                 svc_addr[1] = (((setSmsParams->params.tpSvcCntrAddr.typeOfNum << 4) | setSmsParams->params.tpSvcCntrAddr.numPlanId) | 0x80);
                 memcpy(&(svc_addr[2]),&(setSmsParams->params.tpSvcCntrAddr.diallingNum),setSmsParams->params.tpSvcCntrAddr.dialNumLen);
                 dbg("svc_addr is %s %s",svc_addr, setSmsParams->params.tpSvcCntrAddr.diallingNum);
- 
-        } 
+
+        }
 
  	memcpy((temp_data+alpha_id_len+1), dest_addr, setSmsParams->params.tpDestAddr.dialNumLen);
         memcpy((temp_data+alpha_id_len+setSmsParams->params.tpDestAddr.dialNumLen+1), svc_addr, setSmsParams->params.tpSvcCntrAddr.dialNumLen);
@@ -3151,7 +3159,7 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 
 	dbg("temp data and len %s %d",temp_data, len);
 
-       
+
 	//EFsmsp file size is 28 +Y bytes (Y is alpha id size)
         encoded_data = calloc((setSmsParams->params.alphaIdLen+28),1);
 
@@ -3193,7 +3201,7 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	dbg("Exit");
 	return TCORE_RETURN_SUCCESS;
 	}
-	return TRUE;	
+	return TRUE;
 }
 
 static TReturn get_paramcnt(CoreObject *obj, UserRequest *ur)

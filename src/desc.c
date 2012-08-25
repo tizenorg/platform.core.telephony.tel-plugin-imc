@@ -121,13 +121,6 @@ static int _get_cp_name(char** name)
 	return 0;
 }
 
-static gboolean on_response_default(TcoreAT *at, const char *line, void *user_data)
-{
-	/* TODO:  */
-	dbg("[ TODO ] on_response_default ");
-	return TRUE;
-}
-
 static gboolean on_init(TcorePlugin *p)
 {
 	TcoreHal *h;

@@ -342,8 +342,7 @@ static enum tcore_call_type call_type(int type)
 
 static int _compare_call_end_cause(int networkcause)
 {
-    dbg("Entry");
-  	unsigned int count;
+ 	unsigned int count;
     for (count = 0; count < sizeof(call_end_cause_table)/sizeof(call_end_cause_info); count++){
         if (call_end_cause_table[count].network_cause == networkcause)
             return (call_end_cause_table[count].tapi_cause);
@@ -1667,9 +1666,8 @@ static void on_confirmation_call_set_source_sound_volume_level(TcorePending *p, 
 	struct tresp_call_sound_set_volume_level resp;
 	int error;
 
-	dbg("Entry");
-
 	ur = tcore_pending_ref_user_request(p);
+	dbg("Entry");
 	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
 	if (!response) {
 		err("Input data is NULL");
@@ -3014,10 +3012,10 @@ static TReturn s_call_set_sound_volume_level(CoreObject *o, UserRequest *ur)
 	TcoreATRequest *dest_req = NULL;
 	char *cmd_str = NULL, *volume_level = NULL;
 	gboolean ret = FALSE;
-	dbg("Entry");
 
   	struct treq_call_sound_set_volume_level* data = NULL;
 	data = (struct treq_call_sound_set_volume_level*)tcore_user_request_ref_data( ur, 0 );
+	dbg("Entry");
 	// Hard-coded values for MIC & Speakers
 	// Source volume
 	dbg("Set Source volume");
