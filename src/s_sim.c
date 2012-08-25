@@ -3087,7 +3087,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	int p2 = 0;
 	int p3 = 0;
 	int cmd = 0;
-	gboolean bresult = FALSE;
+	int length = 0;
 	struct tel_sim_language sim_language;
 
 	command = tcore_user_request_get_command(ur);
@@ -3110,22 +3110,19 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 			p3 = 1;
 			sim_language.language_count = 1;
 			sim_language.language[0] = cl->language;
-			encoded_data = malloc(1);
-			memset(encoded_data, 0x00, 1);
+			length = 1;
 			if (tcore_sim_get_type(o) == SIM_TYPE_GSM)
 			{
 				dbg("2G");
 				ef = SIM_EF_ELP;
-				bresult = tcore_sim_encode_lp(encoded_data, 1, &sim_language);
+				encoded_data = tcore_sim_encode_lp(&length, &sim_language);
 				dbg("%d ---", encoded_data[0]);
-				dbg("result %d ", bresult);
 			}
 			else if (tcore_sim_get_type(o) == SIM_TYPE_USIM)
 			{
 				dbg("3G");
 				ef = SIM_EF_LP;
-				bresult = tcore_sim_encode_li(encoded_data, 1, &sim_language);
-				dbg("result %d ", bresult);
+				encoded_data = tcore_sim_encode_li(&length, &sim_language);
 				dbg("encoded_data %s", encoded_data);
 			}
 			else
