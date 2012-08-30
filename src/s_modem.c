@@ -96,7 +96,6 @@ typedef struct {
 	unsigned char szEriVersion[TAPI_MISC_PRL_ERI_VER_LEN_MAX * 3];/**< eri version (only for CDMA), null termination */
 } TelMiscVersionInformation;
 
-extern int g_cmux_enable;
 	
 void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const char *at_cmd, const char* prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback);
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data); // from Kernel
@@ -517,11 +516,9 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 
 	/* XSIMSTATE subscription */
 	prepare_and_send_pending_request(plugin, "sim", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-	if(1 == g_cmux_enable)
-	{
+
 		prepare_and_send_pending_request(plugin, "umts_sms", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 		prepare_and_send_pending_request(plugin, "modem", "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-	}
 
 	/* CREG subscription */
 	prepare_and_send_pending_request(plugin, "umts_network", "at+creg=2", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
@@ -580,6 +577,8 @@ static void on_response_setupmux(TcorePending *p, int data_len, const void *data
 {
 	TcorePlugin *plugin = NULL;
 	TcoreHal *hal = NULL;
+	TReturn ret;
+	dbg("Entry");
 	
 	/* IMC Plugin dereferenced from pending request */
 	plugin = tcore_pending_ref_plugin(p);
@@ -588,8 +587,15 @@ static void on_response_setupmux(TcorePending *p, int data_len, const void *data
 	hal = (TcoreHal *)user_data;
 
 	/* Initialize CMUX */
-	tcore_cmux_init(plugin, hal);
+	ret = tcore_cmux_init(plugin, hal);
+	if(TCORE_RETURN_SUCCESS == ret) {
+		dbg("Successfully initialized CMUX");
+	}
+	else {
+		err("Failed to initialize CMUX");
+	}
 	
+	dbg("Exit");
 	return;
 }
 
@@ -613,6 +619,7 @@ static void setup_mux(CoreObject *o)
 	/* Send callback */
 	tcore_hal_send_request(hal, pending);
 
+	dbg("Exit");
 	return;
 }
 
@@ -650,13 +657,9 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
 		dbg("Enabling CP logging is failed !!!\n");
 	}
 
-	if(g_cmux_enable == 1){
 		dbg("Calling setup_mux");
 		setup_mux(tcore_pending_ref_core_object(p));
-	}
-	else{
-		_modem_subscribe_events(plugin);
-	}
+
 
 	dbg("Exit");
 	return;
@@ -731,7 +734,7 @@ static void on_response_poweron(TcorePending *p, int data_len, const void *data,
 			case CPAS_RES_UNAVAIL:
 			case CPAS_RES_UNKNOWN:
 			default:
-				dbg("value is unvail/unknown - but forcefully proceed for test. should be changed -hyko20120803");
+				dbg("value is unvail/unknown - but CP responded - proceed poweron");
 				//bpoweron = FALSE;
 				bpoweron = TRUE;
 			break;
@@ -903,10 +906,9 @@ gboolean s_modem_init(TcorePlugin *p, TcoreHal *h)
 	sn_property = calloc(sizeof(TelMiscSNInformation), 1);
 	tcore_plugin_link_property(p, "SN", sn_property);
 
-	if(g_cmux_enable == 1){
 		dbg("Registerind for CMUX-UP event");
 		tcore_object_add_callback(o, "CMUX-UP", on_event_mux_channel_up, p);
-	}
+
 
 	dbg("Registering for +XSIM event");
 	tcore_object_add_callback(o, "+XSIM", on_event_bootup_sim_status, NULL);

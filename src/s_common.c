@@ -47,7 +47,7 @@
 #define MASK_AND_SHIFT(width, offset, shift, data)  \
                   ((((signed) (shift)) < 0) ?       \
                     MASK((width), (offset), (data)) << -(shift) :  \
-                    MASK((width), (offset), (data)) >>  (((unsigned) (shift)))) \
+                    MASK((width), (offset), (data)) >>  (((signed) (shift)))) \
 
 char _util_unpackb(const char *src, int pos, int len);
 char _util_convert_byte_hexChar (char val);
