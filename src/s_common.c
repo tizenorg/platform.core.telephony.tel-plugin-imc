@@ -212,7 +212,8 @@ char * util_hexStringToBytes(char * s)
 
 	dbg("Convert String to Binary!!");
 
-	for (i = 0; i < sz; i += 2) {
+	for (i = 0; i < sz; i += 2)
+	{
 		ret[i / 2] = (char) ((util_hexCharToInt(s[i]) << 4) | util_hexCharToInt(s[i + 1]));
 		dbg("[%02x]", ret[i/2]);
     }
@@ -280,4 +281,22 @@ gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes)
 	}
 
 	return TRUE;
+}
+
+char* util_removeQuotes(void *data)
+{
+	char *tmp = NULL;
+	int data_len = 0;
+
+	data_len = strlen((const char*)data);
+	dbg("data_len: %d----%s", data_len, data);
+	if(data_len <= 0)
+	{
+		return NULL;
+	}	
+	tmp = calloc(1, data_len-1);
+	memcpy(tmp, data+1, data_len-2);
+	dbg("tmp: %s", tmp);
+
+	return tmp;
 }

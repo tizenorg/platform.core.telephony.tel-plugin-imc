@@ -248,10 +248,13 @@ static gboolean on_event_cgev_handle(CoreObject *co_ps, const void *data, void *
 				dbg("State of the service :- %d",data_resp.state);
 				data_resp.result =0xFF;/*check error value*/
 				dbg("Sending the notification");
+
 				tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
 				TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &data_resp);
+
 				state = 100;
 				value  = 100;
+				
 				break;
 		}
 		default:
@@ -341,7 +344,7 @@ static void on_response_undefine_context_cmd(TcorePending *p, int data_len, cons
 	if(resp->success)
 	{
 		dbg("Response Ok");
-		/*getting the IP address and DNS from the modem*/
+		return;
 	}
 	dbg("Response NOk");
 	_unable_to_get_pending(co_ps,ps_context);
@@ -532,8 +535,9 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 	struct tnoti_ps_pdp_ipconfiguration noti = {0};
 	struct tnoti_ps_call_status data_status = {0};
 	char devname[10] = {0,};
-	char dns[50] = {0}; /* 3 characted for each IP address value: 12 for IPv4, 48 for IP6*/
-	char pdp_address[50]={0};
+	char *dns_prim = NULL;
+	char *dns_sec = NULL;
+	char *pdp_address = NULL;
 	char addr[4]= {0};
 	GSList *tokens=NULL;
 	GSList *pRespData;
@@ -584,33 +588,33 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 			{ /* Read primary DNS */
 				token_dns = g_slist_nth_data(tokens,1);
 				/* Strip off starting " and ending " from this token to read actual PDP address */
-				strncpy(dns, token_dns+1, strlen(token_dns)-2);
+				dns_prim = util_removeQuotes((void *)token_dns);
 				dbg("Token_dns :%s",token_dns);
-				dbg("Primary DNS :- %s",dns);
+				dbg("Primary DNS :- %s",dns_prim);
 				index = 0;
-				token_add = strtok(dns, ".");
+				token_add = strtok(dns_prim, ".");
 				while(token_add != NULL)
 				{
 					noti.primary_dns[index++]= atoi(token_add);
 					token_add = strtok(NULL, ".");
 				}
+				_ps_free(dns_prim);
 			}
 			{ /* Read Secondary DNS */
-				memset(dns,0x0,50);
 				token_add = NULL;
 				token_dns = g_slist_nth_data(tokens,2);
-				/* Strip off starting " and ending " from this token to read actual PDP address */
-				strncpy(dns, token_dns+1, strlen(token_dns)-2);
+				dns_sec = util_removeQuotes((void *)token_dns);
 
 				dbg("Token_dns :%s",token_dns);
-				dbg("Secondary DNS :- %s",dns);
+				dbg("Secondary DNS :- %s",dns_sec);
 				index = 0;
-				token_add = strtok(dns, ".");
+				token_add = strtok(dns_sec, ".");
 				while(token_add != NULL)
 				{
 					noti.secondary_dns[index++]= atoi(token_add);
 					token_add = strtok(NULL, ".");
 				}
+				_ps_free(dns_sec);
 			}
 			tcore_at_tok_free(tokens);
 			tokens = NULL;
@@ -641,8 +645,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 	{
 		dbg("Able to get the DNS from the DNS Query");
 		token_pdp_address = tcore_context_get_address(ps_context);
-		strncpy(pdp_address, token_pdp_address+1, strlen(token_pdp_address)-2);
-		_ps_free((void *)token_pdp_address);
+		pdp_address = util_removeQuotes((void *)token_pdp_address);
+
 		dbg("PDP address :- %s",pdp_address);
 		/* Store IP address in char array, Telephony expected IP address in this format */
 		token_add = strtok(pdp_address, ".");
@@ -652,6 +656,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 			addr[index++]= atoi(token_add);
 			token_add = strtok(NULL, ".");
 		}
+		_ps_free(pdp_address);
+		_ps_free((void *)token_pdp_address);
 		noti.field_flag = (0x0001 & 0x0002 & 0x0004);
 		noti.err = 0;
 		noti.context_id = cid;
@@ -903,11 +909,9 @@ static void on_response_define_pdp_context(TcorePending *p, int data_len, const 
 
 static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 {
-
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
 	char *apn = NULL;
-	char *addr = NULL;
 	char cmd_str[MAX_AT_CMD_STR_LEN] ={0} ;
 	char pdp_type_str[10] = {0};
 	unsigned int cid = PS_INVALID_CID;
@@ -918,14 +922,11 @@ static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_con
 	dbg("Entered");
 
 	cid = tcore_context_get_id(ps_context);
-
 	pdp_type = tcore_context_get_type(ps_context);
 	d_comp = tcore_context_get_data_compression(ps_context);
 	h_comp = tcore_context_get_header_compression(ps_context);
 	apn = tcore_context_get_apn(ps_context);
-	addr = tcore_context_get_address(ps_context);
 
-	/* FIXME: Before MUX setup, use PHY HAL directly. */
 	hal = tcore_object_get_hal(co_ps);
 	switch(pdp_type)
 	{
@@ -961,10 +962,8 @@ static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_con
 		}
 	}
 	dbg("Activating context for CID :- %d",cid);
-	if(addr)
-		(void)sprintf(cmd_str, "AT+CGDCONT=%d,\"%s\",\"%s\",%s,%d,%d",cid,pdp_type_str,apn,addr,d_comp,h_comp);
-	else
 		(void)sprintf(cmd_str, "AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d",cid,pdp_type_str,apn,d_comp,h_comp);
+	
 	pending = tcore_at_pending_new(co_ps,cmd_str,NULL,TCORE_AT_NO_RESULT,
 					on_response_define_pdp_context,ps_context );
 	if(TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal,pending))
@@ -974,7 +973,6 @@ static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_con
 	}
 	_unable_to_get_pending(co_ps,ps_context);
 	return TCORE_RETURN_FAILURE;
-
 }
 
 static TReturn activate_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)

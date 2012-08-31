@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ * Contact: Harish Bishnoi <hbishnoi@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -213,7 +213,7 @@ static void on_response_power_off(TcorePending *p, int data_len, const void *dat
 
 static void on_response_set_flight_mode(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	CoreObject *o = user_data;
+	CoreObject *o = NULL;
 	UserRequest *ur = NULL;
 	const TcoreATResponse *ATresp = data;
 	GSList *tokens=NULL;
@@ -221,6 +221,7 @@ static void on_response_set_flight_mode(TcorePending *p, int data_len, const voi
 	struct tresp_modem_set_flightmode res = {0};
 	int response = 0;
 	struct tnoti_modem_flight_mode modem_flight_mode = {0};
+	const struct treq_modem_set_flightmode *req_data = NULL;
 
 	o = tcore_pending_ref_core_object(p);
 
@@ -259,6 +260,14 @@ static void on_response_set_flight_mode(TcorePending *p, int data_len, const voi
 	else{
 		dbg("Sending response for Flight mode operation");
  		tcore_user_request_send_response(ur, TRESP_MODEM_SET_FLIGHTMODE, sizeof(struct tresp_modem_set_flightmode), &res);
+		
+		req_data = tcore_user_request_ref_data(ur, NULL);
+
+		if (req_data->enable == 0) {
+			dbg("Flight mode is disabled, trigger COPS to register on network");
+			/* Trigger Network registration (for the moment automatic) */
+			prepare_and_send_pending_request(tcore_object_ref_plugin(o), "modem", "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, NULL);
+		}
 	}
 	
 	tcore_at_tok_free(tokens);
@@ -541,10 +550,7 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 	/* XDATASTAT subscription */
 	prepare_and_send_pending_request(plugin, "umts_ps", "at+xdatastat=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
-	/* CMGF subscription */
-	prepare_and_send_pending_request(plugin, "umts_sms", "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-
-	/* CSSN subscription */
+		/* CSSN subscription */
 	prepare_and_send_pending_request(plugin, "call", "at+cssn=1,1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* CUSD subscription */
@@ -561,9 +567,6 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 
 	/*incoming sms and cb subscription*/
 	prepare_and_send_pending_request(plugin,"umts_sms","at+cnmi=1,2,2,2,0",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
-
-	/*message service subscription*/
-	prepare_and_send_pending_request(plugin,"umts_sms","at+csms=1",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* text/pdu mode subscription*/
 	prepare_and_send_pending_request(plugin,"umts_sms","at+cmgf=0",NULL,TCORE_AT_NO_RESULT, on_response_last_bootup_subscription);
@@ -659,7 +662,6 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
 
 		dbg("Calling setup_mux");
 		setup_mux(tcore_pending_ref_core_object(p));
-
 
 	dbg("Exit");
 	return;
@@ -908,7 +910,6 @@ gboolean s_modem_init(TcorePlugin *p, TcoreHal *h)
 
 		dbg("Registerind for CMUX-UP event");
 		tcore_object_add_callback(o, "CMUX-UP", on_event_mux_channel_up, p);
-
 
 	dbg("Registering for +XSIM event");
 	tcore_object_add_callback(o, "+XSIM", on_event_bootup_sim_status, NULL);

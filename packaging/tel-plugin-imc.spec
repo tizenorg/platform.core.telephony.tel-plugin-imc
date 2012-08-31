@@ -2,7 +2,7 @@
 Name:       tel-plugin-imc
 Summary:    imc plugin for telephony
 ExclusiveArch:  %{arm}
-Version:    0.1.6
+Version:    0.1.7
 Release:    1
 Group:      System/Libraries
 License:    Apache

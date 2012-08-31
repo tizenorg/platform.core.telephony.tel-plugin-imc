@@ -19,10 +19,10 @@
  */
 
 
-#ifndef __S_SMS_H__
-#define __S_SMS_H__
+#ifndef S_SMS_H_
+#define S_SMS_H_
 
 gboolean s_sms_init(TcorePlugin *p, TcoreHal *h);
 void s_sms_exit(TcorePlugin *p);
 
-#endif
+#endif //S_SMS_H_

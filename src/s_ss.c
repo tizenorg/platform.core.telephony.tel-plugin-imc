@@ -445,6 +445,7 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
     char *buf;
     gboolean cssu = FALSE,cssi = FALSE;
     GSList *lines = NULL;
+	char *resp = NULL;
     dbg("function enter");
 
 	plugin	= tcore_object_ref_plugin(o);
@@ -499,7 +500,10 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
             if ((str_index = g_slist_nth_data(tokens, 1))) {
                 index = atoi(str_index);
             }
-             if ((number = g_slist_nth_data(tokens, 2))) {
+
+            if ((resp = g_slist_nth_data(tokens, 2))) {
+				// Strike off double quotes
+				number = util_removeQuotes(resp);
                 str_ton = g_slist_nth_data(tokens, 3);
 
                 if(str_ton) {
@@ -615,6 +619,8 @@ static gboolean	on_notification_ss_info(CoreObject *o, const void *data, void *u
 OUT:
 	if(NULL!=tokens)
 		tcore_at_tok_free(tokens);
+    if(NULL!=number)
+        g_free(number);
 	return TRUE;
 }
 

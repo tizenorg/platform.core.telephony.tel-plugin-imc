@@ -423,7 +423,6 @@ static gboolean _call_request_message(TcorePending *pending,
 	TReturn ret;
 	dbg("Entry");
 
-	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_priority(pending, TCORE_PENDING_PRIORITY_DEFAULT);
 
 	if (on_resp) {
@@ -2183,7 +2182,6 @@ static int _callFromCLCCLine(char *line, struct clcc_call_t *p_call)
 	int mode;
 	int isMT;
 	char *num = NULL;
-    unsigned int numcount,tempcount = 0;
     unsigned int num_type;
 	GSList *tokens = NULL;
 	char *resp = NULL;
@@ -2284,25 +2282,8 @@ static int _callFromCLCCLine(char *line, struct clcc_call_t *p_call)
 		err("Number is NULL");
 		goto ERROR;
 	}
-
-    num = g_malloc0(strlen(resp)+2);
-    if(!num){
-        err("memory allocation failed");
-		goto ERROR;
-     }
-
     // Strike off double quotes
-    for (numcount  = 0; numcount < strlen(resp); numcount++, tempcount++) {
-		if(resp[numcount] == '\"') {
-			num[tempcount] = resp[numcount+1];
-			numcount++;
-		}
-		else{
-			    num[tempcount] = resp[numcount];
-		}
-	}
-
-	num[tempcount] = '\0';
+	num = util_removeQuotes(resp);
     dbg("num  after removing quotes - %s", num);
 
 	p_call->info.num_len = strlen(resp);
@@ -2473,6 +2454,7 @@ static void on_notification_call_status(CoreObject *o, const void *data, void *u
 	char *stat = NULL;
 	char *pCallId = NULL;
  	GSList *tokens = NULL;
+    gboolean *eflag =  NULL;
 	enum tcore_call_status co_status;
 
 	dbg("function entrance");
@@ -2544,7 +2526,11 @@ static void on_notification_call_status(CoreObject *o, const void *data, void *u
     			dbg("co is NULL");
     			return ;
     		}
-            _call_status_alert(plugin, co);
+            //Store dialed number information into Call object.
+            eflag = g_new0(gboolean, 1);
+            *eflag = TRUE;
+            dbg("calling _call_list_get");
+           _call_list_get(o, eflag);
 
 		}
         break;

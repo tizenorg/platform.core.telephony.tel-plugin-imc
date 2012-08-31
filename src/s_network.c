@@ -276,22 +276,6 @@ static void _ps_set(TcorePlugin *p, int status)
 	g_slist_free(co_list);
 }
 
-static void on_timeout_search_network(TcorePending *p, void *user_data)
-{
-	UserRequest *ur;
-	struct tresp_network_search resp;
-
-	dbg("TIMEOUT !!!!! pending=%p", p);
-
-	memset(&resp, 0, sizeof(struct tresp_network_search));
-
-	resp.list_count = 0;
-
-	ur = tcore_pending_ref_user_request(p);
-	if (ur) {
-		tcore_user_request_send_response(ur, TRESP_NETWORK_SEARCH, sizeof(struct tresp_network_search), &resp);
-	}
-}
 
 static void on_response_set_plmn_selection_mode(TcorePending *p, int data_len, const void *data, void *user_data)
 {
@@ -455,13 +439,7 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 			if(pResp != NULL)
 			{
 				dbg("PLMN ID : %s",pResp);
-				if(strlen(pResp) > 0){
-					temp_plmn_info = malloc((strlen(pResp) - 2)+1); /* 1 extra character for NULL storage */
-					memset(temp_plmn_info, 0x00, strlen(pResp) -2+1);
-					
-					/* Strip off starting quotes & ending quotes */
-					strncpy(temp_plmn_info, pResp+1, strlen(pResp)-2);
-				}
+				temp_plmn_info = util_removeQuotes(pResp);
 			}
 
 			memcpy(resp.list[i].plmn, temp_plmn_info, 6);
@@ -485,7 +463,6 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 			resp.list_count++;
 
 			tcore_at_tok_free(network_token);
-			free(temp_plmn_info);
 		}
 	}
 	else
@@ -499,7 +476,13 @@ OUT:
 	if (ur) {
 		tcore_user_request_send_response(ur, TRESP_NETWORK_SEARCH, sizeof(struct tresp_network_search), &resp);
 	}
-	tcore_at_tok_free(tokens);
+
+	if(tokens)
+		tcore_at_tok_free(tokens);
+
+	if(temp_plmn_info)
+		free(temp_plmn_info);
+	
 	return;
 }
 
@@ -809,6 +792,7 @@ static void on_response_get_xrat(TcorePending *p, int data_len, const void *data
 				tcore_pending_link_user_request(pending, ur);
 				tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 				tcore_hal_send_request(h, pending);
+				g_free(cmd_str);
 			}
 			else if((cp_xrat == AT_XRAT_UMTS)){
 				/* Get GSM Band Information */
@@ -821,6 +805,7 @@ static void on_response_get_xrat(TcorePending *p, int data_len, const void *data
 				tcore_pending_link_user_request(pending, dup_ur);
 				tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 				tcore_hal_send_request(h, pending);
+				g_free(cmd_str);
 			}
 		}
 	}
@@ -1126,7 +1111,9 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 		}
 
 		return;
-	}else{
+	}
+	else
+	{
 	dbg("RESPONSE OK");
 		nol = g_slist_length(resp->lines);
 		dbg("nol : %d", nol);
@@ -1158,10 +1145,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				{		
 					dbg("long PLMN  : %s",pResp);
 					if(strlen(pResp) > 0){
-						long_plmn_name = malloc((strlen(pResp) - 2)+1); /* 1 extra character for NULL storage */
-						memset(long_plmn_name, 0x00, strlen(pResp) -2+1);
-						/* Strip off starting quotes & ending quotes */
-						strncpy(long_plmn_name, pResp+1, strlen(pResp)-2);
+							long_plmn_name = util_removeQuotes(pResp);
 
 						//set network name into po
 						tcore_network_set_network_name(o,TCORE_NETWORK_NAME_TYPE_FULL,long_plmn_name);
@@ -1174,10 +1158,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 					{
 						dbg("short PLMN  : %s",pResp);
 						if(strlen(pResp)>0){
-							short_plmn_name = malloc((strlen(pResp) - 2)+1); /* 1 extra character for NULL storage */
-							memset(short_plmn_name, 0x00, strlen(pResp) -2+1);
-							/* Strip off starting quotes & ending quotes */
-							strncpy(short_plmn_name, pResp+1, strlen(pResp)-2);
+								short_plmn_name = util_removeQuotes(pResp);
 							
 							//set network name into po							
 							tcore_network_set_network_name(o,TCORE_NETWORK_NAME_TYPE_SHORT,short_plmn_name);							
@@ -1191,6 +1172,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 						dbg("numeric : %s", pResp);
 						if(strlen(pResp)>0){
 							memset(plmn, 0, 7);
+								
 							/* Strip off starting quotes & ending quotes */
 							strncpy(plmn, pResp+1, strlen(pResp)-2);							
 							tcore_network_set_plmn(o,plmn);
@@ -1256,15 +1238,13 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				dbg("dbg.. noti.plmn  : %s",noti.plmn);	
 			}
 		}
-
 		if(long_plmn_name)
 			free(long_plmn_name);
 		if(short_plmn_name)
 			free(short_plmn_name);
+
 	}
-
 	return;
-
 }
 
 static gboolean on_event_ps_network_regist(CoreObject *o, const void *data, void *user_data)
@@ -1624,19 +1604,6 @@ OUT:
 	
 }
 
-static gboolean on_event_network_ds_time_info(CoreObject *o, const void *event_info, void *user_data)
-{
-/*
-+CTZDST<dst>
-<dst> daylight savings time value:
-0 No adjustment for Daylight Saving Time
-1 +1 hour adjustment for Daylight Saving Time
-2 +2 hours adjustment for Daylight Saving Time
-*/
-	return TRUE;
-}
-
-
 static gboolean on_event_network_ctzv_time_info(CoreObject *o, const void *event_info, void *user_data)
 {
 	struct tnoti_network_timeinfo net_time_info = {0};
@@ -1790,15 +1757,13 @@ static TReturn search_network(CoreObject *o, UserRequest *ur)
 	atreq = tcore_at_request_new(cmd_str, "+COPS", TCORE_AT_SINGLELINE);
 	
 	tcore_pending_set_request_data(pending, 0, atreq);
-	tcore_pending_set_timeout(pending, 60);
 	tcore_pending_set_priority(pending, TCORE_PENDING_PRIORITY_DEFAULT);
 	tcore_pending_set_response_callback(pending, on_response_search_network, NULL);
-	tcore_pending_set_timeout_callback(pending, on_timeout_search_network, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 
 	tcore_hal_send_request(h, pending);
-
+	g_free(cmd_str);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -1813,7 +1778,7 @@ static TReturn set_plmn_selection_mode(CoreObject *o, UserRequest *ur)
 	char plmn[7] = {0};
 	int act = 0;
 	
-	const struct treq_network_set_plmn_selection_mode *req_data;
+	const struct treq_network_set_plmn_selection_mode *req_data = NULL;
 
 
 	dbg("set_plmn_selection_mode - ENTER!!");
@@ -1869,9 +1834,8 @@ static TReturn set_plmn_selection_mode(CoreObject *o, UserRequest *ur)
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 
-
 	tcore_hal_send_request(h, pending);
-
+	g_free(cmd_str);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -1899,7 +1863,7 @@ static TReturn get_plmn_selection_mode(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 
 	tcore_hal_send_request(h, pending);
-
+	g_free(cmd_str);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -2002,7 +1966,6 @@ static TReturn set_band(CoreObject *o, UserRequest *ur)
 		pending_umts = tcore_pending_new(o, 0);
 
 		tcore_pending_set_request_data(pending_umts, 0, atreq);
-		tcore_pending_set_timeout(pending_umts, 0);
 		tcore_pending_set_priority(pending_umts, TCORE_PENDING_PRIORITY_DEFAULT);
 		tcore_pending_set_response_callback(pending_umts, on_response_set_umts_band, NULL);
 		
@@ -2012,6 +1975,7 @@ static TReturn set_band(CoreObject *o, UserRequest *ur)
 		tcore_pending_set_send_callback(pending_umts, on_confirmation_network_message_send, NULL);
 
 		tcore_hal_send_request(h, pending_umts);
+		g_free(cmd_str);
  	}
 	
 	if(set_gsm_band == TRUE)
@@ -2027,7 +1991,6 @@ static TReturn set_band(CoreObject *o, UserRequest *ur)
 		pending_gsm = tcore_pending_new(o, 0);
 
 		tcore_pending_set_request_data(pending_gsm, 0, atreq);
-		tcore_pending_set_timeout(pending_gsm, 0);
 		tcore_pending_set_priority(pending_gsm, TCORE_PENDING_PRIORITY_DEFAULT);
 		tcore_pending_set_response_callback(pending_gsm, on_response_set_gsm_band, NULL);
 
@@ -2037,6 +2000,7 @@ static TReturn set_band(CoreObject *o, UserRequest *ur)
 		tcore_pending_set_send_callback(pending_gsm, on_confirmation_network_message_send, NULL);
 
 		tcore_hal_send_request(h, pending_gsm);
+		g_free(cmd_str);
  	}
 
 	/* Lock device to specific RAT as requested by application */
@@ -2060,14 +2024,13 @@ AT+XRAT=<Act>[,<PreferredAct>]
 	pending = tcore_pending_new(o, 0);
 
 	tcore_pending_set_request_data(pending, 0, atreq);
-	tcore_pending_set_timeout(pending, 0);
 	tcore_pending_set_priority(pending, TCORE_PENDING_PRIORITY_DEFAULT);
 	tcore_pending_set_response_callback(pending, on_response_set_xrat, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 
 	tcore_hal_send_request(h, pending);
-
+	g_free(cmd_str);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -2095,6 +2058,7 @@ static TReturn get_band(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_send_callback(pending, on_confirmation_network_message_send, NULL);
 	tcore_hal_send_request(h, pending);
 	
+	g_free(cmd_str);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -2104,7 +2068,7 @@ static TReturn set_preferred_plmn(CoreObject *o, UserRequest *ur)
 	TcorePlugin *p = NULL;
 	TcorePending *pending = NULL;
   	TcoreATRequest *atreq = NULL;
-	const struct treq_network_set_preferred_plmn *req_data = NULL;
+	struct treq_network_set_preferred_plmn *req_data = NULL;
 	char*cmd_str = NULL;
 	int format = 2; /* Alway use numeric format, as application gives data in this default format */
 	int gsm_act = 0;
@@ -2114,7 +2078,8 @@ static TReturn set_preferred_plmn(CoreObject *o, UserRequest *ur)
 	if (!o || !ur)
 		return TCORE_RETURN_EINVAL;
 
-	req_data = tcore_user_request_ref_data(ur, NULL);
+	req_data = (struct treq_network_set_preferred_plmn*)tcore_user_request_ref_data(ur, NULL);
+	pending = tcore_pending_new(o, 0);
 
 	dbg("Entry set_preferred_plmn");
 	
@@ -2134,7 +2099,17 @@ AT+CPOL=
 	else if (req_data->act == NETWORK_ACT_GSM_UTRAN)
 		gsm_act= utran_act = TRUE;
 	
-	cmd_str = g_strdup_printf("AT+CPOL=%d,%d,\"%s\",%d, %d,%d",req_data->ef_index, format, req_data->plmn, gsm_act, gsm_compact_act, utran_act);
+	if (strlen(req_data->plmn) > 6) {
+			req_data->plmn[6] = '\0';
+	}
+	else if (strlen(req_data->plmn) == 6) {
+		if(req_data->plmn[5] == '#') {
+			req_data->plmn[5] = '\0';
+		}
+	}
+	cmd_str = g_strdup_printf("AT+CPOL=%d,%d,\"%s\",%d,%d,%d",req_data->ef_index+1, format, req_data->plmn, gsm_act, gsm_compact_act, utran_act);
+
+	dbg("cmd_str - %s", cmd_str);
 	atreq = tcore_at_request_new(cmd_str, "+CPOL", TCORE_AT_NO_RESULT);
 	
 	tcore_pending_set_request_data(pending, 0, atreq);
@@ -2144,7 +2119,10 @@ AT+CPOL=
 
 	tcore_hal_send_request(h, pending);
 
+	g_free(cmd_str);
+
 	dbg("Exit set_preferred_plmn");
+	
 	return TCORE_RETURN_SUCCESS; 
 }
 
@@ -2175,6 +2153,8 @@ static TReturn get_preferred_plmn(CoreObject *o, UserRequest *ur)
 
 	tcore_hal_send_request(h, pending);
 
+	g_free(cmd_str);
+	
 	dbg("get_preferred_plmn - EXIT!!");
 
 	return TCORE_RETURN_SUCCESS;
@@ -2225,8 +2205,6 @@ gboolean s_network_init(TcorePlugin *p, TcoreHal *h)
 
  	/* +CTZV: <tz>,<time> */
 	tcore_object_add_callback(o, "+CTZV", on_event_network_ctzv_time_info, NULL);
-	/* +CTZDST: <dst> */ 
-	tcore_object_add_callback(o, "+CTZDST", on_event_network_ds_time_info, NULL);
 
 	tcore_server_add_notification_hook(tcore_plugin_ref_server(p), TNOTI_SIM_STATUS, on_hook_sim_init, o);
 

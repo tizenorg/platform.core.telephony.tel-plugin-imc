@@ -91,13 +91,7 @@ static gboolean on_event_sat_proactive_command(CoreObject *o, const void *event_
 	dbg("hexdata %s ", hexData);
 	dbg("hexdata length %d", strlen(hexData));
 
-	tmp = calloc(1, strlen(hexData)-1);
-	if(tmp == NULL)
-	{
-		return FALSE;
-	}	
-	memcpy(tmp, hexData+1, strlen(hexData)-2);
-
+	tmp = util_removeQuotes(hexData);
 	recordData = util_hexStringToBytes(tmp);
 	dbg("recordData: %x", recordData);
 	free(tmp);
@@ -290,31 +284,6 @@ static void on_response_envelop_cmd(TcorePending *p, int data_len, const void *d
 	dbg(" Function exit");
 }
 
-static void on_timeout_terminal_response(TcorePending *p, void *user_data)
-{
-	UserRequest 	*ur = NULL;
-	CoreObject 	*o = NULL;
-	gpointer 	tmp = NULL;
-
-	dbg("Function Entry");
-	dbg("SAT - TIMEOUT !!!!! pending=%p", p);
-
-	ur = tcore_pending_ref_user_request(p);
-	tmp = (gpointer)tcore_user_request_ref_communicator(ur);
-	if(!ur || !tmp )
-	{
-		dbg("error - current ur is NULL");
-		return;
-	}
-
-	o = tcore_pending_ref_core_object(p);
-	if(!o)
-		dbg("error - current sat core is NULL");
-
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAT_SESSION_END,	 0, NULL);
-	dbg("Function Exit");
-}
-
 
 static void on_response_terminal_response(TcorePending *p, int data_len, const void *data, void *user_data)
 {
@@ -381,7 +350,7 @@ static	TReturn s_envelope(CoreObject *o, UserRequest *ur)
 		pbuffer +=2;
 	}
 	dbg("pbuffer %s", envelope_cmdhex);	
-	cmd_str = g_strdup_printf("AT+SATE=\"%s\"%s", envelope_cmdhex,"\r");
+	cmd_str = g_strdup_printf("AT+SATE=\"%s\"", envelope_cmdhex);
 	req = tcore_at_request_new(cmd_str, "+SATE:", TCORE_AT_SINGLELINE);
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
@@ -391,6 +360,7 @@ static	TReturn s_envelope(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_send_callback(pending, on_confirmation_sat_message_send, NULL);
 	tcore_hal_send_request(hal, pending);
 	
+	g_free(cmd_str);
 	dbg("Function Exit");
 	return TCORE_RETURN_SUCCESS;
 }
@@ -442,19 +412,18 @@ static	TReturn s_terminal_response(CoreObject *o, UserRequest *ur)
 	}
 
 	dbg("hexString %s", hexString);
-	cmd_str = g_strdup_printf("AT+SATR=\"%s\"%s", hexString,"\r");
+	cmd_str = g_strdup_printf("AT+SATR=\"%s\"", hexString);
 
 	req = tcore_at_request_new(cmd_str, NULL , TCORE_AT_NO_RESULT);
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
-	tcore_pending_set_timeout(pending, 10);
 	tcore_pending_set_response_callback(pending, on_response_terminal_response, hal);
-	tcore_pending_set_timeout_callback(pending, on_timeout_terminal_response, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_sat_message_send, NULL);
 	tcore_hal_send_request(hal, pending);
 
+	g_free(cmd_str);
 	dbg("Function Exit");
 	return TCORE_RETURN_SUCCESS;
 }

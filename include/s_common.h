@@ -108,5 +108,6 @@ UserRequest*	util_pop_waiting_job(GQueue *queue, unsigned int id);
 void			util_hex_dump(char *pad, int size, const void *data);
 unsigned char	util_hexCharToInt(char c);
 char*		util_hexStringToBytes(char * s);
+char* 			util_removeQuotes(void *data);
 
 #endif

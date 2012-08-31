@@ -948,15 +948,11 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 			dbg("hexData: %s", hexData);
 			dbg("hexData: %s", hexData+1);
 
-			tmp = calloc(1, strlen(hexData)-1);
-			memcpy(tmp, hexData+1, strlen(hexData)-2);
-			dbg("tmp: %s", tmp);
-
+			tmp = util_removeQuotes(hexData);
 			recordData = util_hexStringToBytes(tmp);
-			dbg("recordData: %x", recordData);
-			free(tmp);
 			util_hex_dump("    ", strlen(hexData)/2, recordData);
-
+			free(tmp);
+	
 			ptr_data = (unsigned char *)recordData;
 			if (tcore_sim_get_type(co_sim) == SIM_TYPE_USIM)
 			{
@@ -1386,11 +1382,7 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 		sw2 = atoi(g_slist_nth_data(tokens, 1));
 		res  = g_slist_nth_data(tokens, 2);
 
-		res_len = strlen((const char*)res);
-		tmp = calloc(1, res_len-1);
-		memcpy(tmp, res+1, res_len-2);
-		dbg("tmp: %s", tmp);
-
+		tmp = util_removeQuotes(res);
 		res = util_hexStringToBytes(tmp);
 		res_len = strlen((const char*)res);
 		dbg("res: %s res_len: %d", res, res_len);
@@ -2516,6 +2508,7 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 			tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_set_language), &resp_language);
 			break;
 		default:
+			dbg("Invalid File ID - %d", sp->file_id)
 			break;
 	}
 	tcore_at_tok_free(tokens);
@@ -3088,7 +3081,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	int p2 = 0;
 	int p3 = 0;
 	int cmd = 0;
-	int length = 0;
+	int out_length = 0;
 	struct tel_sim_language sim_language;
 
 	command = tcore_user_request_get_command(ur);
@@ -3099,32 +3092,51 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	pending = tcore_pending_new(o, 0);
 
 	if (!o || !ur)
+	{
 		return TCORE_RETURN_EINVAL;
+	}
 
-	switch (command) {
+	switch (command) 
+	{
 		case TREQ_SIM_SET_LANGUAGE:
 			cl = tcore_user_request_ref_data(ur, NULL);
 			memset(&sim_language, 0x00, sizeof(struct tel_sim_language));
 			cmd = 214;
-			p1 = 0;
-			p2 = 0;
-			p3 = 1;
+			
 			sim_language.language_count = 1;
 			sim_language.language[0] = cl->language;
-			length = 1;
+			dbg("language %d", cl->language);
+
 			if (tcore_sim_get_type(o) == SIM_TYPE_GSM)
 			{
+				int i;
 				dbg("2G");
 				ef = SIM_EF_ELP;
-				encoded_data = tcore_sim_encode_lp(&length, &sim_language);
-				dbg("%d ---", encoded_data[0]);
+				encoded_data = tcore_sim_encode_li(&out_length, &sim_language);
+				p1 = 0;
+				p2 = 0;
+				p3 = out_length;
+				for(i=0; i<out_length; i++)
+				{
+					dbg("encoded_data - %d ---", encoded_data[i]);
+				}
+				dbg("encoded_data - %s ---", encoded_data);
+				dbg("out_length - %d ---", out_length);
 			}
 			else if (tcore_sim_get_type(o) == SIM_TYPE_USIM)
 			{
+				int i;
 				dbg("3G");
 				ef = SIM_EF_LP;
-				encoded_data = tcore_sim_encode_li(&length, &sim_language);
-				dbg("encoded_data %s", encoded_data);
+				encoded_data = tcore_sim_encode_li(&out_length, &sim_language);
+				p1 = 0;
+				p2 = 0;
+				p3 = out_length;
+				for(i=0; i<out_length; i++)
+				{
+					dbg("encoded_data - %d ---", encoded_data[i]);
+				}
+				dbg("out_length - %d ---", out_length);
 			}
 			else
 			{
