@@ -175,7 +175,7 @@ void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const 
 void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
-	dbg("enry of on_response_bootup_subscription() - response comes\n");
+	dbg("entry of on_response_bootup_subscription() - response comes\n");
 
 	if(resp->success){
 		dbg("result OK");	
@@ -565,8 +565,8 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 	/*CMEE subscription*/
 	prepare_and_send_pending_request(plugin,"umts_ps","at+cmee=2",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
-	/*incoming sms and cb subscription*/
-	prepare_and_send_pending_request(plugin,"umts_sms","at+cnmi=1,2,2,2,0",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	/*incoming sms,cb,status report subscription*/
+	prepare_and_send_pending_request(plugin,"umts_sms","at+cnmi=1,2,2,1,0",NULL,TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* text/pdu mode subscription*/
 	prepare_and_send_pending_request(plugin,"umts_sms","at+cmgf=0",NULL,TCORE_AT_NO_RESULT, on_response_last_bootup_subscription);
@@ -575,7 +575,7 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 	return;
 }
 
-
+#if 0
 static void on_response_setupmux(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	TcorePlugin *plugin = NULL;
@@ -625,6 +625,7 @@ static void setup_mux(CoreObject *o)
 	dbg("Exit");
 	return;
 }
+#endif
 
 static gboolean on_event_mux_channel_up(CoreObject *o, const void *event_info, void *user_data)
 {
@@ -661,7 +662,9 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
 	}
 
 		dbg("Calling setup_mux");
-		setup_mux(tcore_pending_ref_core_object(p));
+		dbg("MUX temporarily disabled");
+		//setup_mux(tcore_pending_ref_core_object(p));
+		_modem_subscribe_events(plugin);
 
 	dbg("Exit");
 	return;
