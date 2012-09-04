@@ -575,7 +575,7 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 	return;
 }
 
-#if 0
+
 static void on_response_setupmux(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	TcorePlugin *plugin = NULL;
@@ -625,7 +625,7 @@ static void setup_mux(CoreObject *o)
 	dbg("Exit");
 	return;
 }
-#endif
+
 
 static gboolean on_event_mux_channel_up(CoreObject *o, const void *event_info, void *user_data)
 {
@@ -661,10 +661,9 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
 		dbg("Enabling CP logging is failed !!!\n");
 	}
 
-		dbg("Calling setup_mux");
-		dbg("MUX temporarily disabled");
-		//setup_mux(tcore_pending_ref_core_object(p));
-		_modem_subscribe_events(plugin);
+	dbg("Calling setup_mux");
+	setup_mux(tcore_pending_ref_core_object(p));
+
 
 	dbg("Exit");
 	return;
