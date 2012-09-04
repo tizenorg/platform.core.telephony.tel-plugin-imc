@@ -18,10 +18,8 @@
  * limitations under the License.
  */
 
-
 #ifndef __S_NETWORK_H__
 #define __S_NETWORK_H__
-
 
 gboolean s_network_init(TcorePlugin *p, TcoreHal *h);
 void s_network_exit(TcorePlugin *p);

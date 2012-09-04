@@ -18,7 +18,6 @@
  * limitations under the License.
  */
 
-
 #ifndef S_SAP_H_
 #define S_SAP_H_
 

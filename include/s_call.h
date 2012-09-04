@@ -25,4 +25,3 @@ gboolean s_call_init(TcorePlugin *p, TcoreHal *h);
 void s_call_exit(TcorePlugin *p);
 
 #endif
-

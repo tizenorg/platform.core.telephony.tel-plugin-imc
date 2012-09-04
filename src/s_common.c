@@ -29,10 +29,10 @@
 
 #include <plugin.h>
 
-#undef	MAX
+#undef  MAX
 #define MAX(a, b)  (((a) > (b)) ? (a) : (b))
 
-#undef	MIN
+#undef  MIN
 #define MIN(a, b)  (((a) < (b)) ? (a) : (b))
 
 #define bitsize(type) (sizeof(type) * 8)
@@ -40,17 +40,17 @@
 #define copymask(type) ((0xffffffff) >> (32 - bitsize(type)))
 
 #define MASK(width, offset, data) \
-   (((width) == bitsize(data)) ? (data) :   \
-   ((((copymask(data) << (bitsize(data) - ((width) % bitsize(data)))) & copymask(data)) >>  (offset)) & (data))) \
+	(((width) == bitsize(data)) ? (data) :	 \
+	 ((((copymask(data) << (bitsize(data) - ((width) % bitsize(data)))) & copymask(data)) >> (offset)) & (data))) \
 
 
-#define MASK_AND_SHIFT(width, offset, shift, data)  \
-                  ((((signed) (shift)) < 0) ?       \
-                    MASK((width), (offset), (data)) << -(shift) :  \
-                    MASK((width), (offset), (data)) >>  (((signed) (shift)))) \
+#define MASK_AND_SHIFT(width, offset, shift, data)	\
+	((((signed) (shift)) < 0) ?		  \
+	 MASK((width), (offset), (data)) << -(shift) :	\
+	 MASK((width), (offset), (data)) >> (((signed) (shift)))) \
 
 char _util_unpackb(const char *src, int pos, int len);
-char _util_convert_byte_hexChar (char val);
+char _util_convert_byte_hexChar(char val);
 gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
 void util_hex_dump(char *pad, int size, const void *data)
@@ -65,10 +65,10 @@ void util_hex_dump(char *pad, int size, const void *data)
 		return;
 	}
 
-	p = (unsigned char *)data;
+	p = (unsigned char *) data;
 
 	snprintf(buf, 255, "%s%04X: ", pad, 0);
-	for (i = 0; i<size; i++) {
+	for (i = 0; i < size; i++) {
 		snprintf(hex, 4, "%02X ", p[i]);
 		strcat(buf, hex);
 
@@ -77,8 +77,7 @@ void util_hex_dump(char *pad, int size, const void *data)
 				msg("%s", buf);
 				memset(buf, 0, 255);
 				snprintf(buf, 255, "%s%04X: ", pad, i + 1);
-			}
-			else {
+			} else {
 				strcat(buf, "  ");
 			}
 		}
@@ -92,7 +91,6 @@ void hook_hex_dump(enum direction_e d, int size, const void *data)
 	msg("=== TX data DUMP =====");
 	util_hex_dump("          ", size, data);
 	msg("=== TX data DUMP =====");
-
 }
 
 unsigned int util_assign_message_sequence_id(TcorePlugin *p)
@@ -113,12 +111,10 @@ unsigned int util_assign_message_sequence_id(TcorePlugin *p)
 	if (gd->msg_auto_id_current == 0) {
 		gd->msg_auto_id_current = gd->msg_auto_id_start;
 		dbg("pending_auto_id_current is 0, reset to start");
-	}
-	else if (gd->msg_auto_id_current >= gd->msg_auto_id_end) {
+	} else if (gd->msg_auto_id_current >= gd->msg_auto_id_end) {
 		gd->msg_auto_id_current = gd->msg_auto_id_start;
 		dbg("pending_auto_id_current is over, reset to start");
-	}
-	else {
+	} else {
 		gd->msg_auto_id_current++;
 	}
 
@@ -146,7 +142,7 @@ gboolean util_add_waiting_job(GQueue *queue, unsigned int id, UserRequest *ur)
 	return TRUE;
 }
 
-UserRequest *util_pop_waiting_job(GQueue *queue, unsigned int id)
+UserRequest* util_pop_waiting_job(GQueue *queue, unsigned int id)
 {
 	int i = 0;
 	UserRequest *ur;
@@ -184,22 +180,21 @@ UserRequest *util_pop_waiting_job(GQueue *queue, unsigned int id)
 
 unsigned char util_hexCharToInt(char c)
 {
-    if (c >= '0' && c <= '9')
-        return (c - '0');
-    else if (c >= 'A' && c <= 'F')
-        return (c - 'A' + 10);
-    else if (c >= 'a' && c <= 'f')
-        return (c - 'a' + 10);
-    else
-    {
-        dbg("invalid charater!!");
-        return -1;
-    }
+	if (c >= '0' && c <= '9')
+		return (c - '0');
+	else if (c >= 'A' && c <= 'F')
+		return (c - 'A' + 10);
+	else if (c >= 'a' && c <= 'f')
+		return (c - 'a' + 10);
+	else {
+		dbg("invalid charater!!");
+		return -1;
+	}
 }
 
-char * util_hexStringToBytes(char * s)
+char* util_hexStringToBytes(char *s)
 {
-    char * ret;
+	char *ret;
 	int i;
 	int sz;
 
@@ -208,17 +203,16 @@ char * util_hexStringToBytes(char * s)
 
 	sz = strlen(s);
 
-	ret = calloc((sz/2)+1, 1);
+	ret = calloc((sz / 2) + 1, 1);
 
 	dbg("Convert String to Binary!!");
 
-	for (i = 0; i < sz; i += 2)
-	{
+	for (i = 0; i < sz; i += 2) {
 		ret[i / 2] = (char) ((util_hexCharToInt(s[i]) << 4) | util_hexCharToInt(s[i + 1]));
-		dbg("[%02x]", ret[i/2]);
-    }
+		dbg("[%02x]", ret[i / 2]);
+	}
 
-    return ret;
+	return ret;
 }
 
 char _util_unpackb(const char *src, int pos, int len)
@@ -226,41 +220,33 @@ char _util_unpackb(const char *src, int pos, int len)
 	char result = 0;
 	int rshift = 0;
 
-	src += pos/8;
+	src += pos / 8;
 	pos %= 8;
 
-	rshift = MAX( 8 - (pos + len), 0);
+	rshift = MAX(8 - (pos + len), 0);
 
-	if ( rshift > 0 ) {
-
-	 result = MASK_AND_SHIFT(len, pos, rshift, *src);
-
+	if (rshift > 0) {
+		result = MASK_AND_SHIFT(len, pos, rshift, *src);
 	} else {
+		result = MASK(8 - pos, pos, *src);
+		src++;
+		len -= 8 - pos;
 
-	 result = MASK(8-pos, pos, *src);
-	 src++;
-	 len -= 8 - pos;
-
-	  if ( len > 0 ) result = ( result<<len ) | (*src >> (8-len));  // if any bits left
+		if (len > 0) result = (result << len) | (*src >> (8 - len));   // if any bits left
 	}
 
 	return result;
 }
 
-char _util_convert_byte_hexChar (char val)
+char _util_convert_byte_hexChar(char val)
 {
 	char hex_char;
 
-	if (val <= 9)
-	{
-		hex_char = (char)(val+'0');
-	}
-	else if (val >= 10 && val <= 15)
-	{
-		hex_char = (char)(val-10+'A');
-	}
-	else
-	{
+	if (val <= 9) {
+		hex_char = (char) (val + '0');
+	} else if (val >= 10 && val <= 15) {
+		hex_char = (char) (val - 10 + 'A');
+	} else {
 		hex_char = '0';
 	}
 
@@ -273,9 +259,8 @@ gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes)
 	char nibble;
 	int buf_pos = 0;
 
-	for (i=0; i<num_bytes*2; i++)
-	{
-		nibble = _util_unpackb(byte_pdu,buf_pos,4);
+	for (i = 0; i < num_bytes * 2; i++) {
+		nibble = _util_unpackb(byte_pdu, buf_pos, 4);
 		buf_pos += 4;
 		hex_pdu[i] = _util_convert_byte_hexChar(nibble);
 	}
@@ -288,14 +273,13 @@ char* util_removeQuotes(void *data)
 	char *tmp = NULL;
 	int data_len = 0;
 
-	data_len = strlen((const char*)data);
+	data_len = strlen((const char *) data);
 	dbg("data_len: %d----%s", data_len, data);
-	if(data_len <= 0)
-	{
+	if (data_len <= 0) {
 		return NULL;
-	}	
-	tmp = calloc(1, data_len-1);
-	memcpy(tmp, data+1, data_len-2);
+	}
+	tmp = calloc(1, data_len - 1);
+	memcpy(tmp, data + 1, data_len - 2);
 	dbg("tmp: %s", tmp);
 
 	return tmp;

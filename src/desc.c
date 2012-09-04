@@ -67,19 +67,21 @@ static gboolean on_load()
 	return TRUE;
 }
 
-static int _get_cp_name(char** name)
+static int _get_cp_name(char **name)
 {
 	struct utsname u;
 
-	char *svnet1_models[] = { "F1", "S1", "M2", "H2", "H2_SDK",
+	char *svnet1_models[] = {
+		"F1", "S1", "M2", "H2", "H2_SDK",
 		"CRESPO", "STEALTHV", "SLP45", "Kessler", "P1P2",
-		"U1SLP", "U1HD", "SLP7_C210", "SLP10_C210", NULL };
+		"U1SLP", "U1HD", "SLP7_C210", "SLP10_C210", NULL
+	};
 
 	char *svnet2_models[] = { "SMDK4410", "SMDK4212", "SLP_PQ", "SLP_PQ_LTE", "SLP_NAPLES", "REDWOOD", "TRATS", NULL };
 
-	char* tty_models[] = {"QCT MSM8X55 SURF" , "QCT MSM7x27a FFA", NULL };
+	char *tty_models[] = { "QCT MSM8X55 SURF", "QCT MSM7x27a FFA", NULL };
 
-	int i=0;
+	int i = 0;
 
 	if (*name) {
 		dbg("[ error ] name is not empty");
@@ -92,7 +94,7 @@ static int _get_cp_name(char** name)
 
 	dbg("u.nodename : [ %s ]", u.nodename);
 
-	for(i=0; svnet1_models[i]; i++) {
+	for (i = 0; svnet1_models[i]; i++) {
 		if (!strcmp(u.nodename, svnet1_models[i])) {
 			*name = g_new0(char, 5);
 			strcpy(*name, "6260");
@@ -100,7 +102,7 @@ static int _get_cp_name(char** name)
 		}
 	}
 
-	for(i=0; svnet2_models[i]; i++) {
+	for (i = 0; svnet2_models[i]; i++) {
 		if (!strcmp(u.nodename, svnet2_models[i])) {
 			*name = g_new0(char, 5);
 			strcpy(*name, "6262");
@@ -108,7 +110,7 @@ static int _get_cp_name(char** name)
 		}
 	}
 
-	for(i=0; tty_models[i]; i++) {
+	for (i = 0; tty_models[i]; i++) {
 		if (!strcmp(u.nodename, tty_models[i])) {
 			*name = g_new0(char, 6);
 			strcpy(*name, "dpram");
@@ -125,7 +127,7 @@ static gboolean on_init(TcorePlugin *p)
 {
 	TcoreHal *h;
 	struct global_data *gd;
-	//char *cp_name = 0;
+	// char *cp_name = 0;
 	int len = 0;
 
 	if (!p)
@@ -153,13 +155,13 @@ static gboolean on_init(TcorePlugin *p)
 	 * Each HAL has AT pasre functionality.
 	 */
 	h = tcore_server_find_hal(tcore_plugin_ref_server(p), cp_name);
-	if (!h)  {
+	if (!h) {
 		g_free(cp_name);
 		free(gd);
 		return FALSE;
 	}
 
-	//set physical hal into plugin's userdata	
+	// set physical hal into plugin's userdata
 	gd->hal = h;
 
 	tcore_plugin_link_user_data(p, gd);
@@ -170,19 +172,19 @@ static gboolean on_init(TcorePlugin *p)
 	dbg("skip _register_unsolicited_messages() - this should be done in each co-object");
 
 	/* Register Unsolicited msg handler */
-	//_register_unsolicited_messages(p);
+	// _register_unsolicited_messages(p);
 
 	s_modem_init(p, h);
 	s_sim_init(p, h);
 	s_sat_init(p, h);
 	s_network_init(p, h);
-//	s_sap_init(p, h);
+// s_sap_init(p, h);
 	s_ps_init(p, h);
 	s_call_init(p, h);
 	s_ss_init(p, h);
 	s_sms_init(p, h);
-//	s_phonebook_init(p, h);
-//	s_gps_init(p, h);
+// s_phonebook_init(p, h);
+// s_gps_init(p, h);
 
 	g_free(cp_name);
 
@@ -208,8 +210,7 @@ static void on_unload(TcorePlugin *p)
 	}
 }
 
-struct tcore_plugin_define_desc plugin_define_desc =
-{
+struct tcore_plugin_define_desc plugin_define_desc = {
 	.name = "IMC",
 	.priority = TCORE_PLUGIN_PRIORITY_MID,
 	.version = 1,

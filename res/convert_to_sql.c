@@ -24,7 +24,7 @@
 #define TABLE_NAME "mcc_mnc_oper_list"
 #define TABLE_SCHEMA "create table " TABLE_NAME " (id integer primary key, country char(3), mcc integer, mnc char(3), oper char(45));"
 
-#define dbg(fmt,args...) fprintf(stderr, fmt, ##args);
+#define dbg(fmt, args ...) fprintf(stderr, fmt, ## args)
 
 int main(int argc, char *argv[])
 {
@@ -54,52 +54,52 @@ int main(int argc, char *argv[])
 
 	printf("BEGIN;\n");
 	while (1) {
-		fgets (buf, 255, fp_in);
+		fgets(buf, 255, fp_in);
 
-		if (feof(fp_in))  {
+		if (feof(fp_in)) {
 			break;
 		}
 
 		// remove '\n'
-		buf[strlen(buf)-1] = '\0';
+		buf[strlen(buf) - 1] = '\0';
 
 		dbg("\n%s\n", buf);
 
-		pos1 = strchr (buf, ',');
-		memset (country, 0, 10);
-		memcpy(country, buf, pos1-buf);
+		pos1 = strchr(buf, ',');
+		memset(country, 0, 10);
+		memcpy(country, buf, pos1 - buf);
 
 		dbg("country=[%s]\n", country);
 
-		sscanf (pos1+1, "%d", &mcc);
+		sscanf(pos1 + 1, "%d", &mcc);
 		dbg("mcc=[%d]\n", mcc);
 
 		// get mnc
-		pos1 = strchr (pos1+1, ',');
-		pos2 = strchr (pos1+1, ',');
+		pos1 = strchr(pos1 + 1, ',');
+		pos2 = strchr(pos1 + 1, ',');
 
-		dbg("mnc=[%s]\n", pos1+1);
+		dbg("mnc=[%s]\n", pos1 + 1);
 
-		memset (mnc, 0, 10);
-		strncpy (mnc, pos1+1, pos2-pos1-1);
+		memset(mnc, 0, 10);
+		strncpy(mnc, pos1 + 1, pos2 - pos1 - 1);
 
 		// get brand
 		pos1 = pos2;
-		pos2 = strchr (pos1+1, ',');
+		pos2 = strchr(pos1 + 1, ',');
 
-		dbg("brand=[%s]\n", pos1+1);
+		dbg("brand=[%s]\n", pos1 + 1);
 
-		memset (brand, 0, 255);
-		strncpy (brand, pos1+1, pos2-pos1-1);
+		memset(brand, 0, 255);
+		strncpy(brand, pos1 + 1, pos2 - pos1 - 1);
 
 		// get oper
 		pos1 = pos2;
-		pos2 = strchr (pos1+1, ',');
+		pos2 = strchr(pos1 + 1, ',');
 
-		dbg("oper=[%s]\n", pos1+1);
+		dbg("oper=[%s]\n", pos1 + 1);
 
-		memset (oper, 0, 255);
-		strcpy (oper, pos1+1);
+		memset(oper, 0, 255);
+		strcpy(oper, pos1 + 1);
 
 		oper_select = brand;
 		if (strlen(brand) == 0)
@@ -107,15 +107,15 @@ int main(int argc, char *argv[])
 
 		if (oper_select[0] == '\"') {
 			memset(buf, 0, 255);
-			snprintf(buf, strlen(oper_select)-2, "%s", oper_select+1);
+			snprintf(buf, strlen(oper_select) - 2, "%s", oper_select + 1);
 			snprintf(oper_select, 255, "%s", buf);
 		}
 
 		snprintf(buf, 255, "insert into %s "
-				" (country, mcc, mnc, oper) "
-				" values (\"%s\", %d, \"%s\", \"%s\");",
-				TABLE_NAME, country, mcc, mnc, oper_select);
-		printf("%s\n",buf);
+						   " (country, mcc, mnc, oper) "
+						   " values (\"%s\", %d, \"%s\", \"%s\");",
+				 TABLE_NAME, country, mcc, mnc, oper_select);
+		printf("%s\n", buf);
 	}
 	printf("COMMIT;\n");
 

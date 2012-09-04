@@ -18,14 +18,10 @@
  * limitations under the License.
  */
 
-
 #ifndef __S_SS_H__
 #define __S_SS_H__
 
-
-gboolean	s_ss_init(TcorePlugin *p, TcoreHal *h);
-void		s_ss_exit(TcorePlugin *p);
-
-
+gboolean s_ss_init(TcorePlugin *p, TcoreHal *h);
+void s_ss_exit(TcorePlugin *p);
 
 #endif

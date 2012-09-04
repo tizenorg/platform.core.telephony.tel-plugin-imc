@@ -18,12 +18,10 @@
  * limitations under the License.
  */
 
- 
 #ifndef __S_PS_H__
 #define __S_PS_H__
 
-gboolean s_ps_init(TcorePlugin *p,TcoreHal *hal);
+gboolean s_ps_init(TcorePlugin *p, TcoreHal *hal);
 void s_ps_exit(TcorePlugin *p);
 
-
-#endif/*__S_PS_H__*/
+#endif /*__S_PS_H__*/

@@ -18,7 +18,6 @@
  * limitations under the License.
  */
 
-
 #ifndef S_PHONEBOOK_H_
 #define S_PHONEBOOK_H_
 

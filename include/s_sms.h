@@ -18,11 +18,10 @@
  * limitations under the License.
  */
 
-
 #ifndef S_SMS_H_
 #define S_SMS_H_
 
 gboolean s_sms_init(TcorePlugin *p, TcoreHal *h);
 void s_sms_exit(TcorePlugin *p);
 
-#endif //S_SMS_H_
+#endif // S_SMS_H_

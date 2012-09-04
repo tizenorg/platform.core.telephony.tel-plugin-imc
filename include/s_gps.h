@@ -18,10 +18,8 @@
  * limitations under the License.
  */
 
-
 #ifndef __S_GPS_H__
 #define __S_GPS_H__
-
 
 gboolean s_gps_init(TcorePlugin *p, TcoreHal *h);
 void s_gps_exit(TcorePlugin *p);
