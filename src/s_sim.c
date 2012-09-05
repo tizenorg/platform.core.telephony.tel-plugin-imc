@@ -110,7 +110,8 @@ static TReturn _get_file_info(CoreObject *o, UserRequest *ur, const enum tel_sim
 static gboolean _get_file_data(CoreObject *o, UserRequest *ur, const enum tel_sim_file_id ef, const int offset, const int length);
 static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_sim_file_id ef, const int index, const int length);
 static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status);
-static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, void *user_data);      // from Kernel
+static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, void *user_data);  // from Kernel
+extern gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
 static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, void *user_data)
 {
@@ -127,6 +128,7 @@ static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, v
 static enum tcore_response_command _find_resp_command(UserRequest *ur)
 {
 	enum tcore_request_command command;
+
 	command = tcore_user_request_get_command(ur);
 	switch (command) {
 	case TREQ_SIM_VERIFY_PINS:
@@ -242,7 +244,9 @@ static enum tcore_response_command _find_resp_command(UserRequest *ur)
 static int _sim_get_current_pin_facility(enum s_sim_sec_op_e op)
 {
 	int ret_type = 0;
+
 	dbg("current sec_op[%d]", op);
+	
 	switch (op) {
 	case SEC_PIN1_VERIFY:
 	case SEC_PIN1_CHANGE:
@@ -455,6 +459,7 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 {
 	struct tresp_sim_read resp = {0, };
 	struct s_sim_property *file_meta = NULL;
+
 	dbg("EF[0x%x] access Result[%d]", ef, rt);
 
 	resp.result = rt;
@@ -607,6 +612,7 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_sim_access_result rt, int decode_ret)
 {
 	struct s_sim_property *file_meta = NULL;
+
 	dbg("Entry");
 
 	file_meta = (struct s_sim_property *) tcore_user_request_ref_metainfo(ur, NULL);
@@ -1643,6 +1649,7 @@ static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_
 	int p1 = 0;
 	int p2 = 0;
 	int p3 = 0;
+
 	dbg(" Function entry ");
 
 	hal = tcore_object_get_hal(o);
@@ -2332,8 +2339,8 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 	dbg(" Function entry ");
 
 	co_sim = tcore_pending_ref_core_object(p);
-	sp = tcore_sim_ref_userdata(co_sim);
 	ur = tcore_pending_ref_user_request(p);
+	sp = (struct s_sim_property *) tcore_user_request_ref_metainfo(ur, NULL);
 
 	if (resp->success > 0) {
 		dbg("RESPONSE OK");
@@ -2810,6 +2817,7 @@ static TReturn s_read_file(CoreObject *o, UserRequest *ur)
 {
 	TReturn api_ret = TCORE_RETURN_SUCCESS;
 	enum tcore_request_command command;
+
 	command = tcore_user_request_get_command(ur);
 
 	dbg(" Function entry ");
@@ -2911,12 +2919,16 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	enum tel_sim_file_id ef = SIM_EF_INVALID;
 	const struct treq_sim_set_callforwarding *cf;
 	const struct treq_sim_set_language *cl;
+	struct s_sim_property file_meta = {0, };
 	int p1 = 0;
 	int p2 = 0;
 	int p3 = 0;
 	int cmd = 0;
 	int out_length = 0;
+	int trt = 0;
 	struct tel_sim_language sim_language;
+	char *tmp = NULL;
+	gboolean result;
 
 	command = tcore_user_request_get_command(ur);
 
@@ -2940,29 +2952,32 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 		dbg("language %d", cl->language);
 
 		if (tcore_sim_get_type(o) == SIM_TYPE_GSM) {
-			int i;
 			dbg("2G");
-			ef = SIM_EF_ELP;
-			encoded_data = tcore_sim_encode_li(&out_length, &sim_language);
+			ef = SIM_EF_LP;
+			tmp = tcore_sim_encode_lp(&out_length, &sim_language);
+
+			encoded_data = (char *) malloc(2 * (sim_language.language_count) + 1);
+			memset(encoded_data, 0x00, (2 * sim_language.language_count) + 1);
+			result = util_byte_to_hex(tmp, encoded_data, out_length);
+
 			p1 = 0;
 			p2 = 0;
 			p3 = out_length;
-			for (i = 0; i < out_length; i++) {
-				dbg("encoded_data - %d ---", encoded_data[i]);
-			}
 			dbg("encoded_data - %s ---", encoded_data);
 			dbg("out_length - %d ---", out_length);
 		} else if (tcore_sim_get_type(o) == SIM_TYPE_USIM) {
-			int i;
 			dbg("3G");
 			ef = SIM_EF_LP;
-			encoded_data = tcore_sim_encode_li(&out_length, &sim_language);
+			tmp = tcore_sim_encode_li(&out_length, &sim_language);
+
+			encoded_data = (char *) malloc(2 * (out_length) + 1);
+			memset(encoded_data, 0x00, (2 * out_length) + 1);
+			result = util_byte_to_hex(tmp, encoded_data, out_length);
+
 			p1 = 0;
 			p2 = 0;
 			p3 = out_length;
-			for (i = 0; i < out_length; i++) {
-				dbg("encoded_data - %d ---", encoded_data[i]);
-			}
+			dbg("encoded_data - %s ---", encoded_data);
 			dbg("out_length - %d ---", out_length);
 		} else {
 			api_ret = TCORE_RETURN_ENOSYS;
@@ -2972,18 +2987,24 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	case TREQ_SIM_SET_CALLFORWARDING:
 		cf = tcore_user_request_ref_data(ur, NULL);
 		if (tcore_sim_get_cphs_status(o)) {
-			encoded_data = tcore_sim_encode_cff((const struct tel_sim_callforwarding *) cf);
+			tmp = tcore_sim_encode_cff((const struct tel_sim_callforwarding *) cf);
 			ef = SIM_EF_CPHS_CALL_FORWARD_FLAGS;
 			p1 = 0;
 			p2 = 0;
-			p3 = strlen(encoded_data);
+			p3 = strlen(tmp);
+			encoded_data = (char *) malloc(2 * (p3) + 1);
+			memset(encoded_data, 0x00, (2 *p3) + 1);
+			result = util_byte_to_hex(tmp, encoded_data, p3);
 			cmd = 214;                  /*command - 214 : UPDATE BINARY*/
 		} else {
-			encoded_data = tcore_sim_encode_cfis(&encoded_len, (const struct tel_sim_callforwarding *) cf);
+			tmp = tcore_sim_encode_cfis(&encoded_len, (const struct tel_sim_callforwarding *) cf);
 			ef = SIM_EF_USIM_CFIS;
 			p1 = 1;
 			p2 = 0x04;
 			p3 = encoded_len;
+			encoded_data = (char *) malloc(2 * (encoded_len) + 1);
+			memset(encoded_data, 0x00, (2 * encoded_len) + 1);
+			result = util_byte_to_hex(tmp, encoded_data, encoded_len);
 			cmd = 220;                  /*command - 220 : UPDATE RECORD*/
 		}
 		break;
@@ -2993,6 +3014,12 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 		api_ret = TCORE_RETURN_EINVAL;
 		break;
 	}
+	file_meta.file_id = ef;
+	dbg("file_meta.file_id: %d", file_meta.file_id);
+
+	trt = tcore_user_request_set_metainfo(ur, sizeof(struct s_sim_property), &file_meta);
+	dbg("trt[%d]", trt);
+
 	cmd_str = g_strdup_printf("AT+CRSM=%d,%d,%d,%d,%d,\"%s\"", cmd, ef, p1, p2, p3, encoded_data);
 	req = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
 
@@ -3008,6 +3035,11 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 		g_free(encoded_data);
 	}
 	free(cmd_str);
+
+	if (tmp) {
+		free(tmp);
+	}
+
 	dbg(" Function exit");
 	return TCORE_RETURN_SUCCESS;
 }
@@ -3018,7 +3050,10 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	TcoreATRequest *req = NULL;
 	TcorePending *pending = NULL;
 	char *cmd_str = NULL;
+	char *apdu = NULL;
+	int result = 0;
 	const struct treq_sim_transmit_apdu *req_data;
+
 	dbg(" Function entry ");
 
 	hal = tcore_object_get_hal(o);
@@ -3028,7 +3063,11 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	if (!o || !ur)
 		return TCORE_RETURN_EINVAL;
 
-	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", req_data->apdu_length, req_data->apdu);
+	apdu = (char *) malloc((2 * req_data->apdu_length) + 1);
+	memset(apdu, 0x00, (2 * req_data->apdu_length) + 1);
+	result = util_byte_to_hex((const char *) req_data->apdu, apdu, req_data->apdu_length);
+
+	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", req_data->apdu_length, apdu);
 
 	req = tcore_at_request_new(cmd_str, "+CSIM:", TCORE_AT_SINGLELINE);
 
@@ -3041,6 +3080,7 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
+	free(apdu);
 	dbg(" Function exit");
 	return TCORE_RETURN_SUCCESS;
 }
