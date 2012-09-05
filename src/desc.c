@@ -31,6 +31,7 @@
 #include <hal.h>
 #include <server.h>
 #include <at.h>
+#include <core_object.h>
 
 #include "s_common.h"
 #include "s_network.h"
@@ -46,6 +47,38 @@
 #include "s_gps.h"
 
 static char *cp_name;
+static int cp_count = 0;
+
+#define MAX_CP_QUERY_COUNT 60 
+
+static gboolean _query_cp_state(gpointer data)
+{
+	gboolean power_state = FALSE;
+	TcorePlugin *p = NULL;
+	CoreObject* obj = NULL;
+	TcoreHal* h = NULL;
+	
+	p = (TcorePlugin*)data;
+
+	if(cp_count > MAX_CP_QUERY_COUNT){
+		dbg("cp query counter exceeds MAX_CP_QUERY_COUNT");
+		return FALSE;
+	}
+	obj = tcore_plugin_ref_core_object(p, "modem");
+	h = tcore_object_get_hal(obj);
+	power_state = tcore_hal_get_power_state(h);
+
+	if(TRUE == power_state){
+		dbg("CP READY");
+		s_modem_send_poweron(p);	
+		return FALSE;
+	}
+	else{
+		dbg("CP NOT READY, cp_count :%d", cp_count);
+		cp_count++;
+		return TRUE;
+	}
+}
 
 static enum tcore_hook_return on_hal_send(TcoreHal *hal, unsigned int data_len, void *data, void *user_data)
 {
@@ -169,29 +202,20 @@ static gboolean on_init(TcorePlugin *p)
 	tcore_hal_add_send_hook(h, on_hal_send, p);
 	tcore_hal_add_recv_callback(h, on_hal_recv, p);
 
-	dbg("skip _register_unsolicited_messages() - this should be done in each co-object");
-
-	/* Register Unsolicited msg handler */
-	// _register_unsolicited_messages(p);
-
-	s_modem_init(p, h);
+		s_modem_init(p, h);
 	s_sim_init(p, h);
 	s_sat_init(p, h);
 	s_network_init(p, h);
-// s_sap_init(p, h);
 	s_ps_init(p, h);
 	s_call_init(p, h);
 	s_ss_init(p, h);
 	s_sms_init(p, h);
-// s_phonebook_init(p, h);
-// s_gps_init(p, h);
 
 	g_free(cp_name);
 
 	tcore_hal_set_power(h, TRUE);
-	/* SEND CPAS command to invoke modem power on. */
-	s_modem_send_poweron(p);
-
+//wait until CP is ready 
+	g_timeout_add_full(G_PRIORITY_HIGH,500,_query_cp_state, p, 0 );
 	return TRUE;
 }
 
