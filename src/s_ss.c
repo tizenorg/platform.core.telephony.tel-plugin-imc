@@ -1792,11 +1792,23 @@ static TReturn s_ss_barring_change_password(CoreObject *o, UserRequest *ur)
 	struct ss_confirm_info *user_data = 0;
 	char *cmd_str = NULL;
 	gboolean ret = FALSE;
+	char old_password[MAX_SS_BARRING_PASSWORD_LEN + 1];
+	char new_password[MAX_SS_BARRING_PASSWORD_LEN + 1];
 
 	dbg("function enter");
 	barring = (struct treq_ss_barring_change_password *) tcore_user_request_ref_data(ur, 0);
 
-	cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", "AB", barring->password_old, barring->password_new);
+	if (barring->password_old == NULL || barring->password_new == NULL) {
+		dbg("[error]password is null");
+		return TCORE_RETURN_FAILURE;
+	}
+	memcpy(old_password, barring->password_old, MAX_SS_BARRING_PASSWORD_LEN);
+	old_password[MAX_SS_BARRING_PASSWORD_LEN] = '\0';
+	memcpy(new_password, barring->password_new, MAX_SS_BARRING_PASSWORD_LEN);
+	new_password[MAX_SS_BARRING_PASSWORD_LEN] = '\0';
+
+	dbg("old passwd - %s new passwd- %s", old_password, new_password);
+	cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", "AB", old_password, new_password);
 	dbg("request command : %s", cmd_str);
 
 	hal = tcore_object_get_hal(o);

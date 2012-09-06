@@ -3067,7 +3067,7 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	memset(apdu, 0x00, (2 * req_data->apdu_length) + 1);
 	result = util_byte_to_hex((const char *) req_data->apdu, apdu, req_data->apdu_length);
 
-	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", req_data->apdu_length, apdu);
+	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", req_data->apdu_length * 2, apdu);
 
 	req = tcore_at_request_new(cmd_str, "+CSIM:", TCORE_AT_SINGLELINE);
 
