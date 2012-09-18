@@ -328,19 +328,22 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 		if (resp->lines) {
 			line = (const char *) resp->lines->data;
 			tokens = tcore_at_tok_new(line);
-			if (g_slist_length(tokens) != 5) {
+			if (g_slist_length(tokens) == 1) {
+				swver = g_slist_nth_data(tokens, 0);
+				dbg("version: sw=[%s]", swver);
+			} else if (g_slist_length(tokens) == 5) {
+				swver = g_slist_nth_data(tokens, 0);
+				hwver = g_slist_nth_data(tokens, 1);
+				caldate = g_slist_nth_data(tokens, 2);
+				pcode = g_slist_nth_data(tokens, 3);
+				id = g_slist_nth_data(tokens, 4);
+
+				dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]", swver, hwver, caldate, pcode, id);
+			} else {
 				msg("invalid message");
 				goto OUT;
 			}
 		}
-
-		swver = g_slist_nth_data(tokens, 0);
-		hwver = g_slist_nth_data(tokens, 1);
-		caldate = g_slist_nth_data(tokens, 2);
-		pcode = g_slist_nth_data(tokens, 3);
-		id = g_slist_nth_data(tokens, 4);
-
-		dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]", swver, hwver, caldate, pcode, id);
 
 		vi = calloc(sizeof(TelMiscVersionInformation), 1);
 		if (NULL != swver)
