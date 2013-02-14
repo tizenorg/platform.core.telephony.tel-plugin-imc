@@ -1,0 +1,24 @@
+TARGET	= imc-plugin.so
+
+SRCS	= desc.c s_hal.c s_phonet.c s_rfs.c s_nvdata.c s_dispatch.c s_common.c \
+		  s_network.c \
+		  s_sim.c
+OBJS	= $(SRCS:.c=.o)
+PKGS	= glib-2.0 lcm tapi tcore
+
+CC		= gcc
+CFLAGS	= -Wall -g -fPIC `pkg-config --cflags $(PKGS)` -I.
+LIBS	= -rdynamic -fPIC -ldl \
+		  `pkg-config --libs $(PKGS)`
+
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CC) $^ $(LIBS) -shared -o $(TARGET)
+
+.c.o: $(SRCS)
+	$(CC) $(CFLAGS) -c $^ -o $@
+
+clean:
+	rm -f $(OBJS) $(TARGET)
