@@ -1,0 +1,412 @@
+From 2a49ea5039f838a3bad9d08cb80284e66c7cc97d Mon Sep 17 00:00:00 2001
+From: Nicolas Bertrand <nicolas.bertrand@linux.intel.com>
+Date: Wed, 3 Oct 2012 15:07:16 +0200
+Subject: [PATCH 13/23] s_call: use hal set sound path function
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+---
+ src/s_call.c |  339 ++++++++++++++++------------------------------------------
+ 1 file changed, 92 insertions(+), 247 deletions(-)
+
+diff --git a/src/s_call.c b/src/s_call.c
+index e48e900..2a2b027 100644
+--- a/src/s_call.c
++++ b/src/s_call.c
+@@ -23,6 +23,8 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <glib.h>
++#include <unistd.h>
++
+ 
+ #include <tcore.h>
+ #include <hal.h>
+@@ -43,9 +45,10 @@
+ #define STATUS_CONNECTED   7
+ #define COMMA              0X2c
+ 
+-static gboolean setsoundpath = FALSE;
+ static gboolean soundvolume = FALSE;
+ 
++extern void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback);
++
+ // End Cause field  - Call state end cause
+ 
+ typedef enum {
+@@ -372,6 +375,66 @@ static gboolean on_notification_call_clip_info(CoreObject *o, const void *data,
+ 	return TRUE;
+ }
+ 
++static gboolean on_notification_call_audio_info(CoreObject *o, const void *data, void *user_data)
++{
++	GSList *tokens = NULL;
++	GSList *lines = NULL;
++	TcoreHal *hal = NULL;
++	const char *line = NULL;
++	char *stat;
++	int status;
++	TcorePlugin *plugin;
++
++	dbg("Entry");
++
++	lines = (GSList *) data;
++	if (1 != g_slist_length(lines)) {
++		err("Unsolicited message, BUT multiple lines present");
++		goto OUT;
++	}
++
++	line = (char *) (lines->data);
++	tokens = tcore_at_tok_new(line);
++
++	stat = g_slist_nth_data(tokens, 1);
++	if (!stat) {
++		dbg("Stat is missing from +XPROGRESS indiaction");
++	} else {
++		status = atoi(stat);
++		dbg("status = %d", status);
++
++		switch (status) {
++
++		case 11:     /*igonre Connected state. */
++			dbg("audio disconnected")
++			plugin = tcore_object_ref_plugin(o);
++
++			hal = tcore_object_get_hal(o);
++			tcore_hal_set_sound_path(hal, 0x0);
++
++			// amc disable
++			usleep(1000); // Time to disable MSIC...
++			prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,3,3", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S1_RX
++			prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,3,4", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S2_RX
++			// amc route: AMC_RADIO_RX => AMC_PCM_GENERALD
++			prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,0,4", NULL, TCORE_AT_NO_RESULT, NULL);
++			usleep(80000); // Time to Disable modem I2S...
++			break;
++
++		default:
++			dbg("audio continue");
++			break;
++		}
++	}
++
++	/* Free tokens */
++	tcore_at_tok_free(tokens);
++
++OUT:
++	dbg("Exit");
++	return TRUE;
++}
++
+ static gboolean on_notification_call_info(CoreObject *o, const void *data, void *user_data)
+ {
+ 	GSList *tokens = NULL;
+@@ -1468,179 +1531,6 @@ static void on_confirmation_call_swap(TcorePending *p, int data_len, const void
+ 	return;
+ }
+ 
+-static void on_confirmation_call_set_source_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
+-{
+-	UserRequest *ur = NULL;
+-	GSList *tokens = NULL;
+-	const char *line = NULL;
+-	const TcoreATResponse *response = data;
+-	char *resp_str = NULL;
+-	struct tresp_call_sound_set_path resp;
+-	gboolean error;
+-
+-	dbg("Entry");
+-	ur = tcore_pending_ref_user_request(p);
+-
+-	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
+-	if (!response) {
+-		err("Input data is NULL");
+-		return;
+-	}
+-
+-	if (response->success > 0) {
+-		dbg("RESPONSE OK");
+-
+-		line = (const char *) (((GSList *) response->lines)->data);
+-		tokens = tcore_at_tok_new(line);
+-
+-		resp_str = g_slist_nth_data(tokens, 0);
+-		if (!g_slist_nth_data(tokens, 0)) {
+-			err("group_id is missing");
+-			resp.err = TRUE;
+-			goto OUT;
+-		}
+-
+-		if (!g_slist_nth_data(tokens, 1)) {
+-			err(" function_id is missing");
+-			resp.err = TRUE;
+-			goto OUT;
+-		}
+-
+-		resp_str = g_slist_nth_data(tokens, 2);
+-
+-		if (resp_str) {
+-			error = atoi(resp_str);
+-			if (0 == error) {
+-				dbg("Response is Success");
+-				resp.err = FALSE;
+-			} else {
+-				resp.err = TRUE;
+-			}
+-		}
+-OUT:
+-		// Free tokens
+-		tcore_at_tok_free(tokens);
+-	} else {
+-		dbg("RESPONSE NOT OK");
+-
+-		line = (const char *) response->final_response;
+-		tokens = tcore_at_tok_new(line);
+-
+-		if (g_slist_length(tokens) < 1) {
+-			err("err cause not specified or string corrupted");
+-			resp.err = TRUE;
+-		} else {
+-			error = atoi(g_slist_nth_data(tokens, 0));
+-
+-			// TODO: CMEE error mapping is required.
+-			resp.err = TRUE;
+-		}
+-
+-		// Free tokens
+-		tcore_at_tok_free(tokens);
+-	}
+-
+-	if (ur) {
+-		if ( resp.err ) {  // Send only failed notification . success notification send when destination device is set.
+-			// Send notification to TAPI
+-			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH, sizeof(struct tresp_call_sound_set_path), &resp);
+-			setsoundpath = TRUE;
+-		}
+-	} else {
+-		err("User Request is NULL");
+-	}
+-
+-	dbg("Exit");
+-	return;
+-}
+-
+-static void on_confirmation_call_set_destination_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
+-{
+-	UserRequest *ur = NULL;
+-	GSList *tokens = NULL;
+-	const char *line = NULL;
+-	char *resp_str = NULL;
+-	struct tresp_call_sound_set_path resp;
+-	const TcoreATResponse *response = data;
+-	gboolean error;
+-
+-	dbg("Entry");
+-
+-	ur = tcore_pending_ref_user_request(p);
+-	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
+-
+-	if (!response) {
+-		err("Input data is NULL");
+-		return;
+-	}
+-
+-	if (ur) {
+-		if (response->success > 0) {
+-			dbg("RESPONSE OK");
+-
+-			line = (const char *) (((GSList *) response->lines)->data);
+-			tokens = tcore_at_tok_new(line);
+-
+-			resp_str = g_slist_nth_data(tokens, 0);
+-			if (!g_slist_nth_data(tokens, 0)) {
+-				dbg("group_id is missing");
+-				resp.err = TRUE;
+-				goto OUT;
+-			}
+-
+-			if (!g_slist_nth_data(tokens, 1)) {
+-				dbg("function_id is missing");
+-				resp.err = TRUE;
+-				goto OUT;
+-			}
+-
+-			resp_str = g_slist_nth_data(tokens, 2);
+-			if (resp_str) {
+-				error = atoi(resp_str);
+-				if (0 == error) {
+-					dbg("Response is Success");
+-					resp.err = FALSE;
+-				} else {
+-					resp.err = TRUE;
+-				}
+-			}
+-
+-OUT:
+-			// Free tokens
+-			tcore_at_tok_free(tokens);
+-		} else {
+-			dbg("RESPONSE NOT OK");
+-
+-			line = (const char *) response->final_response;
+-			tokens = tcore_at_tok_new(line);
+-
+-			if (g_slist_length(tokens) < 1) {
+-				err("err cause not specified or string corrupted");
+-				resp.err = TRUE;
+-			} else {
+-				error = atoi(g_slist_nth_data(tokens, 0));
+-				// TODO: CMEE error mapping is required.
+-				resp.err = TRUE;
+-			}
+-
+-			// Free tokens
+-			tcore_at_tok_free(tokens);
+-		}
+-
+-		if (setsoundpath == TRUE) {
+-			setsoundpath = FALSE;
+-		} else {
+-			// Send response to TAPI
+-			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH, sizeof(struct tresp_call_sound_set_path), &resp);
+-		}
+-	} else {
+-		dbg("User Request is NULL");
+-	}
+-
+-	dbg("Exit");
+-	return;
+-}
+-
+ static void on_confirmation_call_set_source_sound_volume_level(TcorePending *p, int data_len, const void *data, void *user_data)
+ {
+ 	UserRequest *ur = NULL;
+@@ -2978,90 +2868,44 @@ static TReturn s_call_send_dtmf(CoreObject *o, UserRequest *ur)
+ 
+ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
+ {
+-	UserRequest *ur_dup = NULL;
+-	TcorePending *pending = NULL, *pending1 = NULL;
+-	TcoreATRequest *req, *req1;
+-	char *cmd_str = NULL, *cmd_str1 = NULL;
+-	int device_type = -1;
+-	struct treq_call_sound_set_path *sound_path = 0;
+-	gboolean ret = FALSE;
++	struct tresp_call_sound_set_path resp;
++	struct treq_call_sound_set_path *SoundPathP;
++	TcoreHal *hal = NULL;
++	TcorePlugin *plugin;
+ 
+ 	dbg("function entrance");
+ 
+-	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+-		dbg("cp not ready/n");
+-		return TCORE_RETURN_ENOSYS;
+-	}
+-	sound_path = (struct treq_call_sound_set_path *) tcore_user_request_ref_data(ur, 0);
+-	if (sound_path == NULL) {
+-		dbg("invaling user request");
+-		return TCORE_RETURN_FAILURE;
+-	}
+-	dbg("audio device type - 0x%x", sound_path->path);
+-	switch (sound_path->path) {
+-	case CALL_SOUND_PATH_HANDSET:
+-		device_type = 1;
+-		break;
+-
+-	case CALL_SOUND_PATH_HEADSET:
+-		device_type = 2;
+-		break;
++	SoundPathP = (struct treq_call_sound_set_path *) tcore_user_request_ref_data(ur, 0);
+ 
+-	case CALL_SOUND_PATH_HEADSET_3_5PI:
+-		device_type = 3;
+-		break;
+-
+-	case CALL_SOUND_PATH_SPEAKER:
+-		device_type = 4;
+-		break;
++	dbg("deviceId is %d", SoundPathP->path);
+ 
+-	case CALL_SOUND_PATH_HANDFREE:
+-		device_type = 5;
+-		break;
+-
+-	case CALL_SOUND_PATH_HEADSET_HAC:
+-		device_type = 6;
+-		break;
++	plugin = tcore_object_ref_plugin(o);
+ 
+-	case CALL_SOUND_PATH_BLUETOOTH:
+-	case CALL_SOUND_PATH_STEREO_BLUETOOTH:
+-		device_type = 7;
+-		break;
++    // Configure modem I2S1
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,4,3,0,1,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,5,2,0,1,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+ 
+-	case CALL_SOUND_PATH_BT_NSEC_OFF:
+-	case CALL_SOUND_PATH_MIC1:
+-	case CALL_SOUND_PATH_MIC2:
+-	default:
+-		dbg("unsupported device type");
+-		return TCORE_RETURN_FAILURE;
+-	}
++	// Configure modem I2S2 and do the modem routing
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,4,4,0,0,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,5,3,0,0,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,0,4", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,3,0", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,4,2", NULL, TCORE_AT_NO_RESULT, NULL);
++    prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,5,2", NULL, TCORE_AT_NO_RESULT, NULL);
+ 
+-	cmd_str = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d",device_type); // source type.
+-	pending = tcore_pending_new(o, 0);
+-	req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+-	dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+-	tcore_pending_set_request_data(pending, 0, req);
+-	ur_dup = tcore_user_request_ref(ur);
+-	ret = _call_request_message(pending, o, ur_dup, on_confirmation_call_set_source_sound_path, NULL);
+-	g_free(cmd_str);
++    // amc enable
++	prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,2,4", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S2_RX
++	prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,2,3", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S1_RX
++    // amc route: AMC_RADIO_RX => AMC_I2S1_TX
++	prepare_and_send_pending_request(plugin, "call", "AT+XDRV=40,6,0,2", NULL, TCORE_AT_NO_RESULT, NULL);
+ 
+-	if (!ret) {
+-		dbg("At request(%s) sent failed", req->cmd);
+-		return TCORE_RETURN_FAILURE;
+-	}
++	usleep(40000); // Time to Enable modem I2S...
+ 
+-	cmd_str1 = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",device_type); // destination type
+-	pending1 = tcore_pending_new(o, 0);
+-	req1 = tcore_at_request_new(cmd_str1, "+XDRV", TCORE_AT_SINGLELINE);
+-	dbg("XDRV req-cmd for destination type : %s, prefix(if any) :%s, cmd_len : %d", req1->cmd, req1->prefix, strlen(req1->cmd));
+-	tcore_pending_set_request_data(pending1, 0, req1);
+-	ret = _call_request_message(pending1, o, ur, on_confirmation_call_set_destination_sound_path, NULL);
+-	g_free(cmd_str1);
++	hal = tcore_object_get_hal(o);
++	tcore_hal_set_sound_path(hal, SoundPathP->path);
+ 
+-	if (!ret) {
+-		dbg("AT request %s has failed ", req1->cmd);
+-		return TCORE_RETURN_FAILURE;
+-	}
++	resp.err = TCORE_RETURN_SUCCESS;
++	tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH, sizeof(struct tresp_call_sound_set_path), &resp);
+ 
+ 	return TCORE_RETURN_SUCCESS;
+ }
+@@ -4060,6 +3904,7 @@ gboolean s_call_init(TcorePlugin *p, TcoreHal *h)
+ 	// Add Callbacks
+ 	tcore_object_add_callback(o, "+XCALLSTAT", on_notification_call_info, NULL);
+ 	tcore_object_add_callback(o, "+CLIP", on_notification_call_clip_info, NULL);
++	tcore_object_add_callback(o, "+XPROGRESS", on_notification_call_audio_info, NULL);
+ 
+ 	// User Data
+ 	data = calloc(sizeof(struct property_call_info *), 1);
+-- 
+1.7.10.4
+

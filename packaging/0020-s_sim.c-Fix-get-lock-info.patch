@@ -1,0 +1,76 @@
+From 6c206b12570762126bf0a35f6c0054edc14aa14b Mon Sep 17 00:00:00 2001
+From: Philippe Nunes <philippe.nunes@linux.intel.com>
+Date: Fri, 11 Jan 2013 17:20:31 +0100
+Subject: [PATCH 20/23] s_sim.c: Fix get lock info
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+The "lock_type" parameter used by the AT command AT+XPINCNT[=lock_type]
+shall be an integer type when used with our PR3 modem whereas this is
+a string for the Lunchbox modem.
+---
+ src/s_sim.c |   18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/src/s_sim.c b/src/s_sim.c
+index a74bf7c..a96594b 100644
+--- a/src/s_sim.c
++++ b/src/s_sim.c
+@@ -2961,7 +2961,7 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
+ 	TcoreATRequest *req = NULL;
+ 	TcorePending *pending = NULL;
+ 	char *cmd_str = NULL;
+-	char *lock_type = NULL;
++	int lock_type = 0;
+ 	const struct treq_sim_get_lock_info *req_data;
+ 	struct s_sim_property *sp = NULL;
+ 
+@@ -2981,37 +2981,37 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
+ 
+ 	switch (req_data->type) {
+ 	case SIM_FACILITY_PS:
+-		lock_type = "PS";
++		lock_type = 9; // IMSI lock
+ 		break;
+ 
+ 	case SIM_FACILITY_SC:
+-		lock_type = "SC";
++		lock_type = 1;
+ 		break;
+ 
+ 	case SIM_FACILITY_FD:
+-		lock_type = "FD";
++		lock_type = 2;
+ 		break;
+ 
+ 	case SIM_FACILITY_PN:
+-		lock_type = "PN";
++		lock_type = 5;
+ 		break;
+ 
+ 	case SIM_FACILITY_PU:
+-		lock_type = "PU";
++		lock_type = 6;
+ 		break;
+ 
+ 	case SIM_FACILITY_PP:
+-		lock_type = "PP";
++		lock_type = 7;
+ 		break;
+ 
+ 	case SIM_FACILITY_PC:
+-		lock_type = "PC";
++		lock_type = 8;
+ 		break;
+ 
+ 	default:
+ 		break;
+ 	}
+-	cmd_str = g_strdup_printf("AT+XPINCNT =\"%s\"", lock_type);
++	cmd_str = g_strdup_printf("AT+XPINCNT =%d", lock_type);
+ 	req = tcore_at_request_new(cmd_str, "+XPINCNT:", TCORE_AT_SINGLELINE);
+ 
+ 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+-- 
+1.7.10.4
+

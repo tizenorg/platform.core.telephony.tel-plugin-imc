@@ -1,0 +1,242 @@
+From 658e94ca29da1e7fc52b036a4dc231db1500f3ff Mon Sep 17 00:00:00 2001
+From: Guillaume Zajac <guillaume.zajac@linux.intel.com>
+Date: Mon, 8 Oct 2012 15:42:12 +0200
+Subject: [PATCH 15/23] Change the way imc plugin is initialized
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Conflicts:
+	src/desc.c
+	src/s_modem.c
+---
+ src/desc.c    |   90 ++++++++++++++++++---------------------------------------
+ src/s_modem.c |   69 +------------------------------------------
+ 2 files changed, 29 insertions(+), 130 deletions(-)
+
+diff --git a/src/desc.c b/src/desc.c
+index 7a5ef93..0cf4542 100644
+--- a/src/desc.c
++++ b/src/desc.c
+@@ -44,51 +44,6 @@
+ #include "s_gps.h"
+ 
+ static char *cp_name;
+-static int cp_count = 0;
+-
+-#define MAX_CP_QUERY_COUNT 60
+-
+-static gboolean _query_cp_state(gpointer data)
+-{
+-	gboolean power_state = FALSE;
+-	TcorePlugin *p = NULL;
+-	CoreObject* obj = NULL;
+-	TcoreHal* h = NULL;
+-
+-	p = (TcorePlugin*)data;
+-
+-	if(cp_count > MAX_CP_QUERY_COUNT){
+-		dbg("cp query counter exceeds MAX_CP_QUERY_COUNT");
+-		return FALSE;
+-	}
+-	obj = tcore_plugin_ref_core_object(p, "modem");
+-	h = tcore_object_get_hal(obj);
+-	power_state = tcore_hal_get_power_state(h);
+-
+-	if(TRUE == power_state){
+-		dbg("CP READY");
+-		s_modem_send_poweron(p);
+-		return FALSE;
+-	}
+-	else{
+-		dbg("CP NOT READY, cp_count :%d", cp_count);
+-		cp_count++;
+-		return TRUE;
+-	}
+-}
+-
+-static enum tcore_hook_return on_hal_send(TcoreHal *hal, unsigned int data_len, void *data, void *user_data)
+-{
+-	hook_hex_dump(TX, data_len, data);
+-	return TCORE_HOOK_RETURN_CONTINUE;
+-}
+-
+-static void on_hal_recv(TcoreHal *hal, unsigned int data_len, const void *data, void *user_data)
+-{
+-	msg("=== RX data DUMP =====");
+-	util_hex_dump("          ", data_len, data);
+-	msg("=== RX data DUMP =====");
+-}
+ 
+ static gboolean on_load()
+ {
+@@ -126,7 +81,7 @@ static int _get_cp_name(char **name)
+ 	dbg("u.__domainname : [ %s ]", u.__domainname);
+ 	dbg("u.machine : [ %s ]", u.machine);
+ 	dbg("u.release : [ %s ]", u.release);
+-	dbg("u.sysname : [ %s ]", u.sysname);S
++	dbg("u.sysname : [ %s ]", u.sysname);
+ 	dbg("u.version : [ %s ]", u.version);
+ 
+ 	/* By default, SUNRISE IMC modem is returned */
+@@ -165,11 +120,35 @@ static int _get_cp_name(char **name)
+ 	return 0;
+ }
+ 
++static void on_hal_set_power(TcoreHal *hal, void *user_data)
++{
++	TcorePlugin *p = user_data;
++	CoreObject *o;
++
++	dbg("Entry");
++
++	s_modem_init(p, hal);
++	s_sim_init(p, hal);
++	s_sat_init(p, hal);
++	s_network_init(p, hal);
++	s_ps_init(p, hal);
++	s_call_init(p, hal);
++	s_ss_init(p, hal);
++	s_sms_init(p, hal);
++	s_gps_init(p, hal);
++
++	o = tcore_plugin_ref_core_object(p, "modem");
++	tcore_server_send_notification(tcore_plugin_ref_server(p), o, TNOTI_MODEM_ADDED, 0, NULL);
++
++	s_modem_send_poweron(p);
++
++	dbg("Exit");
++}
++
+ static gboolean on_init(TcorePlugin *p)
+ {
+ 	TcoreHal *h;
+ 	struct global_data *gd;
+-	// char *cp_name = 0;
+ 	int len = 0;
+ 
+ 	if (!p)
+@@ -208,25 +187,12 @@ static gboolean on_init(TcorePlugin *p)
+ 
+ 	tcore_plugin_link_user_data(p, gd);
+ 
+-	tcore_hal_add_send_hook(h, on_hal_send, p);
+-	tcore_hal_add_recv_callback(h, on_hal_recv, p);
++	g_free(cp_name);
+ 
+-	s_modem_init(p, h);
+-	s_sim_init(p, h);
+-	s_sat_init(p, h);
+-	s_network_init(p, h);
+-	s_ps_init(p, h);
+-	s_call_init(p, h);
+-	s_ss_init(p, h);
+-	s_sms_init(p, h);
+-	s_phonebook_init(p, h);
+-	s_sap_init(p, h);
++	tcore_hal_set_power(h, TRUE, on_hal_set_power, p);
+ 
+ 	g_free(cp_name);
+ 
+-	tcore_hal_set_power(h, TRUE);
+-	//wait until CP is ready
+-	g_timeout_add_full(G_PRIORITY_HIGH,500,_query_cp_state, p, 0 );
+ 	return TRUE;
+ }
+ 
+diff --git a/src/s_modem.c b/src/s_modem.c
+index 6212467..47c6c63 100644
+--- a/src/s_modem.c
++++ b/src/s_modem.c
+@@ -616,69 +616,6 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
+ 	return;
+ }
+ 
+-
+-static void on_response_setupmux(TcorePending *p, int data_len, const void *data, void *user_data)
+-{
+-	TcorePlugin *plugin = NULL;
+-	TcoreHal *hal = NULL;
+-	TReturn ret;
+-	dbg("Entry");
+-
+-	/* IMC Plugin dereferenced from pending request */
+-	plugin = tcore_pending_ref_plugin(p);
+-
+-	/* Actual HAL - like svnet(2) */
+-	hal = (TcoreHal *) user_data;
+-
+-	/* Initialize CMUX */
+-	ret = tcore_cmux_init(plugin, hal);
+-	if (TCORE_RETURN_SUCCESS == ret) {
+-		dbg("Successfully initialized CMUX");
+-	} else {
+-		err("Failed to initialize CMUX");
+-	}
+-
+-	dbg("Exit");
+-	return;
+-}
+-
+-
+-
+-static void setup_mux(CoreObject *o)
+-{
+-	TcoreHal *hal = NULL;
+-	TcorePending *pending = NULL;
+-	dbg("Entered");
+-
+-	/* HAL has type itself,
+-	 * e.g.) TCORE_HAL_MODE_AT
+-	 */
+-	hal = tcore_object_get_hal(o);
+-
+-	pending = tcore_at_pending_new(o, "AT+CMUX=0,0,,1509,10,3,30,,", "+CMUX", TCORE_AT_NO_RESULT, on_response_setupmux, hal);
+-
+-	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
+-
+-	/* Send callback */
+-	tcore_hal_send_request(hal, pending);
+-
+-	dbg("Exit");
+-	return;
+-}
+-
+-
+-static gboolean on_event_mux_channel_up(CoreObject *o, const void *event_info, void *user_data)
+-{
+-	TcorePlugin *plugin = NULL;
+-	dbg("Entry");
+-
+-	plugin = (TcorePlugin *) user_data;
+-	_modem_subscribe_events(plugin);
+-	dbg("Exit");
+-	return TRUE;
+-}
+-
+-
+ static void on_response_enable_logging(TcorePending *p, int data_len, const void *data, void *user_data)
+ {
+ 	const TcoreATResponse *resp = data;
+@@ -700,8 +637,7 @@ static void on_response_enable_logging(TcorePending *p, int data_len, const void
+ 		dbg("Enabling CP logging is failed !!!\n");
+ 	}
+ 
+-	dbg("Calling setup_mux");
+-	setup_mux(tcore_pending_ref_core_object(p));
++	_modem_subscribe_events(plugin);
+ 
+ 	/* sets the powersaving-mode */
+ 	prepare_and_send_pending_request(plugin, "modem", "at+xpow=0,0,0", NULL, TCORE_AT_NO_RESULT, NULL);
+@@ -961,9 +897,6 @@ gboolean s_modem_init(TcorePlugin *p, TcoreHal *h)
+ 	sn_property = calloc(sizeof(TelMiscSNInformation), 1);
+ 	tcore_plugin_link_property(p, "SN", sn_property);
+ 
+-	dbg("Registerind for CMUX-UP event");
+-	tcore_object_add_callback(o, "CMUX-UP", on_event_mux_channel_up, p);
+-
+ 	dbg("Registering for +XSIM event");
+ 	tcore_object_add_callback(o, "+XSIM", on_event_bootup_sim_status, NULL);
+ 
+-- 
+1.7.10.4
+

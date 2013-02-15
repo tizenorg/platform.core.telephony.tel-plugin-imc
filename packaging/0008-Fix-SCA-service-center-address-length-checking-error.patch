@@ -1,0 +1,45 @@
+From 5c4fbd80accf435889b6f7b16eae14b47a6cba09 Mon Sep 17 00:00:00 2001
+From: Caiwen Zhang <caiwen.zhang@intel.com>
+Date: Tue, 25 Sep 2012 21:28:07 +0800
+Subject: [PATCH 08/23] Fix SCA(service center address) length checking error
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+For the address field used by SM-RL(short message relay layer),
+the length byte represents octets of the whole field(include itself
+and TOA byte - type of address). Please refer to 3GPP 31.102 4.2.27
+and 3GPP 24.011 8.2.5.2
+
+For the address field used by SM-TP(transfer layer), the length
+represents semi-octets within the address(exclude itself and TOA
+byte). Please refer to 3GPP 23.040 9.1.2.5.
+
+SCA is an address filed of SM-RL. SMS_MAX_SMS_SERVICE_CENTER_ADDR
+should be 12.
+
+But currently in the struct telephony_sms_DataPaclageInfo, SM-TP
+address filed is used to represent the SCA.
+
+As we currently can't access libtcore and msg_service packages,
+temporarily change the SCA length checking here to make SMS sending
+work.
+---
+ src/s_sms.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/s_sms.c b/src/s_sms.c
+index 874f08e..2b3cd4f 100644
+--- a/src/s_sms.c
++++ b/src/s_sms.c
+@@ -2218,7 +2218,7 @@ static TReturn send_umts_msg(CoreObject *obj, UserRequest *ur)
+ 
+ 	if ((sendUmtsMsg->msgDataPackage.msgLength > 0)
+ 		&& (sendUmtsMsg->msgDataPackage.msgLength <= SMS_SMDATA_SIZE_MAX)
+-		&& (ScLength <= SMS_SCADDRESS_LEN_MAX)) {
++		&& (ScLength <= (SMS_MAX_SMS_SERVICE_CENTER_ADDR - 2) * 2)) {
+ 		if (ScLength == 0) { // ScAddress not specified
+ 			buf[0] = '0';
+ 			buf[1] = '0';
+-- 
+1.7.10.4
+
