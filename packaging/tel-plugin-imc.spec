@@ -2,7 +2,7 @@
 Name:		tel-plugin-imc
 Summary:	imc plugin for telephony
 Version:	0.1.36
-Release:	1
+Release:	2
 Group:		Development/Libraries
 License:	Apache
 Source0:	tel-plugin-imc-%{version}.tar.gz
@@ -40,6 +40,7 @@ patch19: 0020-s_sim.c-Fix-get-lock-info.patch
 patch20: 0021-s_sim-Fix-multiple-sim-facility-status-query.patch
 patch21: 0023-s_network.c-By-default-display-the-plmn-in-case-SPN-.patch
 patch22: 0024-Use-plugin-mfld-blackbay.patch 
+patch23: 0025-Fix-integration-issue.patch
 %endif
 %endif
 
@@ -73,6 +74,7 @@ IMC plugin for telephony
 %patch20 -p1
 %patch21 -p1
 %patch22 -p1
+%patch23 -p1
 %endif
 %endif
 

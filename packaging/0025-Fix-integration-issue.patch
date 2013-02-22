@@ -1,0 +1,47 @@
+From 479e62574f097c5eae980137e5978cb9b40c175d Mon Sep 17 00:00:00 2001
+From: Nicolas Bertrand <nicolas.bertrand@linux.intel.com>
+Date: Fri, 22 Feb 2013 16:31:33 +0100
+Subject: [PATCH] Fix integration issue
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Change-Id: I3bee85f0f23dbc7de22a17b25a189fd700b3168f
+---
+ src/desc.c |    7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/src/desc.c b/src/desc.c
+index 894fba6..c1f6fcc 100644
+--- a/src/desc.c
++++ b/src/desc.c
+@@ -88,7 +88,7 @@ static int _get_cp_name(char **name)
+ 	if (!strcmp(u.nodename, "(none)")) {
+ 		*name = g_new0(char, 14);
+ 		strcpy(*name, "mfld-blackbay");
+-		return 8;
++		return 14;
+ 	}
+ 
+ 	for (i = 0; svnet1_models[i]; i++) {
+@@ -135,7 +135,6 @@ static void on_hal_set_power(TcoreHal *hal, void *user_data)
+ 	s_call_init(p, hal);
+ 	s_ss_init(p, hal);
+ 	s_sms_init(p, hal);
+-	s_gps_init(p, hal);
+ 
+ 	o = tcore_plugin_ref_core_object(p, "modem");
+ 	tcore_server_send_notification(tcore_plugin_ref_server(p), o, TNOTI_MODEM_ADDED, 0, NULL);
+@@ -186,9 +185,7 @@ static gboolean on_init(TcorePlugin *p)
+ 	gd->hal = h;
+ 
+ 	tcore_plugin_link_user_data(p, gd);
+-
+-	g_free(cp_name);
+-
++	
+ 	tcore_hal_set_power(h, TRUE, on_hal_set_power, p);
+ 
+ 	g_free(cp_name);
+-- 
+1.7.10.4
+
