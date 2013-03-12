@@ -1,0 +1,30 @@
+From 733bcfef07745bc6b8b8861bcbdee8639f2f4aef Mon Sep 17 00:00:00 2001
+From: Philippe Nunes <philippe.nunes@linux.intel.com>
+Date: Wed, 16 Jan 2013 16:23:46 +0100
+Subject: [PATCH 23/23] s_network.c: By default, display the plmn in case SPN
+ name is void
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+---
+ src/s_network.c |    4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/s_network.c b/src/s_network.c
+index ce1ce34..2965022 100644
+--- a/src/s_network.c
++++ b/src/s_network.c
+@@ -1669,6 +1669,10 @@ static void on_sim_resp_hook_get_netname(UserRequest *ur, enum tcore_response_co
+ 		if ((resp->data.spn.display_condition & 0x03) == 0x01) {
+ 			tcore_network_set_network_name_priority(o, TCORE_NETWORK_NAME_PRIORITY_ANY);
+ 		}
++
++		// fallback in case no SPN name is provided
++		if (resp->data.spn.spn[0] == '\0')
++			tcore_network_set_network_name_priority(o, TCORE_NETWORK_NAME_PRIORITY_NETWORK);
+ 	}
+ }
+ 
+-- 
+1.7.10.4
+

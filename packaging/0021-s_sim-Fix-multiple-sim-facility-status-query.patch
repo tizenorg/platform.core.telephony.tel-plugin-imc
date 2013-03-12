@@ -1,0 +1,96 @@
+From ea2ee872e3b4177da0665e4c1daff61ba1644599 Mon Sep 17 00:00:00 2001
+From: Guillaume Zajac <guillaume.zajac@linux.intel.com>
+Date: Wed, 16 Jan 2013 11:55:33 +0100
+Subject: [PATCH 21/23] s_sim: Fix multiple sim facility status query
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+---
+ src/s_sim.c |   28 +++++++++++++---------------
+ 1 file changed, 13 insertions(+), 15 deletions(-)
+
+diff --git a/src/s_sim.c b/src/s_sim.c
+index a96594b..0720bb1 100644
+--- a/src/s_sim.c
++++ b/src/s_sim.c
+@@ -2249,22 +2249,15 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
+ {
+ 	const TcoreATResponse *resp = data;
+ 	UserRequest *ur = NULL;
+-	CoreObject *co_sim = NULL;
+-	struct s_sim_property *sp = NULL;
+ 	GSList *tokens = NULL;
+-	struct tresp_sim_get_facility_status res;
++	struct tresp_sim_get_facility_status *res = user_data;
+ 	const char *line;
+ 
+ 	dbg(" Function entry ");
+ 
+-	co_sim = tcore_pending_ref_core_object(p);
+-	sp = tcore_sim_ref_userdata(co_sim);
+ 	ur = tcore_pending_ref_user_request(p);
+ 
+-	memset(&res, 0, sizeof(struct tresp_sim_get_facility_status));
+-
+-	res.result = SIM_PIN_OPERATION_SUCCESS;
+-	res.type = _sim_get_current_pin_facility(sp->current_sec_op);
++	res->result = SIM_PIN_OPERATION_SUCCESS;
+ 
+ 	if (resp->success > 0) {
+ 		dbg("RESPONSE OK");
+@@ -2277,17 +2270,18 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
+ 				return;
+ 			}
+ 		}
+-		res.b_enable = atoi(g_slist_nth_data(tokens, 0));
++		res->b_enable = atoi(g_slist_nth_data(tokens, 0));
+ 	} else {
+ 		dbg("RESPONSE NOK");
+-		res.result = SIM_INCOMPATIBLE_PIN_OPERATION;
++		res->result = SIM_INCOMPATIBLE_PIN_OPERATION;
+ 	}
+ 
+ 	if (ur) {
+ 		tcore_user_request_send_response(ur, TRESP_SIM_GET_FACILITY_STATUS,
+-										 sizeof(struct tresp_sim_get_facility_status), &res);
++										 sizeof(struct tresp_sim_get_facility_status), res);
+ 	}
+ 	tcore_at_tok_free(tokens);
++	g_free(res);
+ 	dbg(" Function exit");
+ }
+ 
+@@ -2771,6 +2765,7 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
+ 	TcorePending *pending = NULL;
+ 	char *cmd_str = NULL;
+ 	const struct treq_sim_get_facility_status *req_data;
++	struct tresp_sim_get_facility_status *res;
+ 	struct s_sim_property *sp = NULL;
+ 	char *fac = "SC";
+ 	int mode = 2;       /* 0:unlock, 1:lock, 2:query*/
+@@ -2787,8 +2782,11 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
+ 	pending = tcore_pending_new(o, 0);
+ 	req_data = tcore_user_request_ref_data(ur, NULL);
+ 
+-	if (!o || !ur)
+-		return TCORE_RETURN_EINVAL;
++	res = g_try_new0(struct tresp_sim_get_facility_status, 1);
++	if (!res)
++		return TCORE_RETURN_ENOMEM;
++
++	res->type = req_data->type;
+ 
+ 	if (req_data->type == SIM_FACILITY_PS) {
+ 		fac = "PS";                             /*PH-SIM, Lock PHone to SIM/UICC card*/
+@@ -2813,7 +2811,7 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
+ 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+ 
+ 	tcore_pending_set_request_data(pending, 0, req);
+-	tcore_pending_set_response_callback(pending, on_response_get_facility_status, hal);
++	tcore_pending_set_response_callback(pending, on_response_get_facility_status, res);
+ 	tcore_pending_link_user_request(pending, ur);
+ 	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
+ 	tcore_hal_send_request(hal, pending);
+-- 
+1.7.10.4
+
