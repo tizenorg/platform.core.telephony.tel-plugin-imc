@@ -3310,42 +3310,34 @@ static struct tcore_sim_operations sim_ops = {
 	.req_authentication = NULL,
 };
 
-gboolean s_sim_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_sim_init(TcorePlugin *cp, CoreObject *co_sim)
 {
-	CoreObject *o;
-	struct s_sim_property *file_meta = NULL;
-	GQueue *work_queue;
+	struct s_sim_property *file_meta;
 
-	dbg("entry");
+	dbg("Entry");
 
-	o = tcore_sim_new(p, "sim", &sim_ops, h);
+	tcore_sim_override_ops(co_sim, &sim_ops);
 
-	if (!o)
-		return FALSE;
-
-	file_meta = calloc(sizeof(struct s_sim_property), 1);
+	file_meta = g_try_new0(struct s_sim_property, 1);
 	if (!file_meta)
 		return FALSE;
 
-	work_queue = g_queue_new();
-	tcore_object_link_user_data(o, work_queue);
+	tcore_sim_link_userdata(co_sim, file_meta);
 
-	file_meta->first_recv_status = SIM_STATUS_UNKNOWN;
-	tcore_sim_link_userdata(o, file_meta);
+	tcore_object_override_callback(co_sim, "+XLOCK", on_event_facility_lock_status, NULL);
+	tcore_object_override_callback(co_sim, "+XSIM", on_event_pin_status, NULL);
 
-	tcore_object_add_callback(o, "+XLOCK", on_event_facility_lock_status, NULL);
-	tcore_object_add_callback(o, "+XSIM", on_event_pin_status, NULL);
+	dbg("Exit");
 
-	dbg("exit");
 	return TRUE;
 }
 
-void s_sim_exit(TcorePlugin *p)
+void s_sim_exit(TcorePlugin *cp, CoreObject *co_sim)
 {
-	CoreObject *o;
+	struct s_sim_property *file_meta;
 
-	o = tcore_plugin_ref_core_object(p, "sim");
-	if (!o)
-		return;
-	tcore_sim_free(o);
+	file_meta = tcore_sim_ref_userdata(co_sim);
+	g_free(file_meta);
+
+	dbg("Exit");
 }

@@ -28,6 +28,7 @@
 #include <hal.h>
 #include <core_object.h>
 #include <plugin.h>
+#include <user_request.h>
 #include <queue.h>
 #include <co_network.h>
 #include <co_ps.h>
@@ -118,18 +119,16 @@ static void on_confirmation_network_message_send(TcorePending *p, gboolean resul
 	}
 }
 
-static void nwk_prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, UserRequest *ur, TcorePendingResponseCallback callback)
+static void nwk_prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, UserRequest *ur, TcorePendingResponseCallback callback)
 {
 	TcoreATRequest *req = NULL;
 	TcoreHal *hal;
-	CoreObject *o = NULL;
 	TcorePending *pending = NULL;
 	TReturn ret;
 
-	o = tcore_plugin_ref_core_object(plugin, co_name);
-	hal = tcore_object_get_hal(o);
+	hal = tcore_object_get_hal(co);
 
-	pending = tcore_pending_new(o, 0);
+	pending = tcore_pending_new(co, 0);
 	req = tcore_at_request_new(at_cmd, prefix, at_cmd_type);
 
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
@@ -244,23 +243,18 @@ static enum telephony_network_service_type _get_service_type(enum telephony_netw
 
 static void _ps_set(TcorePlugin *p, int status)
 {
-	GSList *co_list = NULL;
+	CoreObject *co_ps;
 
-	co_list = tcore_plugin_get_core_objects_bytype(p, CORE_OBJECT_TYPE_PS);
-	do {
-		CoreObject *o = NULL;
-		o = (CoreObject *) co_list->data;
-		if (!o)
-			break;
+	co_ps = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_PS);
+	if (co_ps == NULL) {
+		err("No PS Core Object on plugin");
+		return;
+	}
 
-		if (status == NETWORK_SERVICE_DOMAIN_STATUS_FULL) {
-			tcore_ps_set_online(o, TRUE);
-		} else {
-			tcore_ps_set_online(o, FALSE);
-		}
-	} while ((co_list = g_slist_next(co_list)));
-
-	g_slist_free(co_list);
+	if (status == NETWORK_SERVICE_DOMAIN_STATUS_FULL)
+		tcore_ps_set_online(co_ps, TRUE);
+	else
+		tcore_ps_set_online(co_ps, FALSE);
 }
 
 static void on_timeout_search_network(TcorePending *p, void *user_data)
@@ -1623,7 +1617,7 @@ minutes, seconds.*/
 		dbg("new pending(AT+XOPS=0/5/6 for Nitz PLMN name)");
 
 		/* Get NITZ name and plmn_id via AT+XCOPS = 0/5/6 */
-		nwk_prepare_and_send_pending_request(tcore_object_ref_plugin(o), "umts_network", "AT+XCOPS=0;+XCOPS=5;+XCOPS=6", "+XCOPS", TCORE_AT_MULTILINE, ur, on_response_get_nitz_name);
+		nwk_prepare_and_send_pending_request(o, "AT+XCOPS=0;+XCOPS=5;+XCOPS=6", "+XCOPS", TCORE_AT_MULTILINE, ur, on_response_get_nitz_name);
 	} else {
 		dbg("line is  NULL");
 	}
@@ -2143,7 +2137,7 @@ static TReturn get_serving_network(CoreObject *o, UserRequest *ur)
 
 	dbg("new pending(AT+COPS?)");
 
-	nwk_prepare_and_send_pending_request(tcore_object_ref_plugin(o), "umts_network", "AT+COPS=3,2;+COPS?;+COPS=3,0;+COPS?", "+COPS", TCORE_AT_MULTILINE, ur, on_response_get_serving_network);
+	nwk_prepare_and_send_pending_request(o, "AT+COPS=3,2;+COPS?;+COPS=3,0;+COPS?", "+COPS", TCORE_AT_MULTILINE, ur, on_response_get_serving_network);
 	return TCORE_RETURN_SUCCESS;
 }
 
@@ -2165,33 +2159,29 @@ static struct tcore_network_operations network_ops = {
 	.get_serving_network = get_serving_network,
 };
 
-gboolean s_network_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_network_init(TcorePlugin *cp, CoreObject *co_network)
 {
-	CoreObject *o = NULL;
+	dbg("Enter");
 
-	o = tcore_network_new(p, "umts_network", &network_ops, h);
-	if (!o)
-		return FALSE;
+	tcore_network_override_ops(co_network, &network_ops);
 
-	tcore_object_add_callback(o, "+CREG", on_event_cs_network_regist, NULL);
-	tcore_object_add_callback(o, "+CGREG", on_event_ps_network_regist, NULL);
-	tcore_object_add_callback(o, "+XCIEV", on_event_network_icon_info, NULL);
+	tcore_object_override_callback(co_network, "+CREG", on_event_cs_network_regist, NULL);
+	tcore_object_override_callback(co_network, "+CGREG", on_event_ps_network_regist, NULL);
+	tcore_object_override_callback(co_network, "+XCIEV", on_event_network_icon_info, NULL);
 
 	/* +CTZV: <tz>,<time> */
-	tcore_object_add_callback(o, "+CTZV", on_event_network_ctzv_time_info, NULL);
+	tcore_object_override_callback(co_network, "+CTZV", on_event_network_ctzv_time_info, NULL);
 
-	tcore_server_add_notification_hook(tcore_plugin_ref_server(p), TNOTI_SIM_STATUS, on_hook_sim_init, o);
+	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp), TNOTI_SIM_STATUS, on_hook_sim_init, co_network);
 
-	_insert_mcc_mnc_oper_list(p, o);
+	_insert_mcc_mnc_oper_list(cp, co_network);
+
+	dbg("Exit");
 
 	return TRUE;
 }
 
-void s_network_exit(TcorePlugin *p)
+void s_network_exit(TcorePlugin *cp, CoreObject *co_network)
 {
-	CoreObject *o;
-
-	o = tcore_plugin_ref_core_object(p, "umts_network");
-
-	tcore_network_free(o);
+	dbg("Exit");
 }

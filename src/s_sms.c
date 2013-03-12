@@ -38,6 +38,8 @@
 #include <at.h>
 #include <plugin.h>
 
+#include <util.h>
+
 #include "common/TelErr.h"
 #include "s_common.h"
 #include "s_sms.h"
@@ -89,7 +91,9 @@
 #define AT_SW1_LEN_RESP 0x9F
 
 #define AT_MAX_RECORD_LEN 256
-#define AT_EF_SMS_RECORD_LEN 176
+ /* SCA 12 bytes long and TDPU is 164 bytes long */
+#define PDU_LEN_MAX 176
+#define HEX_PDU_LEN_MAX			((PDU_LEN_MAX * 2) + 1)
 
 /*=============================================================
 							String Preprocessor
@@ -1684,7 +1688,7 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 
 					ptr_data = (unsigned char *)recordData;
 
-					co_sim = tcore_plugin_ref_core_object(tcore_pending_ref_plugin(p), "sim");
+					co_sim = tcore_plugin_ref_core_object(tcore_pending_ref_plugin(p), CORE_OBJECT_TYPE_SIM);
 					sim_type = tcore_sim_get_type(co_sim);
 					dbg("sim type is %d",sim_type);
 
@@ -2135,7 +2139,7 @@ static void _response_get_efsms_data(TcorePending *p, int data_len, const void *
 			util_byte_to_hex((const char *)&msg_status, (char *)encoded_data, 1);
 
 			//Update EF-SMS with just status byte overwritten, rest 175 bytes are same as received in read information
-			cmd_str = g_strdup_printf("AT+CRSM=220,28476,%d, 4, %d, \"%s\"", (req_msg_status->index+1), AT_EF_SMS_RECORD_LEN, encoded_data);
+			cmd_str = g_strdup_printf("AT+CRSM=220,28476,%d, 4, %d, \"%s\"", (req_msg_status->index+1), PDU_LEN_MAX, encoded_data);
 			atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM", TCORE_AT_SINGLELINE);
 			pending = tcore_pending_new(tcore_pending_ref_core_object(pending), 0);
 			if (NULL == cmd_str || NULL == atreq || NULL == pending) {
@@ -2180,101 +2184,73 @@ OUT:
 /*=============================================================
 							Requests
 ==============================================================*/
-static TReturn send_umts_msg(CoreObject *obj, UserRequest *ur)
+static TReturn send_umts_msg(CoreObject *co_sms, UserRequest *ur)
 {
-	gchar *cmd_str = NULL;
-	TcoreHal *hal = NULL;
-	TcoreATRequest *atreq = NULL;
-	TcorePending *pending = NULL;
-	const struct treq_sms_send_umts_msg *sendUmtsMsg = NULL;
-	char buf[2*(SMS_SMSP_ADDRESS_LEN+SMS_SMDATA_SIZE_MAX)+1] = {0};
-	int ScLength = 0;
-	int pdu_len = 0;
+	const struct treq_sms_send_umts_msg *send_msg;
+	const unsigned char *tpdu_byte_data, *sca_byte_data;
+	int tpdu_byte_len, pdu_byte_len;
+	char buf[HEX_PDU_LEN_MAX];
+	char pdu[PDU_LEN_MAX];
+	char *cmd_str;
+	int pdu_hex_len, mms;
+	TReturn ret;
 
-	dbg("Entry");
+	dbg("Enter");
 
-	sendUmtsMsg = tcore_user_request_ref_data(ur, NULL);
-  	hal = tcore_object_get_hal(obj);
-	if (NULL == sendUmtsMsg || NULL == hal) {
-		err("NULL input. Unable to proceed");
-		dbg("sendUmtsMsg: [%p], hal: [%p]", sendUmtsMsg, hal);
+	send_msg = tcore_user_request_ref_data(ur, NULL);
 
-		dbg("Exit");
-		return TCORE_RETURN_EINVAL;
-	}
+	tpdu_byte_data = send_msg->msgDataPackage.tpduData;
+	sca_byte_data = send_msg->msgDataPackage.sca;
 
-	if(FALSE == tcore_hal_get_power_state(hal)){
-		dbg("cp not ready/n");
-		return TCORE_RETURN_ENOSYS;
-	}
 
-	dbg("msgLength: [%d]", sendUmtsMsg->msgDataPackage.msgLength);
-	util_hex_dump("    ", (SMS_SMDATA_SIZE_MAX+1), (void *)sendUmtsMsg->msgDataPackage.tpduData);
-	util_hex_dump("    ", SMS_SMSP_ADDRESS_LEN, (void *)sendUmtsMsg->msgDataPackage.sca);
+	/* TPDU length is in byte */
+	tpdu_byte_len = send_msg->msgDataPackage.msgLength;
 
-	ScLength = (int)sendUmtsMsg->msgDataPackage.sca[0];
+	/* Use same Radio Resource Channel */
+	mms = send_msg->more;
 
-	dbg("ScLength: [%d]", ScLength);
+	dbg("TDPU length: [%d]", tpdu_byte_len);
+	dbg("SCA semi-octet length: [%d]", sca_byte_data[0]);
 
-	if ((sendUmtsMsg->msgDataPackage.msgLength > 0)
-		&& (sendUmtsMsg->msgDataPackage.msgLength <= SMS_SMDATA_SIZE_MAX)
-		&& (ScLength <= SMS_SCADDRESS_LEN_MAX)) {
-		if (ScLength == 0) { // ScAddress not specified
-			buf[0] = '0';
-			buf[1] = '0';
-			pdu_len = 2;
-		} else {
-			dbg("Specifying SCA in TPDU is currently not supported");
+	/* Prepare PDU for hex encoding */
+	pdu_byte_len = tcore_util_pdu_encode(sca_byte_data, tpdu_byte_data,
+						tpdu_byte_len, pdu);
 
-			buf[0] = '0';
-			buf[1] = '0';
-			pdu_len = 2;
+	pdu_hex_len = (int) tcore_util_encode_hex((unsigned char *) pdu,
+						pdu_byte_len, buf);
+
+	dbg("PDU hexadecimal length: [%d]", pdu_hex_len);
+
+	if (mms > 0) {
+		cmd_str = g_strdup_printf("AT+CMMS=%d", mms);
+
+		ret = tcore_prepare_and_send_at_request(co_sms, cmd_str, NULL,
+					TCORE_AT_NO_RESULT, NULL, NULL, NULL,
+					on_confirmation_sms_message_send,
+					NULL);
+		if (ret != TCORE_RETURN_SUCCESS) {
+			err("Failed to prepare and send AT request");
+			goto error;
 		}
-
-		util_byte_to_hex((const char *)sendUmtsMsg->msgDataPackage.tpduData, (char *)&buf[pdu_len], sendUmtsMsg->msgDataPackage.msgLength);
-
-		pdu_len = pdu_len + 2*sendUmtsMsg->msgDataPackage.msgLength;
-
-		buf[pdu_len] = '\0'; //Ensure termination
-
-		dbg("pdu_len: [%d]", pdu_len);
-		util_hex_dump("    ", sizeof(buf), (void *)buf);
-
-		//AT+CMGS=<length><CR>PDU is given<ctrl-Z/ESC>
-		cmd_str = g_strdup_printf("AT+CMGS=%d%s%s\x1A", sendUmtsMsg->msgDataPackage.msgLength,"\r",buf);
-		atreq = tcore_at_request_new((const char *)cmd_str, "+CMGS", TCORE_AT_SINGLELINE);
-		pending = tcore_pending_new(obj, 0);
-
-		if (NULL == cmd_str || NULL == atreq || NULL == pending) {
-			err("Out of memory. Unable to proceed");
-			dbg("cmd_str: [%p], atreq: [%p], pending: [%p]", cmd_str, atreq, pending);
-
-			//free memory we own
-			g_free(cmd_str);
-			util_sms_free_memory(atreq);
-			util_sms_free_memory(pending);
-
-			dbg("Exit");
-			return TCORE_RETURN_ENOMEM;
-		}
-
-		util_hex_dump("    ", strlen(cmd_str), (void *)cmd_str);
-
-		tcore_pending_set_request_data(pending, 0, atreq);
-		tcore_pending_set_response_callback(pending, on_response_send_umts_msg, NULL);
-		tcore_pending_link_user_request(pending, ur);
-		tcore_pending_set_send_callback(pending, on_confirmation_sms_message_send, NULL);
-		tcore_hal_send_request(hal, pending);
 
 		g_free(cmd_str);
-
-		dbg("Exit");
-		return TCORE_RETURN_SUCCESS;
 	}
 
-	err("Invalid Data len");
+	cmd_str = g_strdup_printf("AT+CMGS=%d\r%s\x1A", tpdu_byte_len, buf);
+
+	ret = tcore_prepare_and_send_at_request(co_sms, cmd_str, "+CMGS:",
+				TCORE_AT_SINGLELINE, ur,
+				on_response_send_umts_msg, NULL,
+				on_confirmation_sms_message_send, NULL);
+	if (ret != TCORE_RETURN_SUCCESS)
+		err("Failed to prepare and send AT request");
+
+error:
+	g_free(cmd_str);
+
 	dbg("Exit");
-	return TCORE_RETURN_SMS_INVALID_DATA_LEN;
+
+	return ret;
 }
 
 static TReturn read_msg(CoreObject *obj, UserRequest *ur)
@@ -2514,7 +2490,7 @@ static TReturn delete_msg(CoreObject *obj, UserRequest *ur)
 	return TCORE_RETURN_SUCCESS;
 }
 
-static TReturn get_storedMsgCnt(CoreObject *obj, UserRequest *ur)
+static TReturn get_stored_msg_cnt(CoreObject *obj, UserRequest *ur)
 {
 	gchar *cmd_str = NULL;
 	TcoreHal *hal = NULL;
@@ -2947,7 +2923,7 @@ static TReturn set_msg_status(CoreObject *obj, UserRequest *ur)
 	}
 	msg_status = tcore_user_request_ref_data(ur, NULL);
 
-	cmd_str = g_strdup_printf("AT+CRSM=178,28476,%d,4,%d", (msg_status->index+1), AT_EF_SMS_RECORD_LEN);
+	cmd_str = g_strdup_printf("AT+CRSM=178,28476,%d,4,%d", (msg_status->index+1), PDU_LEN_MAX);
 	atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM", TCORE_AT_SINGLELINE);
 	pending = tcore_pending_new(obj, 0);
 	if (NULL == cmd_str || NULL == atreq || NULL == pending) {
@@ -3176,7 +3152,7 @@ static struct tcore_sms_operations sms_ops = {
 	.read_msg = read_msg,
 	.save_msg = save_msg,
 	.delete_msg = delete_msg,
-	.get_storedMsgCnt = get_storedMsgCnt,
+	.get_stored_msg_cnt = get_stored_msg_cnt,
 	.get_sca = get_sca,
 	.set_sca = set_sca,
 	.get_cb_config = get_cb_config,
@@ -3191,72 +3167,42 @@ static struct tcore_sms_operations sms_ops = {
 	.get_paramcnt = get_paramcnt,
 };
 
-gboolean s_sms_init(TcorePlugin *plugin, TcoreHal *hal)
+gboolean s_sms_init(TcorePlugin *cp, CoreObject *co_sms)
 {
-	CoreObject *obj = NULL;
-	struct property_sms_info *data = NULL;
-	GQueue *work_queue = NULL;
-	int *smsp_record_len = NULL;
+	int *smsp_record_len;
 
 	dbg("Entry");
-	dbg("plugin: [%p]", plugin);
-	dbg("hal: [%p]", hal);
 
-	obj = tcore_sms_new(plugin, "umts_sms", &sms_ops, hal);
+	tcore_sms_override_ops(co_sms, &sms_ops);
 
-	data = calloc(sizeof(struct property_sms_info), 1);
+	/* Registering for SMS notifications */
+	tcore_object_override_callback(co_sms, "\e+CMTI", on_event_class2_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CMT", on_event_sms_incom_msg, NULL);
 
-	if (NULL == obj || NULL == data) {
-		err("Unable to initialize. Exiting");
-		s_sms_exit(plugin);
+	tcore_object_override_callback(co_sms, "\e+CDS", on_event_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+XSMSMMSTAT", on_event_sms_memory_status, NULL);
+	tcore_object_override_callback(co_sms, "+CMS", on_event_sms_memory_status, NULL);
 
-		dbg("Exit");
-		return FALSE;
-	}
+	tcore_object_override_callback(co_sms, "\e+CBMI", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CBM", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+XSIM", on_event_sms_ready_status, NULL);
 
-	work_queue = g_queue_new();
-	tcore_object_link_user_data(obj, work_queue);
+	/* storing smsp record length */
+	smsp_record_len = g_new0(int, 1);
 
-	//Registering for SMS notifications
-	tcore_object_add_callback(obj, "\e+CMTI", on_event_class2_sms_incom_msg, NULL);
-	tcore_object_add_callback(obj, "\e+CMT", on_event_sms_incom_msg, NULL);
-
-	tcore_object_add_callback(obj, "\e+CDS", on_event_sms_incom_msg, NULL);
-	tcore_object_add_callback(obj, "+XSMSMMSTAT", on_event_sms_memory_status, NULL);
-	tcore_object_add_callback(obj, "+CMS", on_event_sms_memory_status, NULL);
-
-	tcore_object_add_callback(obj, "\e+CBMI", on_event_sms_cb_incom_msg, NULL);
-	tcore_object_add_callback(obj, "\e+CBM", on_event_sms_cb_incom_msg, NULL);
-	tcore_object_add_callback(obj, "+XSIM", on_event_sms_ready_status, NULL);
-
-	tcore_plugin_link_property(plugin, "SMS", data);
-
-	//storing smsp record length
-	smsp_record_len = calloc(sizeof(int), 1);
-	tcore_plugin_link_property(plugin, "SMSPRECORDLEN", smsp_record_len);
+	tcore_plugin_link_property(cp, "SMSPRECORDLEN", smsp_record_len);
 
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void s_sms_exit(TcorePlugin *plugin)
+void s_sms_exit(TcorePlugin *cp, CoreObject *co_sms)
 {
-	CoreObject *obj = NULL;
-	struct property_sms_info *data = NULL;
+	int *smsp_record_len;
 
-	dbg("Entry");
-	dbg("plugin: [%p]", plugin);
-
-	obj = tcore_plugin_ref_core_object(plugin, "umts_sms");
-	if (NULL == obj) {
-		err("NULL core object. Nothing to do.");
-		return;
-	}
-	tcore_sms_free(obj);
-
-	data = tcore_plugin_ref_property(plugin, "SMS");
-	util_sms_free_memory(data);
+	smsp_record_len = tcore_plugin_ref_property(cp, "SMSPRECORDLEN");
+	g_free(smsp_record_len);
 
 	dbg("Exit");
-	return;
 }

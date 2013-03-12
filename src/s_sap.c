@@ -848,27 +848,20 @@ static struct tcore_sap_operations sap_ops =
 };
 
 
-gboolean s_sap_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_sap_init(TcorePlugin *cp, CoreObject *co_sap)
 {
-	CoreObject *o = NULL;
-
 	dbg("Entry");
-	o = tcore_sap_new(p, "sap", &sap_ops, h);
-	if (!o)
-		return FALSE;
 
-	tcore_object_add_callback(o,"+XBCSTAT", on_event_sap_status, NULL);
-	//tcore_object_add_callback(o, "NULL", on_event_sap_disconnect, NULL); //ToDo - Indication not present
+	tcore_sap_override_ops(co_sap, &sap_ops);
+
+	tcore_object_override_callback(co_sap,"+XBCSTAT", on_event_sap_status, NULL);
+
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void s_sap_exit(TcorePlugin *p)
+void s_sap_exit(TcorePlugin *cp, CoreObject *co_sap)
 {
-	CoreObject *o;
-	o = tcore_plugin_ref_core_object(p, "sap");
-	if (!o)
-		return;
-
-	tcore_sap_free(o);
+	dbg("Exit");
 }

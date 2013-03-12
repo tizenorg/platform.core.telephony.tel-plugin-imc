@@ -23,11 +23,10 @@
 #include <stdlib.h>
 
 #include <glib.h>
+#include <log.h>
 
 
 #include "s_common.h"
-
-#include <plugin.h>
 
 #undef  MAX
 #define MAX(a, b)  (((a) > (b)) ? (a) : (b))
@@ -86,98 +85,6 @@ void util_hex_dump(char *pad, int size, const void *data)
 	msg("%s", buf);
 }
 
-void hook_hex_dump(enum direction_e d, int size, const void *data)
-{
-	msg("=== TX data DUMP =====");
-	util_hex_dump("          ", size, data);
-	msg("=== TX data DUMP =====");
-}
-
-unsigned int util_assign_message_sequence_id(TcorePlugin *p)
-{
-	struct global_data *gd;
-
-	if (!p) {
-		dbg("plugin is NULL");
-		return -1;
-	}
-
-	gd = tcore_plugin_ref_user_data(p);
-	if (!gd) {
-		dbg("global data is NULL");
-		return -1;
-	}
-
-	if (gd->msg_auto_id_current == 0) {
-		gd->msg_auto_id_current = gd->msg_auto_id_start;
-		dbg("pending_auto_id_current is 0, reset to start");
-	} else if (gd->msg_auto_id_current >= gd->msg_auto_id_end) {
-		gd->msg_auto_id_current = gd->msg_auto_id_start;
-		dbg("pending_auto_id_current is over, reset to start");
-	} else {
-		gd->msg_auto_id_current++;
-	}
-
-	dbg("message_sequence_id = %d", gd->msg_auto_id_current);
-
-	return gd->msg_auto_id_current;
-}
-
-gboolean util_add_waiting_job(GQueue *queue, unsigned int id, UserRequest *ur)
-{
-	struct work_queue_data *wqd;
-
-	if (!queue)
-		return FALSE;
-
-	wqd = calloc(sizeof(struct work_queue_data), 1);
-	if (!wqd)
-		return FALSE;
-
-	wqd->id = id;
-	wqd->ur = tcore_user_request_ref(ur);
-	g_queue_push_tail(queue, wqd);
-
-	dbg("id = %d, ur = 0x%x", wqd->id, wqd->ur);
-	return TRUE;
-}
-
-UserRequest* util_pop_waiting_job(GQueue *queue, unsigned int id)
-{
-	int i = 0;
-	UserRequest *ur;
-	struct work_queue_data *wqd;
-
-	if (!queue)
-		return NULL;
-
-
-	dbg("before waiting job count: %d", g_queue_get_length(queue));
-
-	do {
-		wqd = g_queue_peek_nth(queue, i);
-		if (!wqd)
-			return NULL;
-
-		if (wqd->id == id) {
-			wqd = g_queue_pop_nth(queue, i);
-			break;
-		}
-
-		i++;
-	} while (wqd != NULL);
-
-	dbg("after  waiting job count: %d", g_queue_get_length(queue));
-
-	if (!wqd)
-		return NULL;
-
-	ur = wqd->ur;
-	free(wqd);
-
-	return ur;
-}
-
 unsigned char util_hexCharToInt(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -226,9 +133,9 @@ char _util_unpackb(const char *src, int pos, int len)
 	rshift = MAX(8 - (pos + len), 0);
 
 	if (rshift > 0) {
-		result = MASK_AND_SHIFT(len, pos, rshift, *src);
+		result = MASK_AND_SHIFT(len, pos, rshift, (unsigned char)*src);
 	} else {
-		result = MASK(8 - pos, pos, *src);
+		result = MASK(8 - pos, pos, (unsigned char)*src);
 		src++;
 		len -= 8 - pos;
 

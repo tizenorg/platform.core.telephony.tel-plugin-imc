@@ -21,7 +21,7 @@
 #ifndef S_SAP_H_
 #define S_SAP_H_
 
-gboolean s_sap_init(TcorePlugin *p, TcoreHal *h);
-void s_sap_exit(TcorePlugin *p);
+gboolean s_sap_init(TcorePlugin *cp, CoreObject *co_sap);
+void s_sap_exit(TcorePlugin *cp, CoreObject *co_sap);
 
 #endif /* S_SAP_H_ */

@@ -446,30 +446,22 @@ static struct tcore_sat_operations sat_ops = {
 	.terminal_response = s_terminal_response,
 };
 
-gboolean s_sat_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_sat_init(TcorePlugin *cp, CoreObject *co_sat)
 {
-	CoreObject *o = NULL;
-
 	dbg("Entry");
-	o = tcore_sat_new(p, "sat", &sat_ops, h);
-	if (!o) {
-		dbg("CoreObject NULL !!");
-		return FALSE;
-	}
 
-	tcore_object_add_callback(o, "+SATI", on_event_sat_proactive_command, NULL);
-	tcore_object_add_callback(o, "+SATN", on_event_sat_proactive_command, NULL);
-	tcore_object_add_callback(o, "+SATF", on_response_terminal_response_confirm, NULL);
+	tcore_sat_override_ops(co_sat, &sat_ops);
+
+	tcore_object_override_callback(co_sat, "+SATI", on_event_sat_proactive_command, NULL);
+	tcore_object_override_callback(co_sat, "+SATN", on_event_sat_proactive_command, NULL);
+	tcore_object_override_callback(co_sat, "+SATF", on_response_terminal_response_confirm, NULL);
 
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void s_sat_exit(TcorePlugin *p)
+void s_sat_exit(TcorePlugin *cp, CoreObject *co_sat)
 {
-	CoreObject *o = NULL;
-	o = tcore_plugin_ref_core_object(p, "sat");
-	if (!o)
-		return;
-	tcore_sat_free(o);
+	dbg("Exit");
 }

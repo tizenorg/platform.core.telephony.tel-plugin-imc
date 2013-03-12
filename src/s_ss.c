@@ -206,7 +206,7 @@ static void _ss_ussd_notification(TcorePlugin *p, const char *ussd_str, enum tel
 	}
 	dbg("noti.str - %s", noti.str);
 
-	core_obj = tcore_plugin_ref_core_object(p, "ss");
+	core_obj = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_SS);
 	tcore_server_send_notification(tcore_plugin_ref_server(p),
 								   core_obj,
 								   TNOTI_SS_USSD,
@@ -437,7 +437,7 @@ static gboolean on_notification_ss_info(CoreObject *o, const void *data, void *u
 	dbg("function enter");
 
 	plugin = tcore_object_ref_plugin(o);
-	co = tcore_plugin_ref_core_object(plugin, "call");
+	co = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
 	if (!co) {
 		dbg("[ error ] plugin_ref_core_object : call");
 		return FALSE;
@@ -2751,45 +2751,30 @@ static TReturn s_ss_manage_call_4dn_send(CoreObject *o, UserRequest *ur, const c
 	return ret;
 }
 
-gboolean s_ss_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_ss_init(TcorePlugin *cp, CoreObject *co_ss)
 {
-	CoreObject *so = 0, *co = 0;
-	struct property_call_info *data = 0;
+	CoreObject *co_call = NULL;
 
-	so = tcore_ss_new(p, "ss", &ss_ops, h);
-	if (!so) {
-		dbg("[ error ] ss_new()");
+	tcore_ss_override_ops(co_ss, &ss_ops);
+
+
+	co_call = tcore_plugin_ref_core_object(cp,
+						CORE_OBJECT_TYPE_CALL);
+	if (co_call) {
+		err("Can't find CALL core object");
 		return FALSE;
 	}
 
-	co = tcore_plugin_ref_core_object(p, "call");
-	if (!co) {
-		dbg("[ error ] plugin_ref_core_object");
-		return FALSE;
-	}
+	tcore_call_override_ops(co_call, NULL, &call_ops);
 
-	tcore_call_control_set_operations(co, &call_ops);
-
-	tcore_object_add_callback(so, "+CSSU", on_notification_ss_info, 0);
-	tcore_object_add_callback(so, "+CSSI", on_notification_ss_info, 0);
-	tcore_object_add_callback(so, "+CUSD", on_notification_ss_ussd, 0);
-
-	data = calloc(sizeof(struct property_call_info *), 1);
-	tcore_plugin_link_property(p, "SS", data);
+	tcore_object_override_callback(co_ss, "+CSSU", on_notification_ss_info, NULL);
+	tcore_object_override_callback(co_ss, "+CSSI", on_notification_ss_info, NULL);
+	tcore_object_override_callback(co_ss, "+CUSD", on_notification_ss_ussd, NULL);
 
 	return TRUE;
 }
 
-void s_ss_exit(TcorePlugin *p)
+void s_ss_exit(TcorePlugin *cp, CoreObject *co_ss)
 {
-	CoreObject *o;
-	struct property_network_info *data;
-
-	o = tcore_plugin_ref_core_object(p, "ss");
-
-	data = tcore_plugin_ref_property(p, "SS");
-	if (data)
-		free(data);
-
-	tcore_ss_free(o);
+	dbg("Exit");
 }

@@ -25,12 +25,10 @@
 #include <glib.h>
 #include <tcore.h>
 #include <plugin.h>
-#include <hal.h>
-#include <server.h>
-#include <at.h>
 #include <core_object.h>
+#include <hal.h>
+#include <at.h>
 
-#include "s_common.h"
 #include "s_network.h"
 #include "s_modem.h"
 #include "s_sim.h"
@@ -43,52 +41,6 @@
 #include "s_phonebook.h"
 #include "s_gps.h"
 
-static char *cp_name;
-static int cp_count = 0;
-
-#define MAX_CP_QUERY_COUNT 60
-
-static gboolean _query_cp_state(gpointer data)
-{
-	gboolean power_state = FALSE;
-	TcorePlugin *p = NULL;
-	CoreObject* obj = NULL;
-	TcoreHal* h = NULL;
-
-	p = (TcorePlugin *) data;
-
-	if (cp_count > MAX_CP_QUERY_COUNT) {
-		dbg("cp query counter exceeds MAX_CP_QUERY_COUNT");
-		return FALSE;
-	}
-	obj = tcore_plugin_ref_core_object(p, "modem");
-	h = tcore_object_get_hal(obj);
-	power_state = tcore_hal_get_power_state(h);
-
-	if (TRUE == power_state) {
-		dbg("CP READY");
-		s_modem_send_poweron(p);
-		return FALSE;
-	} else {
-		dbg("CP NOT READY, cp_count :%d", cp_count);
-		cp_count++;
-		return TRUE;
-	}
-}
-
-static enum tcore_hook_return on_hal_send(TcoreHal *hal, unsigned int data_len, void *data, void *user_data)
-{
-	hook_hex_dump(TX, data_len, data);
-	return TCORE_HOOK_RETURN_CONTINUE;
-}
-
-static void on_hal_recv(TcoreHal *hal, unsigned int data_len, const void *data, void *user_data)
-{
-	msg("=== RX data DUMP =====");
-	util_hex_dump("          ", data_len, data);
-	msg("=== RX data DUMP =====");
-}
-
 static gboolean on_load()
 {
 	dbg("i'm load!");
@@ -96,141 +48,206 @@ static gboolean on_load()
 	return TRUE;
 }
 
-static int _get_cp_name(char **name)
+static void on_confirmation_modem_message_send(TcorePending *p,
+						gboolean result,
+						void *user_data)
 {
-	struct utsname u;
+	dbg("on_confirmation_modem_message_send - msg out from queue.");
 
-	char *svnet1_models[] = {
-		"F1", "S1", "M2", "H2", "H2_SDK",
-		"CRESPO", "STEALTHV", "SLP45", "Kessler", "P1P2",
-		"U1SLP", "U1HD", "SLP7_C210", "SLP10_C210", NULL
-	};
-
-	char *svnet2_models[] = { "SMDK4410", "SMDK4212", "TRATS2", "SLP_PQ_LTE", "SLP_NAPLES", "REDWOOD", "TRATS", NULL };
-
-	char *tty_models[] = { "QCT MSM8X55 SURF", "QCT MSM7x27a FFA", NULL };
-
-	int i = 0;
-
-	if (*name) {
-		dbg("[ error ] name is not empty");
-		return FALSE;
-	}
-
-	memset(&u, '\0', sizeof(struct utsname));
-
-	uname(&u);
-
-	dbg("u.nodename : [ %s ]", u.nodename);
-
-	for (i = 0; svnet1_models[i]; i++) {
-		if (!strcmp(u.nodename, svnet1_models[i])) {
-			*name = g_new0(char, 5);
-			strcpy(*name, "6260");
-			return 5;
-		}
-	}
-
-	for (i = 0; svnet2_models[i]; i++) {
-		if (!strcmp(u.nodename, svnet2_models[i])) {
-			*name = g_new0(char, 5);
-			strcpy(*name, "6262");
-			return 5;
-		}
-	}
-
-	for (i = 0; tty_models[i]; i++) {
-		if (!strcmp(u.nodename, tty_models[i])) {
-			*name = g_new0(char, 6);
-			strcpy(*name, "dpram");
-			return 6;
-		}
-	}
-
-	dbg("[ error ] unknown model : (%s)", u.nodename);
-
-	return 0;
+	dbg("%s", result == FALSE ? "SEND FAIL" : "SEND OK");
 }
+
+static void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	TcorePlugin *plugin = user_data;
+	const TcoreATResponse *resp = data;
+
+	dbg("entry of on_response_bootup_subscription() - response comes\n");
+
+	if (resp->success)
+		dbg("result OK");
+
+	dbg("result ERROR");
+
+	if (plugin != NULL)
+		modem_power_on(plugin);
+}
+
+static void modem_subscribe_events(TcorePlugin *plugin)
+{
+	CoreObject *co_call = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
+	CoreObject *co_sim = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SIM);
+	CoreObject *co_sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
+	CoreObject *co_modem = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_MODEM);
+	CoreObject *co_network = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_NETWORK);
+	CoreObject *co_ps = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_PS);
+	CoreObject *co_sap = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SAP);
+	CoreObject *co_gps = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_GPS);
+
+	dbg("Entry");
+
+	/* XCALLSTAT subscription */
+	tcore_prepare_and_send_at_request(co_call, "at+xcallstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XSIMSTATE subscription */
+	tcore_prepare_and_send_at_request(co_sim, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	tcore_prepare_and_send_at_request(co_sms, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+	tcore_prepare_and_send_at_request(co_modem, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CREG subscription */
+	tcore_prepare_and_send_at_request(co_network, "at+creg=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CGREG subscription */
+	tcore_prepare_and_send_at_request(co_network, "at+cgreg=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* Allow automatic time Zone updation via NITZ */
+	tcore_prepare_and_send_at_request(co_network, "at+ctzu=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* TZ, time & daylight changing event reporting subscription */
+	tcore_prepare_and_send_at_request(co_network, "at+ctzr=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XMER subscription */
+	tcore_prepare_and_send_at_request(co_network, "at+xmer=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CGEREP subscription */
+	tcore_prepare_and_send_at_request(co_ps, "at+cgerep=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XDATASTAT subscription */
+	tcore_prepare_and_send_at_request(co_ps, "at+xdatastat=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CSSN subscription */
+	tcore_prepare_and_send_at_request(co_call, "at+cssn=1,1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CUSD subscription */
+	tcore_prepare_and_send_at_request(co_call, "at+cusd=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XDNS subscription */
+	tcore_prepare_and_send_at_request(co_ps, "at+xdns=1,1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CLIP subscription */
+	tcore_prepare_and_send_at_request(co_call, "at+clip=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/*CMEE subscription for ps*/
+	tcore_prepare_and_send_at_request(co_ps, "at+cmee=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/*CMEE subscription for sms*/
+	tcore_prepare_and_send_at_request(co_sms, "at+cmee=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/*incoming sms,cb,status report subscription*/
+	tcore_prepare_and_send_at_request(co_sms, "at+cnmi=1,2,2,1,0", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XBCSTAT subscription */
+	tcore_prepare_and_send_at_request(co_sap, "at+xbcstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL, 
+						on_confirmation_modem_message_send, NULL);
+	/* AGPS- assist data and reset assist data subscription */
+	tcore_prepare_and_send_at_request(co_gps, "at+cposr=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	tcore_prepare_and_send_at_request(co_gps, "at+xcposr=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* text/pdu mode subscription*/
+	tcore_prepare_and_send_at_request(co_sms, "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, plugin,
+						on_confirmation_modem_message_send, NULL);
+
+	dbg("Exit");
+}
+
+struct object_initializer init_table = {
+	.modem_init = s_modem_init,
+	.sim_init = s_sim_init,
+	.sat_init = s_sat_init,
+	.sap_init = s_sap_init,
+	.network_init = s_network_init,
+	.ps_init = s_ps_init,
+	.call_init = s_call_init,
+	.ss_init = s_ss_init,
+	.sms_init = s_sms_init,
+	.phonebook_init = s_phonebook_init,
+	.gps_init = s_gps_init,
+};
+
+struct object_deinitializer deinit_table = {
+	.modem_deinit = s_modem_exit,
+	.sim_deinit = s_sim_exit,
+	.sat_deinit = s_sat_exit,
+	.sap_deinit = s_sap_exit,
+	.network_deinit = s_network_exit,
+	.ps_deinit = s_ps_exit,
+	.call_deinit = s_call_exit,
+	.ss_deinit = s_ss_exit,
+	.sms_deinit = s_sms_exit,
+	.phonebook_deinit = s_phonebook_exit,
+	.gps_deinit = s_gps_exit,
+};
 
 static gboolean on_init(TcorePlugin *p)
 {
-	TcoreHal *h;
-	struct global_data *gd;
-	// char *cp_name = 0;
-	int len = 0;
-
 	if (!p)
 		return FALSE;
 
-	gd = calloc(sizeof(struct global_data), 1);
-	if (!gd)
+	if (tcore_object_init_objects(p, &init_table)
+			!= TCORE_RETURN_SUCCESS) {
+		err("Failed to initialize Core Objects");
 		return FALSE;
+	}
 
 	dbg("i'm init!");
 
-	gd->msg_auto_id_current = 0;
-	gd->msg_auto_id_start = 1;
-	gd->msg_auto_id_end = 255;
+	modem_subscribe_events(p);
 
-	len = _get_cp_name(&cp_name);
-	if (!len) {
-		dbg("[ error ] unsupport cp (name : %s)", cp_name);
-		free(gd);
-		return FALSE;
-	}
-
-	/* FIXME: HAL will reside in Co-object.
-	 * This HAL is just used as default before MUX setup.
-	 * Each HAL has AT pasre functionality.
-	 */
-	h = tcore_server_find_hal(tcore_plugin_ref_server(p), cp_name);
-	if (!h) {
-		g_free(cp_name);
-		free(gd);
-		return FALSE;
-	}
-
-	// set physical hal into plugin's userdata
-	gd->hal = h;
-
-	tcore_plugin_link_user_data(p, gd);
-
-	tcore_hal_add_send_hook(h, on_hal_send, p);
-	tcore_hal_add_recv_callback(h, on_hal_recv, p);
-
-	s_modem_init(p, h);
-	s_sim_init(p, h);
-	s_sat_init(p, h);
-	s_network_init(p, h);
-	s_ps_init(p, h);
-	s_call_init(p, h);
-	s_ss_init(p, h);
-	s_sms_init(p, h);
-	s_phonebook_init(p, h);
-	s_sap_init(p, h);
-	s_gps_init(p, h);
-
-	g_free(cp_name);
-
-	tcore_hal_set_power(h, TRUE);
-	//wait until CP is ready
-	g_timeout_add_full(G_PRIORITY_HIGH,500,_query_cp_state, p, 0 );
 	return TRUE;
 }
 
 static void on_unload(TcorePlugin *p)
 {
-	struct global_data *gd;
-
 	if (!p)
 		return;
 
-	dbg("i'm unload");
+	tcore_object_deinit_objects(p, &deinit_table);
 
-	gd = tcore_plugin_ref_user_data(p);
-	if (gd) {
-		free(gd);
-	}
+	dbg("i'm unload");
 }
 
 struct tcore_plugin_define_desc plugin_define_desc = {

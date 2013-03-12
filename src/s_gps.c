@@ -2094,38 +2094,21 @@ static struct tcore_gps_operations gps_ops = {
 	.confirm_measure_pos = gps_confirm_measure_pos,
 };
 
-gboolean s_gps_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_gps_init(TcorePlugin *cp, CoreObject *co_gps)
 {
-	CoreObject *o = NULL;
-	GQueue *work_queue = NULL;
+	dbg("Enter");
 
-	dbg("enter");
+	tcore_gps_override_ops(co_gps, &gps_ops);
 
-	o = tcore_gps_new(p, "gps", &gps_ops, h);
-	if (!o)
-		return FALSE;
+	tcore_object_override_callback(co_gps, "+CPOSR", on_notification_gps_assist_data, NULL);
+	tcore_object_override_callback(co_gps, "+XCPOSR", on_notification_reset_assist_data, NULL);
 
-	work_queue = g_queue_new();
-	tcore_object_link_user_data(o, work_queue);
+	dbg("Exit");
 
-	tcore_object_add_callback(o, "+CPOSR", on_notification_gps_assist_data, NULL);
-	tcore_object_add_callback(o, "+XCPOSR", on_notification_reset_assist_data, NULL);
-	dbg("exit");
 	return TRUE;
 }
 
-void s_gps_exit(TcorePlugin *p)
+void s_gps_exit(TcorePlugin *cp, CoreObject *co_gps)
 {
-	CoreObject *o;
-	GQueue *work_queue;
-
-	o = tcore_plugin_ref_core_object(p, "gps");
-	if (!o)
-		return;
-
-	work_queue = tcore_object_ref_user_data(o);
-	if (work_queue)
-		g_queue_free(work_queue);
-
-	tcore_gps_free(o);
+	dbg("Exit");
 }

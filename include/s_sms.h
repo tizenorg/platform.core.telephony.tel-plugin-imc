@@ -21,7 +21,7 @@
 #ifndef S_SMS_H_
 #define S_SMS_H_
 
-gboolean s_sms_init(TcorePlugin *p, TcoreHal *h);
-void s_sms_exit(TcorePlugin *p);
+gboolean s_sms_init(TcorePlugin *cp, CoreObject *co_sms);
+void s_sms_exit(TcorePlugin *cp, CoreObject *co_sms);
 
 #endif // S_SMS_H_

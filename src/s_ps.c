@@ -43,11 +43,6 @@
 #include "s_common.h"
 #include "s_ps.h"
 
-
-
-#define VNET_CH_PATH_BOOT0  "/dev/umts_boot0"
-#define IOCTL_CG_DATA_SEND  _IO('o', 0x37)
-
 /*Invalid Session ID*/
 #define PS_INVALID_CID  999 /*Need to check */
 
@@ -61,6 +56,7 @@
 #define AT_XDNS_ENABLE 1
 #define AT_XDNS_DISABLE 0
 #define AT_SESSION_DOWN 0
+
 static void _ps_free(void *ptr)
 {
 	dbg("Entered");
@@ -76,178 +72,11 @@ static void _unable_to_get_pending(CoreObject *co_ps, CoreObject *ps_context)
 	struct tnoti_ps_call_status data_resp = {0};
 	dbg("Entered");
 	data_resp.context_id = tcore_context_get_id(ps_context);
-	data_resp.state = AT_SESSION_DOWN; /*check value of state*/
-	data_resp.result = 0xFF; /*check error value*/
+	data_resp.state = PS_DATA_CALL_NOT_CONNECTED; /*check value of state*/
 	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
 								   TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &data_resp);
 	(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATED);
 	dbg("Exit");
-}
-static TReturn _pdp_device_control(unsigned int cid)
-{
-	int fd = -1;
-	int ret = -1;
-	fd = open(VNET_CH_PATH_BOOT0, O_RDWR);
-	if (fd < 0) {
-		dbg("error : open [ %s ] [ %s ]", VNET_CH_PATH_BOOT0, strerror(errno));
-		return -1;
-	}
-	/*To Do for different Cids*/
-	dbg("Send IOCTL: arg 0x05 (0101) HSIC1, cid=%d \n", cid);
-	if (cid == 1) {
-		ret = ioctl(fd, IOCTL_CG_DATA_SEND, 0x05);
-	} else if (cid == 2) {
-		ret = ioctl(fd, IOCTL_CG_DATA_SEND, 0xA);
-	} else {
-		dbg("More Than 2 context are not supported right Now");
-	}
-	close(fd);
-	if (ret < 0) {
-		dbg("[ error ] send IOCTL_CG_DATA_SEND (0x%x) fail!! \n", IOCTL_CG_DATA_SEND);
-		return TCORE_RETURN_FAILURE;
-	} else {
-		dbg("[ ok ] send IOCTL_CG_DATA_SEND (0x%x) success!! \n", IOCTL_CG_DATA_SEND);
-		return TCORE_RETURN_SUCCESS;
-	}
-}
-
-static gboolean on_event_cgev_handle(CoreObject *co_ps, const void *data, void *user_data)
-{
-	char *token = NULL;
-	GSList *tokens = NULL;
-	GSList *lines = NULL;
-	const char *line = NULL;
-	char *noti_data = NULL;
-	int i = 0;
-	int value = 20;
-	int state = -1;
-	struct tnoti_ps_call_status data_resp = {0};
-
-	dbg("Entered");
-	lines = (GSList *) data;
-	line = (const char *) lines->data;
-	dbg("Lines->data :-%s", line);
-
-	tokens = tcore_at_tok_new(line);
-	switch (g_slist_length(tokens)) {
-	case 0:
-	{
-		dbg("No token present: Ignore +CGEV Notifications ");
-		return TRUE;
-	}
-
-	case 1:
-	{
-		dbg("one Token present");
-		noti_data = g_slist_nth_data(tokens, 0);
-		dbg("notification data :-%s", noti_data);
-		if (0 == strcmp(noti_data, "ME CLASS B")) {
-			dbg("ME Class B notification received");
-			goto ignore;
-		}
-		if (0 == strcmp(noti_data, "NW CLASS A")) {
-			dbg("NW Class A notification received");
-			goto ignore;
-		}
-		token = strtok(noti_data, " ");
-		while (token != NULL) {
-			if ((i == 0) && (0 != strcmp(token, "ME"))) {
-				break;
-			}
-			if ((i == 1) && (0 != strcmp(token, "PDN"))) {
-				break;
-			}
-			if ((i == 2) && (0 == strcmp(token, "ACT"))) {
-				state = 1;
-			}
-			if ((i == 2) && (0 == strcmp(token, "DEACT"))) {
-				state = 0;
-			}
-			if (i == 3) {
-				value = atoi(token);
-				break;
-			}
-			i++;
-			token = strtok(NULL, " ");
-		}
-		dbg("value:%d ", value);
-		i = 0;
-		break;
-	}
-
-	case 3:
-	{
-		i = 0;
-		state = 0;
-		value = 0;
-		dbg("Three Token present");
-		noti_data = g_slist_nth_data(tokens, 0);
-		dbg("notification data :-%s", noti_data);
-		token = strtok(noti_data, " ");
-		while (token != NULL) {
-			if ((i == 0) && (0 == strcmp(token, "ME"))) {
-				state = 1;
-			}
-			if ((i == 1) && (0 != strcmp(token, "DEACT"))) {
-				break;
-			}
-			if ((i == 2) && (0 == strcmp(token, "\"IP\"")) && (0 == state)) {
-				dbg("MObile Deactiavted the Context");
-				value = 10;
-				break;
-			}
-			if ((i == 2) && (0 == strcmp(token, "\"IP\"")) && (1 == state)) {
-				dbg("NW Deactiavted the Context");
-				value = 10;
-				break;
-			}
-			i++;
-			token = strtok(NULL, " ");
-		}
-		if (value == 10 && state == 0) {
-			dbg("Recieved Notification for Context deactivations from network");
-			noti_data = g_slist_nth_data(tokens, 1);
-			dbg("PDP Address :- %s", noti_data);
-			noti_data = g_slist_nth_data(tokens, 2);
-			dbg("CID got deactivated :- %d", atoi(noti_data));
-		}
-		if (value == 10 && state == 1) {
-			dbg("Recieved Notification for Context deactivations from Mobile");
-			noti_data = g_slist_nth_data(tokens, 1);
-			dbg("PDP Address :- %s", noti_data);
-			noti_data = g_slist_nth_data(tokens, 2);
-			dbg("CID got deactivated :- %d", atoi(noti_data));
-		}
-		data_resp.context_id = atoi(noti_data);
-		data_resp.state = 3;        /*check value of state*/
-		dbg("State of the service :- %d", data_resp.state);
-		data_resp.result = 0xFF;       /*check error value*/
-		dbg("Sending the notification");
-
-		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
-									   TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &data_resp);
-
-		state = 100;
-		value = 100;
-
-		break;
-	}
-
-	default:
-	{
-		dbg("Ignore +CGEV Notifications ");
-	}
-	}
-	if (state == 1) {
-		dbg("Notification recieved for Activation of CID:-%d", value);
-	} else if (state == 0) {
-		dbg("Notification recieved for Deactivation of CID:-%d", value);
-	} else {
-		dbg("ignore");
-	}
-ignore:
-	tcore_at_tok_free(tokens);
-	return TRUE;
 }
 
 static gboolean on_event_dun_call_notification(CoreObject *o, const void *data, void *user_data)
@@ -354,164 +183,51 @@ error:
 		return;
 	}
 }
-static void on_response_data_counter_command(TcorePending *p, int data_len, const void *data, void *user_data)
+
+static void on_mount_netif(CoreObject *co_ps, const char *netif_name,
+				void *user_data)
 {
 	CoreObject *ps_context = user_data;
-	const TcoreATResponse *resp = data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
+	struct tnoti_ps_call_status data_status = {0};
+	Server *server;
 
-	GSList *tokens = NULL;
-	GSList *pRespData;
-	const char *line = NULL;
-	int no_pdp_active = 0;
-	unsigned long long Rx;
-	unsigned long long Tx;
-	int cid = tcore_context_get_id(ps_context);
-	dbg("Entered");
+	dbg("Enter");
 
-	if (resp->final_response) {
-		dbg("Response OK");
-		dbg(" response lines : -%s", resp->lines);
-		if (resp->lines) {
-			pRespData = (GSList *) resp->lines;
-			no_pdp_active = g_slist_length(pRespData);
-			dbg("Total Number of Active PS Context :- %d", no_pdp_active);
+	dbg("devname = [%s]", netif_name);
 
-			if (no_pdp_active == 0) {
-				return;
-			}
-			while (pRespData) {
-				dbg("Entered the Loop pRespData");
-
-				line = (const char *) pRespData->data;
-				dbg("Response->lines->data :%s", line);
-				tokens = tcore_at_tok_new(line);
-				if (cid == atoi(g_slist_nth_data(tokens, 0))) {
-					dbg("Found the data for our CID");
-					Tx = (unsigned long long) g_ascii_strtoull((g_slist_nth_data(tokens, 1)), NULL, 10);
-					dbg("Tx: %d", Tx);
-
-					Rx = (unsigned long long) g_ascii_strtoull((g_slist_nth_data(tokens, 2)), NULL, 10);
-					dbg("Rx: %d", Rx);
-
-					tcore_at_tok_free(tokens);
-					tokens = NULL;
-					dbg("Exiting the Loop pRespData");
-					break;
-				}
-				tcore_at_tok_free(tokens);
-				tokens = NULL;
-				pRespData = pRespData->next;
-			}
-			dbg("Sending Data counter notifications");
-
-			tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
-										   TNOTI_PS_CURRENT_SESSION_DATA_COUNTER, 0, NULL);
-			return;
-		} else {
-			dbg("No Active PS Context");
-		}
-	}
-	dbg("Response NOK");
-}
-
-static TReturn send_data_counter_command(CoreObject *co_ps, CoreObject *ps_context)
-{
-	TcoreHal *hal = NULL;
-	TcorePending *pending = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
-
-	dbg("Enetered");
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
-
-	hal = tcore_object_get_hal(co_ps);
-
-	(void) sprintf(cmd_str, "AT+XGCNTRD");
-	pending = tcore_at_pending_new(co_ps, cmd_str, "+XGCNTRD", TCORE_AT_MULTILINE,
-								   on_response_data_counter_command, ps_context);
-	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
-		return TCORE_RETURN_SUCCESS;
-	}
-	_unable_to_get_pending(co_ps, ps_context);
-	return TCORE_RETURN_FAILURE;
-/*Add code if unable to get the data usage*/
-}
-static void on_response_deactivate_ps_context(TcorePending *p, int data_len, const void *data, void *user_data)
-{
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	CoreObject *ps_context = user_data;
-	const TcoreATResponse *resp = data;
-	int cid;
-
-	cid = tcore_context_get_id(ps_context);
-	if (resp->success) {
-		dbg("Response OK");
-		/*get the data usage and report it application*/
-		(void) send_data_counter_command(co_ps, ps_context);
-		/*get the HSDPA status and report it to server*/
-	} else {
-		dbg("Response NOK");
-		send_undefine_context_cmd(co_ps, ps_context);
-	}
-	return;
-}
-
-static TReturn deactivate_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
-{
-	TcoreHal *hal = NULL;
-	TcorePending *pending = NULL;
-	unsigned int cid = PS_INVALID_CID;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
-
-	dbg("Entered");
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
-
-	/*Getting Context ID from Core Object*/
-	cid = tcore_context_get_id(ps_context);
-
-	/* FIXME: Before MUX setup, use PHY HAL directly. */
-	hal = tcore_object_get_hal(co_ps);
-	if(FALSE == tcore_hal_get_power_state(hal)){
-		dbg("cp not ready/n");
-		return TCORE_RETURN_ENOSYS;
+	tcore_context_set_ipv4_devname(ps_context, netif_name);
+	if (tcore_util_netif(netif_name, TRUE) != TCORE_RETURN_SUCCESS) {
+		dbg("disabling network interface failed");
+		return;
 	}
 
-	(void) sprintf(cmd_str, "AT+CGACT=%d,%d", AT_PDP_DEACTIVATE, cid);
-	dbg("At commands :- %s", cmd_str);
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
 
-	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
-								   on_response_deactivate_ps_context, ps_context);
-	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
-		(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATING);
-		return TCORE_RETURN_SUCCESS;
-	}
-	_unable_to_get_pending(co_ps, ps_context);
-	return TCORE_RETURN_FAILURE;
+	data_status.context_id = tcore_context_get_id(ps_context);
+	data_status.state = PS_DATA_CALL_CONNECTED;
+
+	tcore_server_send_notification(server, co_ps,
+					TNOTI_PS_CALL_STATUS,
+					sizeof(struct tnoti_ps_call_status),
+					&data_status);
+
+	dbg("Exit");
 }
 
 static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	struct tnoti_ps_pdp_ipconfiguration noti = {0};
-	struct tnoti_ps_call_status data_status = {0};
-	char devname[10] = {0, };
-	char *dns_prim = NULL;
-	char *dns_sec = NULL;
-	char *pdp_address = NULL;
-	char addr[4] = {0};
 	GSList *tokens = NULL;
 	GSList *pRespData;
 	const char *line = NULL;
+	char *dns_prim = NULL;
+	char *dns_sec = NULL;
 	char *token_dns = NULL;
-	char *token_add = NULL;
-
-	char *token_pdp_address = NULL;
 	int no_pdp_active = 0;
-	int index = 0;
-
 	CoreObject *ps_context = user_data;
 	const TcoreATResponse *resp = data;
 	CoreObject *co_ps = tcore_pending_ref_core_object(p);
 	int cid = tcore_context_get_id(ps_context);
+	TcoreHal *h = tcore_object_get_hal(co_ps);
 
 	dbg("Entered");
 
@@ -545,29 +261,19 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 				dns_prim = util_removeQuotes((void *) token_dns);
 				dbg("Token_dns :%s", token_dns);
 				dbg("Primary DNS :- %s", dns_prim);
-				index = 0;
-				token_add = strtok(dns_prim, ".");
-				while (token_add != NULL) {
-					noti.primary_dns[index++] = atoi(token_add);
-					token_add = strtok(NULL, ".");
-				}
-				_ps_free(dns_prim);
 			}
 			{ /* Read Secondary DNS */
-				token_add = NULL;
 				token_dns = g_slist_nth_data(tokens, 2);
 				dns_sec = util_removeQuotes((void *) token_dns);
 
 				dbg("Token_dns :%s", token_dns);
 				dbg("Secondary DNS :- %s", dns_sec);
-				index = 0;
-				token_add = strtok(dns_sec, ".");
-				while (token_add != NULL) {
-					noti.secondary_dns[index++] = atoi(token_add);
-					token_add = strtok(NULL, ".");
-				}
-				_ps_free(dns_sec);
 			}
+
+			tcore_context_set_ipv4_dns(ps_context, dns_prim, dns_sec);
+			_ps_free(dns_prim);
+			_ps_free(dns_sec);
+
 			tcore_at_tok_free(tokens);
 			tokens = NULL;
 			goto exit_success;
@@ -579,59 +285,19 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 exit_fail:
 	{
 		dbg("Adding default DNS");
-		dbg("Adding the Primary DNS");
-		noti.primary_dns[0] = 8;
-		noti.primary_dns[1] = 8;
-		noti.primary_dns[2] = 8;
-		noti.primary_dns[3] = 8;
-		dbg("Adding Secondary DNS");
-		noti.secondary_dns[0] = 8;
-		noti.secondary_dns[1] = 8;
-		noti.secondary_dns[2] = 4;
-		noti.secondary_dns[3] = 4;
+
+		tcore_context_set_ipv4_dns(ps_context, "8.8.8.8", "8.8.4.4");
 	}
 exit_success:
 	{
-		dbg("Able to get the DNS from the DNS Query");
-		token_pdp_address = tcore_context_get_address(ps_context);
-		pdp_address = util_removeQuotes((void *) token_pdp_address);
-
-		dbg("PDP address :- %s", pdp_address);
-		/* Store IP address in char array, Telephony expected IP address in this format */
-		token_add = strtok(pdp_address, ".");
-		index = 0;
-		while ((token_add != NULL) && (index < 4)) {   /* Currently only IPv4 is supported */
-			addr[index++] = atoi(token_add);
-			token_add = strtok(NULL, ".");
-		}
-		_ps_free(pdp_address);
-		_ps_free((void *) token_pdp_address);
-		noti.field_flag = (0x0001 & 0x0002 & 0x0004);
-		noti.err = 0;
-		noti.context_id = cid;
-		memcpy(&noti.ip_address, &addr, 4);
-		if (_pdp_device_control(cid) != TCORE_RETURN_SUCCESS) {
-			dbg("_pdp_device_control() failed. errno=%d", errno);
-		}
-		snprintf(devname, 10, "pdp%d", cid - 1);
-		memcpy(noti.devname, devname, 10);
-		dbg("devname = [%s]", devname);
-		if (tcore_util_netif_up(devname) != TCORE_RETURN_SUCCESS) {
-			dbg("util_netif_up() failed. errno=%d", errno);
+		/* mount network interface */
+		if (tcore_hal_setup_netif(h, co_ps, on_mount_netif, ps_context, cid, TRUE)
+				!= TCORE_RETURN_SUCCESS) {
+			err("Setup network interface failed");
+			return;
 		}
 
-		dbg("Send Notification upwards of IP address");
-		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps, TNOTI_PS_PDP_IPCONFIGURATION,
-									   sizeof(struct tnoti_ps_pdp_ipconfiguration), &noti);
-
-		data_status.context_id = cid;
-		data_status.state = 1;
-		data_status.result = 0;
-
-		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
-									   TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &data_status);
 		dbg("EXIT : Without error");
-		return;
 	}
 }
 
@@ -681,14 +347,14 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 
 			dbg("token_pdp_address :- %s", token_pdp_address);
 			/* Strip off starting " and ending " from this token to read actual PDP address */
-			(void) tcore_context_set_address(ps_context, (const char *) token_pdp_address);
+			(void) tcore_context_set_ipv4_addr(ps_context, (const char *)token_pdp_address);
 		}
 
 		(void) send_get_dns_cmd(co_ps, ps_context);
 	} else {
 		dbg("Response NOK");
 		/*without PDP address we will not be able to start packet service*/
-		(void) deactivate_ps_context(co_ps, ps_context, NULL);
+		tcore_ps_deactivate_context(co_ps, ps_context, NULL);
 	}
 error:
 	tcore_at_tok_free(tokens);
@@ -796,13 +462,11 @@ static void on_response_xdns_enable_cmd(TcorePending *p, int data_len, const voi
 		dbg("Response OK");
 		dbg("DNS address getting is Enabled");		
 		noti.context_id = cid;
-		noti.state = 0;
-		noti.result = 0;
+		noti.state = PS_DATA_CALL_CTX_DEFINED;
 	} else {
 		dbg("Response NOK");		
 		noti.context_id = cid;
-		noti.state = 3;
-		noti.result = 0;
+		noti.state = PS_DATA_CALL_NOT_CONNECTED;
 		/*If response to enable the DNS NOK then we will use google DNS for the PDP context*/
 	}
 
@@ -852,7 +516,7 @@ static void on_response_define_pdp_context(TcorePending *p, int data_len, const 
 	return;
 }
 
-static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
+static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
@@ -921,52 +585,36 @@ static TReturn send_define_pdp_context_cmd(CoreObject *co_ps, CoreObject *ps_con
 	return TCORE_RETURN_FAILURE;
 }
 
-static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
-{
-	dbg("Entered");
-
-	if(FALSE == tcore_hal_get_power_state(tcore_object_get_hal(co_ps))){
-		dbg("cp not ready/n");
-		return TCORE_RETURN_ENOSYS;
-	}
-	return send_define_pdp_context_cmd(co_ps, ps_context);
-}
-
 
 static struct tcore_ps_operations ps_ops = {
 	.define_context = define_ps_context,
 	.activate_context = activate_ps_context,
-	.deactivate_context = deactivate_ps_context
+	/* Use AT_standard entry point */
+	.deactivate_context = NULL
 };
 
-gboolean s_ps_init(TcorePlugin *p, TcoreHal *hal)
+gboolean s_ps_init(TcorePlugin *cp, CoreObject *co_ps)
 {
-	CoreObject *o;
-	struct context *context_table = NULL;
+	TcorePlugin *plugin = tcore_object_ref_plugin(co_ps);
 
-	dbg("Entered");
-	o = tcore_ps_new(p, "umts_ps", &ps_ops, hal);
+	dbg("Enter");
 
-	if (!o)
-		return FALSE;
-	tcore_object_link_user_data(o, (void *) context_table);
+	tcore_ps_override_ops(co_ps, &ps_ops);
 
-	tcore_object_add_callback(o, "+CGEV", on_event_cgev_handle, p);
-	tcore_object_add_callback(o, "+XNOTIFYDUNSTATUS", on_event_dun_call_notification, p);
+	/*
+	 * AT_standard handles standard CGEV notifications:
+	 * tcore_object_override_callback(co, "+CGEV", on_cgev_notification, NULL);
+	 * no need to handle it here.
+	 */
 
-	dbg("Exiting");
+	tcore_object_override_callback(co_ps, "+XNOTIFYDUNSTATUS", on_event_dun_call_notification, plugin);
+
+	dbg("Exit");
+
 	return TRUE;
 }
 
-void s_ps_exit(TcorePlugin *p)
+void s_ps_exit(TcorePlugin *cp, CoreObject *co_ps)
 {
-	CoreObject *o;
-
-	dbg("Entered");
-	o = tcore_plugin_ref_core_object(p, "umts_ps");
-	if (!o)
-		return;
-
-	tcore_ps_free(o);
-	dbg("Exiting");
+	dbg("Exit");
 }

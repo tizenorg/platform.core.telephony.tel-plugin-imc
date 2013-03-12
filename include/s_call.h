@@ -21,7 +21,7 @@
 #ifndef __S_CALL_H__
 #define __S_CALL_H__
 
-gboolean s_call_init(TcorePlugin *p, TcoreHal *h);
-void s_call_exit(TcorePlugin *p);
+gboolean s_call_init(TcorePlugin *cp, CoreObject *co_call);
+void s_call_exit(TcorePlugin *cp, CoreObject *co_call);
 
 #endif

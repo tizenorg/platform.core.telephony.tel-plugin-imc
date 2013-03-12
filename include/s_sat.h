@@ -22,7 +22,7 @@
 #ifndef S_SAT_H_
 #define S_SAT_H_
 
-gboolean s_sat_init(TcorePlugin *p, TcoreHal *h);
-void s_sat_exit(TcorePlugin *p);
+gboolean s_sat_init(TcorePlugin *cp, CoreObject *co_sat);
+void s_sat_exit(TcorePlugin *cp, CoreObject *co_sat);
 
 #endif /* S_SAT_H_ */

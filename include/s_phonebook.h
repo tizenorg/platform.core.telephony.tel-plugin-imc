@@ -21,7 +21,7 @@
 #ifndef S_PHONEBOOK_H_
 #define S_PHONEBOOK_H_
 
-gboolean s_phonebook_init(TcorePlugin *p, TcoreHal *h);
-void s_phonebook_exit(TcorePlugin *p);
+gboolean s_phonebook_init(TcorePlugin *cp, CoreObject *co_phonebook);
+void s_phonebook_exit(TcorePlugin *cp, CoreObject *co_phonebook);
 
 #endif /* S_PHONEBOOK_H_ */

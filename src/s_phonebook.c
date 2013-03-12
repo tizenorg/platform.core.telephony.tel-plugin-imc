@@ -1090,26 +1090,20 @@ static struct tcore_phonebook_operations phonebook_ops = {
 	.delete_record = s_delete_record,
 };
 
-gboolean s_phonebook_init(TcorePlugin *p, TcoreHal *h)
+gboolean s_phonebook_init(TcorePlugin *cp, CoreObject *co_phonebook)
 {
-	CoreObject *o = NULL;
-
 	dbg("Entry");
-	o = tcore_phonebook_new(p, "phonebook", &phonebook_ops, h);
-	if (!o)
-		return FALSE;
 
-	tcore_object_add_callback(o, "+PBREADY", on_event_phonebook_status, NULL);
+	tcore_phonebook_override_ops(co_phonebook, &phonebook_ops);
+
+	tcore_object_override_callback(co_phonebook, "+PBREADY", on_event_phonebook_status, NULL);
+
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void s_phonebook_exit(TcorePlugin *p)
+void s_phonebook_exit(TcorePlugin *cp, CoreObject *co_phonebook)
 {
-	CoreObject *o = NULL;
-	o = tcore_plugin_ref_core_object(p, "phonebook");
-	if (!o)
-		return;
-
-	tcore_phonebook_free(o);
+	dbg("Exit");
 }
