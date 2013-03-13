@@ -780,6 +780,29 @@ static void on_confirmation_call_message_send(TcorePending *p, gboolean result, 
 	return;
 }
 
+static void call_prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback)
+{
+	TcoreATRequest *req = NULL;
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	TReturn ret;
+
+	hal = tcore_object_get_hal(co);
+	dbg("hal: %p", hal);
+
+	pending = tcore_pending_new(co, 0);
+	if (!pending)
+		dbg("Pending is NULL");
+	req = tcore_at_request_new(at_cmd, prefix, at_cmd_type);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, callback, NULL);
+	tcore_pending_set_send_callback(pending, on_confirmation_call_message_send, NULL);
+	ret = tcore_hal_send_request(hal, pending);
+}
+
 static void on_confirmation_call_outgoing(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur = NULL;
@@ -1466,6 +1489,23 @@ static void on_confirmation_call_swap(TcorePending *p, int data_len, const void 
 
 	dbg("Exit");
 	return;
+}
+
+static void on_confirmation_set_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	struct tnoti_call_sound_path *snd_path = user_data;
+	TcorePlugin *plugin = tcore_pending_ref_plugin(p);
+
+	if (resp->success > 0) {
+		tcore_server_send_notification(tcore_plugin_ref_server(plugin),
+								tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL),
+								TNOTI_CALL_SOUND_PATH,
+								sizeof(struct tnoti_call_sound_path),
+								(void *)snd_path);
+	} else {
+		dbg("Error in set sound path");
+	}
 }
 
 static void on_confirmation_call_set_source_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -2985,6 +3025,8 @@ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
 	int device_type = -1;
 	struct treq_call_sound_set_path *sound_path = 0;
 	gboolean ret = FALSE;
+	TcorePlugin *plugin = tcore_object_ref_plugin(o);
+	const char *cp_name = tcore_server_get_cp_name_by_plugin(plugin);
 
 	dbg("function entrance");
 
@@ -3036,31 +3078,67 @@ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_FAILURE;
 	}
 
-	cmd_str = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d",device_type); // source type.
-	pending = tcore_pending_new(o, 0);
-	req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
-	dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
-	tcore_pending_set_request_data(pending, 0, req);
-	ur_dup = tcore_user_request_ref(ur);
-	ret = _call_request_message(pending, o, ur_dup, on_confirmation_call_set_source_sound_path, NULL);
-	g_free(cmd_str);
+	if (g_str_has_prefix(cp_name, "mfld_blackbay") == TRUE) {
+		struct tnoti_call_sound_path tnoti_snd_path;
+		tnoti_snd_path.path = sound_path->path;
+		/* Configure modem I2S1 to 8khz, mono, PCM if routing to bluetooth */
+		if (sound_path->path == CALL_SOUND_PATH_BLUETOOTH || sound_path->path == CALL_SOUND_PATH_STEREO_BLUETOOTH) {
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,3,0,1,0,0,0,0,0,0,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,2,0,1,0,0,0,0,0,0,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+		}
+		else {
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,3,0,1,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,2,0,1,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+		}
 
-	if (!ret) {
-		dbg("At request(%s) sent failed", req->cmd);
-		return TCORE_RETURN_FAILURE;
-	}
+		/* Configure modem I2S2 and do the modem routing */
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,4,0,0,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,3,0,0,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,0,4", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,3,0", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,4,2", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,5,2", NULL, TCORE_AT_NO_RESULT, NULL);
 
-	cmd_str1 = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",device_type); // destination type
-	pending1 = tcore_pending_new(o, 0);
-	req1 = tcore_at_request_new(cmd_str1, "+XDRV", TCORE_AT_SINGLELINE);
-	dbg("XDRV req-cmd for destination type : %s, prefix(if any) :%s, cmd_len : %d", req1->cmd, req1->prefix, strlen(req1->cmd));
-	tcore_pending_set_request_data(pending1, 0, req1);
-	ret = _call_request_message(pending1, o, ur, on_confirmation_call_set_destination_sound_path, NULL);
-	g_free(cmd_str1);
+		/* amc enable */
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,2,4", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S2_RX
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,2,3", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S1_RX
+		/* amc route: AMC_RADIO_RX => AMC_I2S1_TX */
 
-	if (!ret) {
-		dbg("AT request %s has failed ", req1->cmd);
-		return TCORE_RETURN_FAILURE;
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new("AT+XDRV=40,6,0,2", "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+		tcore_pending_set_request_data(pending, 0, req);
+		ur_dup = tcore_user_request_ref(ur);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_set_sound_path, &tnoti_snd_path);
+
+	} else {
+
+		cmd_str = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d",device_type); // source type.
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+		tcore_pending_set_request_data(pending, 0, req);
+		ur_dup = tcore_user_request_ref(ur);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_call_set_source_sound_path, NULL);
+		g_free(cmd_str);
+
+		if (!ret) {
+			dbg("At request(%s) sent failed", req->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
+
+		cmd_str1 = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",device_type); // destination type
+		pending1 = tcore_pending_new(o, 0);
+		req1 = tcore_at_request_new(cmd_str1, "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for destination type : %s, prefix(if any) :%s, cmd_len : %d", req1->cmd, req1->prefix, strlen(req1->cmd));
+		tcore_pending_set_request_data(pending1, 0, req1);
+		ret = _call_request_message(pending1, o, ur, on_confirmation_call_set_destination_sound_path, NULL);
+		g_free(cmd_str1);
+
+		if (!ret) {
+			dbg("AT request %s has failed ", req1->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
 	}
 
 	return TCORE_RETURN_SUCCESS;
