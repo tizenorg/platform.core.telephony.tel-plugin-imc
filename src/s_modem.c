@@ -164,7 +164,7 @@ void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, callback, NULL);
 	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
-	tcore_pending_link_user_request(pending, NULL); // set user request to NULL - this is internal request
+	tcore_pending_link_user_request(pending, NULL); // set user request to NULL - this is intenal request
 	ret = tcore_hal_send_request(hal, pending);
 	return;
 }
@@ -186,13 +186,13 @@ void on_response_last_bootup_subscription(TcorePending *p, int data_len, const v
 {
 	const TcoreATResponse *resp = data;
 
-	dbg("entry of on_response_last_bootup_subscription() - final response comes\n");
+	dbg("enry of on_response_last_bootup_subscription() - final response comes\n");
 	if (resp->success) {
 		dbg("SEND OK");
 	} else {
 		dbg("SEND FAIL");
 	}
-	dbg("Boot-up configuration completed for IMC modem. Bring CP to online based on Flightmode status\n");
+	dbg("Response for AT+CLIP. Boot-up configration completed for IMC modem. Bring CP to online based on Flightmode status\n");
 	on_event_modem_power(NULL, NULL, tcore_pending_ref_plugin(p));
 }
 
@@ -364,22 +364,19 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 		if (resp->lines) {
 			line = (const char *) resp->lines->data;
 			tokens = tcore_at_tok_new(line);
-			if (g_slist_length(tokens) == 1) {
-				swver = g_slist_nth_data(tokens, 0);
-				dbg("version: sw=[%s]", swver);
-			} else if (g_slist_length(tokens) == 5) {
-				swver = g_slist_nth_data(tokens, 0);
-				hwver = g_slist_nth_data(tokens, 1);
-				caldate = g_slist_nth_data(tokens, 2);
-				pcode = g_slist_nth_data(tokens, 3);
-				id = g_slist_nth_data(tokens, 4);
-
-				dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]", swver, hwver, caldate, pcode, id);
-			} else {
+			if (g_slist_length(tokens) != 5) {
 				msg("invalid message");
 				goto OUT;
 			}
 		}
+
+		swver = g_slist_nth_data(tokens, 0);
+		hwver = g_slist_nth_data(tokens, 1);
+		caldate = g_slist_nth_data(tokens, 2);
+		pcode = g_slist_nth_data(tokens, 3);
+		id = g_slist_nth_data(tokens, 4);
+
+		dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]", swver, hwver, caldate, pcode, id);
 
 		vi = calloc(sizeof(TelMiscVersionInformation), 1);
 		if (NULL != swver)
