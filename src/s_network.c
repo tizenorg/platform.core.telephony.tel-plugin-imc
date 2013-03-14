@@ -1660,6 +1660,10 @@ static void on_sim_resp_hook_get_netname(UserRequest *ur, enum tcore_response_co
 		if ((resp->data.spn.display_condition & 0x03) == 0x01) {
 			tcore_network_set_network_name_priority(o, TCORE_NETWORK_NAME_PRIORITY_ANY);
 		}
+
+		// fallback in case no SPN name is provided
+		if (resp->data.spn.spn[0] == '\0')
+			tcore_network_set_network_name_priority(o, TCORE_NETWORK_NAME_PRIORITY_NETWORK);
 	}
 }
 
