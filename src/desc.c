@@ -52,7 +52,7 @@ static void on_confirmation_modem_message_send(TcorePending *p,
 						gboolean result,
 						void *user_data)
 {
-	dbg("on_confirmation_modem_message_send - msg out from queue.");
+	dbg("msg out from queue");
 
 	dbg("%s", result == FALSE ? "SEND FAIL" : "SEND OK");
 }
@@ -62,12 +62,13 @@ static void on_response_bootup_subscription(TcorePending *p, int data_len, const
 	TcorePlugin *plugin = user_data;
 	const TcoreATResponse *resp = data;
 
-	dbg("entry of on_response_bootup_subscription() - response comes\n");
+	dbg("Entry");
 
-	if (resp->success)
+	if (resp->success > 0) {
 		dbg("result OK");
-
-	dbg("result ERROR");
+	} else {
+		dbg("result ERROR");
+	}
 
 	if (plugin != NULL)
 		modem_power_on(plugin);

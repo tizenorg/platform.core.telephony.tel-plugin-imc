@@ -100,8 +100,7 @@ typedef struct {
 
 static void prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback);
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data);     // from Kernel
-void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data);
-void on_response_last_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data);
+static void on_response_network_registration(TcorePending *p, int data_len, const void *data, void *user_data);
 static void on_response_enable_proactive_command(TcorePending *p, int data_len, const void *data, void *user_data);
 
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data)
@@ -124,6 +123,17 @@ static void on_response_enable_proactive_command(TcorePending *p, int data_len, 
 		dbg("RESPONSE OK proactive command enabled");
 	} else {
 		dbg("RESPONSE NOK proactive command disabled");
+	}
+}
+
+static void on_response_network_registration(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+
+	if (resp->success > 0) {
+		dbg("registration attempt OK");
+	} else {
+		dbg("registration attempt failed");
 	}
 }
 
@@ -407,7 +417,7 @@ static gboolean on_event_bootup_sim_status(CoreObject *o, const void *event_info
 		dbg("SIM ready. request COPS & remove callback");
 		dbg("power on done set for proactive command receiving mode");
 		prepare_and_send_pending_request(o, "AT+CFUN=6", NULL, TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
-		prepare_and_send_pending_request(o, "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+		prepare_and_send_pending_request(o, "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_network_registration);
 		return FALSE;
 	}
 

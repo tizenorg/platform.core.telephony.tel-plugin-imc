@@ -56,6 +56,6 @@ mkdir -p %{buildroot}/usr/share/license
 
 %defattr(-,root,root,-)
 
-%{_libdir}/telephony/plugins/*
+%{_libdir}/telephony/plugins/modems/*
 /tmp/mcc_mnc_oper_list.sql
 /usr/share/license/tel-plugin-imc
