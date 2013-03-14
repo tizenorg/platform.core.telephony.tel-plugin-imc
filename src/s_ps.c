@@ -184,7 +184,7 @@ error:
 	}
 }
 
-static void on_mount_netif(CoreObject *co_ps, const char *netif_name,
+static void on_setup_pdp(CoreObject *co_ps, const char *netif_name,
 				void *user_data)
 {
 	CoreObject *ps_context = user_data;
@@ -196,10 +196,6 @@ static void on_mount_netif(CoreObject *co_ps, const char *netif_name,
 	dbg("devname = [%s]", netif_name);
 
 	tcore_context_set_ipv4_devname(ps_context, netif_name);
-	if (tcore_util_netif(netif_name, TRUE) != TCORE_RETURN_SUCCESS) {
-		dbg("disabling network interface failed");
-		return;
-	}
 
 	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
 
@@ -291,7 +287,7 @@ exit_fail:
 exit_success:
 	{
 		/* mount network interface */
-		if (tcore_hal_setup_netif(h, co_ps, on_mount_netif, ps_context, cid, TRUE)
+		if (tcore_hal_setup_netif(h, co_ps, on_setup_pdp, ps_context, cid, TRUE)
 				!= TCORE_RETURN_SUCCESS) {
 			err("Setup network interface failed");
 			return;
