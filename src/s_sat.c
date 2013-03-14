@@ -221,7 +221,7 @@ static gboolean on_event_sat_proactive_command(CoreObject *o, const void *event_
 		dbg("wrong input");
 		break;
 	}
-	if ((decoded_data.cmd_type == SAT_PROATV_CMD_REFRESH) || (decoded_data.cmd_type == SAT_PROATV_CMD_SETUP_EVENT_LIST)) {
+	if (decoded_data.cmd_type == SAT_PROATV_CMD_REFRESH) {
 		/*Not supported*/
 		dbg("Not suported Proactive command");
 		return FALSE;
@@ -355,8 +355,8 @@ static TReturn s_envelope(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_EINVAL;
 	}
 	for (count = 0; count < envelope_cmd_len; count++) {
-		dbg("envelope_cmd %02x", envelope_cmd[count]);
-		sprintf(pbuffer, "%02x", envelope_cmd[count]);
+		dbg("envelope_cmd %02x", (unsigned char)envelope_cmd[count]);
+		sprintf(pbuffer, "%02x", (unsigned char)envelope_cmd[count]);
 		pbuffer += 2;
 	}
 	dbg("pbuffer %s", envelope_cmdhex);
