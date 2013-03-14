@@ -2760,7 +2760,7 @@ gboolean s_ss_init(TcorePlugin *cp, CoreObject *co_ss)
 
 	co_call = tcore_plugin_ref_core_object(cp,
 						CORE_OBJECT_TYPE_CALL);
-	if (co_call) {
+	if (co_call == NULL) {
 		err("Can't find CALL core object");
 		return FALSE;
 	}
