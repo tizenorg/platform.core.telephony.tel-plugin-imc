@@ -53,6 +53,15 @@
 #define NUM_PLAN_INTERNATIONAL	0x0070
 #define NUM_PLAN_UNKNOWN 		0x0060
 
+struct valid_pb_index{
+	int used_count;
+	int total_count;
+	int indexlist_populated;
+	int *indexlist;
+	int current_index;
+};
+static struct valid_pb_index __pbindex;
+
 enum pb_usim_file_type {
 	PB_USIM_NAME = 0x01,		/**< Name */
 	PB_USIM_NUMBER,				/**< Number */
@@ -76,6 +85,15 @@ static TReturn s_get_usim_info(CoreObject *o, UserRequest *ur);
 static TReturn s_read_record(CoreObject *o, UserRequest *ur);
 static TReturn s_update_record(CoreObject *o, UserRequest *ur);
 static TReturn s_delete_record(CoreObject *o, UserRequest *ur);
+
+
+static void pbindex_reset()
+{
+	if(__pbindex.indexlist){
+		free(__pbindex.indexlist);
+	}
+	memset(&__pbindex, 0x00, sizeof(struct valid_pb_index));
+}
 
 static enum tcore_response_command _find_resp_command(UserRequest *ur)
 {
@@ -113,18 +131,6 @@ static enum tel_phonebook_ton _find_num_plan(int number_plan)
 	return result;
 }
 
-static void on_confirmation_phonebook_message_send(TcorePending *p, gboolean result, void *user_data)
-{
-	dbg("msg out from queue");
-
-	if (result == FALSE) {		/* Fail */
-		dbg("SEND FAIL");
-	}
-	else {
-		dbg("SEND OK");
-	}
-}
-
 static char* _get_phonebook_type(enum tel_phonebook_type pb_type)
 {
 	char *phonebook_type = NULL;
@@ -136,7 +142,7 @@ static char* _get_phonebook_type(enum tel_phonebook_type pb_type)
 		err("Memory allcoation failed");
 		return phonebook_type;
 	}
-	
+
 	switch(pb_type)
 	{
 		case PB_TYPE_FDN:
@@ -168,7 +174,7 @@ static enum tel_phonebook_type _get_phonebook_enum(const char* pb_type)
 	enum tel_phonebook_type phonebook_type = PB_TYPE_UNKNOWNN;
 	dbg(" Function entry ");
 	dbg("pb_type = %s", pb_type);
-	
+
 	if(strcmp("FD", pb_type) == VAL_ZERO) {
 		phonebook_type = PB_TYPE_FDN;
 	}
@@ -181,7 +187,7 @@ static enum tel_phonebook_type _get_phonebook_enum(const char* pb_type)
 	else if(strcmp("AP", pb_type) == VAL_ZERO) {
 		phonebook_type = PB_TYPE_USIM;
 	}
-	
+
 	dbg(" Function exit");
 	return phonebook_type;
 }
@@ -189,9 +195,9 @@ static enum tel_phonebook_type _get_phonebook_enum(const char* pb_type)
 static gboolean on_event_phonebook_status(CoreObject *o, const void *event_info, void *user_data)
 {
 	dbg("Phonebook init received from modem");
-	
+
 	_get_support_list(o);
-	
+
 	return TRUE;
 }
 
@@ -199,28 +205,24 @@ static void _on_response_select(TcorePending *p, int data_len, const void *data,
 {
 	const TcoreATResponse *resp = data;
 	UserRequest *ur = NULL;
-	CoreObject *o = NULL;
 	enum tcore_request_command req_cmd = TREQ_UNKNOWN;
 	int *selected_pb = user_data;
-	GQueue *queue = NULL;
+
 	dbg(" Function entry ");
 
-	o = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 	if (!ur){
 		dbg("error - current ur is NULL");
 		return;
 	}
 
-	queue = tcore_object_ref_user_data(o);
-	if(queue) {
-		ur = tcore_user_request_ref(ur);
-	}
-	
 	req_cmd = tcore_user_request_get_command(ur);
 	dbg("origin treq command [%x]", req_cmd);
 
 	if(resp->success > VAL_ZERO) {
+		CoreObject *o = NULL;
+		o = tcore_pending_ref_core_object(p);
+
 		dbg("RESPONSE OK");
 		tcore_phonebook_set_selected_type(o, *selected_pb);
 		switch (req_cmd)
@@ -259,7 +261,7 @@ static void _on_response_select(TcorePending *p, int data_len, const void *data,
 				dbg("error TREQ_PHONEBOOK_GETCOUNT");
 				memset(&resp_getcount, 0x00, sizeof(struct tresp_phonebook_get_count));
 				resp_getcount.result = PB_FAIL;
-				tcore_user_request_send_response(ur, TRESP_PHONEBOOK_GETCOUNT, sizeof(struct tresp_phonebook_get_count), &resp_getcount);
+				tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_get_count), &resp_getcount);
 			}
 			break;
 			case TREQ_PHONEBOOK_GETMETAINFO:
@@ -276,10 +278,11 @@ static void _on_response_select(TcorePending *p, int data_len, const void *data,
 			{
 				struct tresp_phonebook_read_record resp_readrecord;
 				dbg("error TREQ_PHONEBOOK_READRECORD");
+				pbindex_reset();
 				memset(&resp_readrecord, 0x00, sizeof(struct tresp_phonebook_read_record));
 				resp_readrecord.result = PB_FAIL;
 				resp_readrecord.phonebook_type = *selected_pb;
-				tcore_user_request_send_response(ur, TRESP_PHONEBOOK_READRECORD, sizeof(struct tresp_phonebook_read_record), &resp_readrecord);
+				tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_read_record), &resp_readrecord);
 			}
 			break;
 			case TREQ_PHONEBOOK_UPDATERECORD:
@@ -306,7 +309,77 @@ static void _on_response_select(TcorePending *p, int data_len, const void *data,
 		}
 
 	}
+
+	free(selected_pb);
+	selected_pb = NULL;
+	dbg(" Function exit");
+}
+
+static void _on_response_getindexlist(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_phonebook_read_record resp_readrecord;
+	int *selected_pb = user_data;
+	int total_lines = 0;
+	int count = 0;
+	GSList *tokens=NULL;
+	const char *line;
+
+	dbg(" Function entry ");
+
+	ur = tcore_pending_ref_user_request(p);
+	if (!ur){
+		dbg("error - current ur is NULL");
+		return;
+	}
+	memset(&resp_readrecord, 0x00, sizeof(struct tresp_phonebook_read_record));
+	resp_readrecord.result = PB_FAIL;
+	resp_readrecord.phonebook_type = *selected_pb;
 	
+	if(resp->success > 0)
+	{
+		CoreObject *o = NULL;
+		o = tcore_pending_ref_core_object(p);
+
+		dbg("RESPONSE OK");
+		tcore_phonebook_set_selected_type(o, *selected_pb);
+		if (resp->lines) {
+			total_lines = g_slist_length(resp->lines);
+			dbg("Total number of PB entry %d\n", total_lines);
+			if (total_lines < 1) {
+				msg("invalid message");
+				pbindex_reset();
+				goto EXIT;
+			}
+			__pbindex.indexlist = (int*)malloc(__pbindex.used_count * sizeof(int));
+			if(__pbindex.indexlist == NULL){
+				dbg("Failed to allocate memory");
+				pbindex_reset();
+				goto EXIT;
+			}
+			resp_readrecord.result = PB_SUCCESS;
+			for (count = 0; count < total_lines; count++) {
+				/* Take each line response at a time & parse it */
+				line = tcore_at_tok_nth(resp->lines, count);
+				tokens = tcore_at_tok_new(line);
+				__pbindex.indexlist[count] = atoi(g_slist_nth_data(tokens, 0));
+				dbg("__pbindex.indexlist[%d] = %d", count, __pbindex.indexlist[count]);
+				tcore_at_tok_free(tokens);
+			}
+		}
+		__pbindex.indexlist_populated = 1;
+		s_read_record(o, ur);
+		free(selected_pb);
+		selected_pb = NULL;
+		return;
+	}
+	else{
+		dbg("RESPONSE NOK");
+	}
+EXIT:
+	tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_read_record), &resp_readrecord);
+
 	free(selected_pb);
 	selected_pb = NULL;
 	dbg(" Function exit");
@@ -329,29 +402,34 @@ static void on_response_get_count(TcorePending *p, int data_len, const void *dat
 	}
 
 	memset(&res, 0x00, sizeof(struct tresp_phonebook_get_count));
+	res.result = PB_FAIL;
+
 	if(resp->success > VAL_ZERO) {
 		dbg("RESPONSE OK");
 		if(resp->lines) {
 			temp = (const char*)resp->lines->data;
 			tokens = tcore_at_tok_new(temp);
-			if (g_slist_length(tokens) < VAL_ONE) {
+			if (g_slist_length(tokens) < VAL_THREE) {
+				//No of tokens must be three. We cannot proceed without used and total count.
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto EXIT;
 			}
 		}
 		res.result = PB_SUCCESS;
-		
+
 		temp = (const char*)g_slist_nth_data(tokens, VAL_ZERO);
 		pbtype =  util_removeQuotes((void*)temp);
 		res.type = _get_phonebook_enum(pbtype);
-		
+
 		if(NULL != g_slist_nth_data(tokens, VAL_ONE)){
 			res.used_count = atoi(g_slist_nth_data(tokens, VAL_ONE));
+			__pbindex.used_count = res.used_count;
+			dbg("used_count %d", __pbindex.used_count);
 		}
-		
+
 		if(NULL != g_slist_nth_data(tokens, VAL_TWO)){
 			res.total_count = atoi(g_slist_nth_data(tokens, VAL_TWO));
+			__pbindex.total_count = res.total_count;
 		}
 		dbg("used count = %d,  total count= %d", res.used_count, res.total_count);
 		free(pbtype);
@@ -359,12 +437,10 @@ static void on_response_get_count(TcorePending *p, int data_len, const void *dat
 	}
 	else{
 		dbg("RESPONSE NOK");
-		res.result = PB_FAIL;
 	}
-
-	tcore_user_request_send_response(ur, TRESP_PHONEBOOK_GETCOUNT, sizeof(struct tresp_phonebook_get_count), &res);
-	
+EXIT:
 	tcore_at_tok_free(tokens);
+	tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_get_count), &res);
 	dbg(" Function exit");
 }
 
@@ -378,7 +454,7 @@ static void on_response_get_info(TcorePending *p, int data_len, const void *data
 	int *selected_pb = (int*)user_data;
 
 	dbg(" Function entry ");
-	
+
 	ur = tcore_pending_ref_user_request(p);
 	if (!ur){
 		dbg("error - current ur is NULL");
@@ -386,7 +462,9 @@ static void on_response_get_info(TcorePending *p, int data_len, const void *data
 	}
 
 	memset(&res, 0x00, sizeof(struct tresp_phonebook_get_info));
+	res.result = PB_FAIL;
 	res.type = *selected_pb;
+
 	if(resp->success > VAL_ZERO) {
 		dbg("RESPONSE OK");
 		if(resp->lines) {
@@ -394,27 +472,25 @@ static void on_response_get_info(TcorePending *p, int data_len, const void *data
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) < VAL_ONE) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto EXIT;
 			}
 		}
 		res.result = PB_SUCCESS;
-		
+
 		res.number_length_max = atoi(g_slist_nth_data(tokens, VAL_ZERO));
 		res.text_length_max = atoi(g_slist_nth_data(tokens, VAL_ONE));
 		dbg("number_length_max %d text_length_max %d",res.number_length_max,res.text_length_max);
 	}
 	else{
 		dbg("RESPONSE NOK");
-		res.result = PB_FAIL;
 	}
-
+EXIT:
 	tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_get_info), &res);
-	
-	tcore_at_tok_free(tokens);
 	free(selected_pb);
 	selected_pb = NULL;
+	tcore_at_tok_free(tokens);
 	dbg(" Function exit");
+
 }
 
 static void on_response_read_record(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -432,7 +508,7 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 	int *selected_pb = (int*)user_data;
 
 	dbg(" Function entry ");
-	
+
 	ur = tcore_pending_ref_user_request(p);
 	if (!ur){
 		dbg("error - current ur is NULL");
@@ -440,8 +516,9 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 	}
 
 	memset(&res, 0x00, sizeof(struct tresp_phonebook_read_record));
+	res.result = PB_FAIL;
 	res.phonebook_type = *selected_pb;
-	
+
 	if(resp->success > VAL_ZERO) {
 		dbg("RESPONSE OK");
 		if(resp->lines) {
@@ -449,31 +526,41 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) < VAL_ONE) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				pbindex_reset();
+				goto EXIT;
 			}
 		}
 		res.result = PB_SUCCESS;
-		
-		res.index = atoi(g_slist_nth_data(tokens, VAL_ZERO));
-		res.next_index = (res.index + VAL_ONE);
-		num_plan = atoi(g_slist_nth_data(tokens, VAL_TWO));
+		res.index = atoi(g_slist_nth_data(tokens, 0));
+		__pbindex.current_index++;
+		if(__pbindex.current_index >= __pbindex.used_count){
+			dbg("RESET");
+			res.next_index = 0;
+			pbindex_reset();
+		}else{
+			dbg("__pbindex.current_index %d", __pbindex.current_index);
+			res.next_index = __pbindex.indexlist[__pbindex.current_index];
+		}
+		num_plan = atoi(g_slist_nth_data(tokens, 2));
 		res.ton = _find_num_plan(num_plan);
 
-		temp = g_slist_nth_data(tokens, VAL_ONE);
+		/*Remove the quotes("") from the number string*/
+		temp = g_slist_nth_data(tokens, 1);
 		member =  util_removeQuotes((void*)temp);
-		dbg("number %s - %d", member, (num_len-VAL_TWO));
 		memcpy(res.number, member, strlen(member));
+		dbg("number %s - %d", res.number, strlen((const char*)res.number));
 		free(member);
 		member = NULL;
 
-		temp = g_slist_nth_data(tokens, VAL_THREE);
+		/*Remove the quotes("") from the name string*/
+		temp = g_slist_nth_data(tokens, 3);
 		member =  util_removeQuotes((void*)temp);
-		dbg("name %s - %d", member, strlen(member));
 		memcpy(res.name, member, strlen(member));
+		dbg("name %s - %d", res.name, strlen((const char*)res.name));
 		free(member);
 		member = NULL;
-
+		res.dcs = PB_TEXT_ASCII;
+		res.name_len = strlen((const char*)res.name);
 		if(NULL != g_slist_nth_data(tokens, VAL_FOUR)) {
 			if(atoi(g_slist_nth_data(tokens, VAL_FOUR)) == VAL_ZERO) {
 				dbg("phonebook entry not hidden");
@@ -487,12 +574,12 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 			num_len =  strlen(g_slist_nth_data(tokens, VAL_SIX));
 			snprintf((char *)res.anr1, num_len+1, "%s", (char*)g_slist_nth_data(tokens, VAL_SIX));
 		}
-		
+
 		if(NULL != g_slist_nth_data(tokens, VAL_SEVEN)){
 			num_plan = atoi(g_slist_nth_data(tokens, VAL_SEVEN));
 			res.anr1_ton = _find_num_plan(num_plan);
 		}
-		
+
 		if(NULL != g_slist_nth_data(tokens, VAL_NINE)){
 			name_len = strlen(g_slist_nth_data(tokens, VAL_NINE));
 			memcpy(res.email1, g_slist_nth_data(tokens, VAL_NINE), name_len);
@@ -500,15 +587,15 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 	}
 	else{
 		dbg("RESPONSE NOK");
-		res.result = PB_FAIL;
+		pbindex_reset();
 	}
-	
-	tcore_user_request_send_response(ur, TRESP_PHONEBOOK_READRECORD, sizeof(struct tresp_phonebook_read_record), &res);
-	
-	tcore_at_tok_free(tokens);
+EXIT:
+	tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_phonebook_read_record), &res);
 	free(selected_pb);
 	selected_pb = NULL;
+	tcore_at_tok_free(tokens);
 	dbg(" Function exit");
+
 }
 
 static void on_response_update_record(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -535,7 +622,7 @@ static void on_response_update_record(TcorePending *p, int data_len, const void 
 	else{
 		dbg("error - current ur is NULL");
 	}
-
+	dbg(" Function exit");
 }
 
 static void on_response_delete_record(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -543,6 +630,8 @@ static void on_response_delete_record(TcorePending *p, int data_len, const void 
 	const TcoreATResponse *resp = data;
 	UserRequest *ur = NULL;
 	struct tresp_phonebook_delete_record res;
+
+	dbg(" Function entry ");
 
 	if(resp->success > VAL_ZERO) {
 		dbg("RESPONSE OK");
@@ -560,6 +649,7 @@ static void on_response_delete_record(TcorePending *p, int data_len, const void 
 	else{
 		dbg("error - current ur is NULL");
 	}
+	dbg(" Function exit");
 }
 
 static void _response_get_support_list(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -580,6 +670,8 @@ static void _response_get_support_list(TcorePending *p, int data_len, const void
 		return;
 	}
 
+	noti_data.b_init = FALSE;
+
 	if(resp->success > VAL_ZERO) {
 		dbg("RESPONSE OK");
 		if(resp->lines) {
@@ -587,8 +679,7 @@ static void _response_get_support_list(TcorePending *p, int data_len, const void
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) < VAL_ONE) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto EXIT;
 			}
 		}
 
@@ -628,22 +719,22 @@ static void _response_get_support_list(TcorePending *p, int data_len, const void
 				dbg("SIM barred-dialling-number");
 			}
 			pbtype = strtok (NULL, "(,)");
-			g_free(temp);
+			free(temp);
 		}
-		
+
 		noti_data.b_init = TRUE;
 		tcore_phonebook_set_support_list(o, &noti_data.support_list);
 		tcore_phonebook_set_status(o, noti_data.b_init);
-		tcore_at_tok_free(tokens);
 	}
 	else{
 		dbg("RESPONSE NOK");
-		noti_data.b_init = FALSE;
 		tcore_phonebook_set_status(o, noti_data.b_init);
 	}
-
+EXIT:
 	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_PHONEBOOK_STATUS,
 			sizeof(struct tnoti_phonebook_status), &noti_data);
+	tcore_at_tok_free(tokens);
+	dbg(" Function exit");
 }
 
 static	TReturn _get_support_list(CoreObject *o)
@@ -668,8 +759,7 @@ static	TReturn _get_support_list(CoreObject *o)
 
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, _response_get_support_list, NULL);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
-	
+
 	tcore_hal_send_request(hal, pending);
 
 	g_free(cmd_str);
@@ -686,20 +776,22 @@ static	TReturn _select(CoreObject *o, UserRequest *ur, enum tel_phonebook_type p
 	const struct treq_phonebook_get_count *req_data;
 	int *pb_type = NULL;
 	char *phonebook_type = NULL;
+	UserRequest *ur_dup = NULL;
 
 	dbg(" Function entry ");
 
 	if (!o || !ur)
 		return TCORE_RETURN_EINVAL;
-	
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
+	ur_dup = tcore_user_request_ref(ur);
 
 	phonebook_type = (char*)_get_phonebook_type(req_data->phonebook_type);
 	if(NULL == phonebook_type){
 		err("phonebook_type is NULL");
 		return TCORE_RETURN_FAILURE;
 	}
-	
+
 	pb_type = calloc(sizeof(enum tel_phonebook_type),VAL_ONE);
 	if(pb_type == NULL) {
 		err("Failed to allocate memory");
@@ -715,13 +807,55 @@ static	TReturn _select(CoreObject *o, UserRequest *ur, enum tel_phonebook_type p
 	pending = tcore_pending_new(o, VAL_ZERO);
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, _on_response_select, (void*)pb_type);
-	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
-	
+	tcore_pending_link_user_request(pending, ur_dup);
+
 	tcore_hal_send_request(hal, pending);
 
 	free(phonebook_type);
 	g_free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static	TReturn _getindexlist(CoreObject *o, UserRequest *ur, enum tel_phonebook_type pbt)
+{
+	TcoreHal *hal = NULL;
+	TcoreATRequest *req = NULL;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_phonebook_get_count *req_data;
+	int start_index = 1;
+	int *pb_type = NULL;
+	UserRequest *ur_dup = NULL;
+
+	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+
+	pb_type = calloc(sizeof(enum tel_phonebook_type),1);
+	if(pb_type == NULL) {
+		err("Failed to allocate memory");
+		return TCORE_RETURN_FAILURE;
+	}
+	*pb_type = pbt;
+
+	req_data = tcore_user_request_ref_data(ur, NULL);
+	ur_dup = tcore_user_request_ref(ur);
+
+	cmd_str = g_strdup_printf("AT+CPBR=%d,%d", start_index, __pbindex.total_count);
+	req = tcore_at_request_new(cmd_str,  "+CPBR:", TCORE_AT_MULTILINE);
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	hal = tcore_object_get_hal(o);
+	pending = tcore_pending_new(o, 0);
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, _on_response_getindexlist, (void*)pb_type);
+	tcore_pending_link_user_request(pending, ur_dup);
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
 	dbg(" Function exit");
 	return TCORE_RETURN_SUCCESS;
 }
@@ -743,8 +877,7 @@ static	TReturn s_get_count(CoreObject *o, UserRequest *ur)
 	pbt = tcore_phonebook_get_selected_type(o);
 	if (req_data->phonebook_type != pbt) {
 		dbg("req pb[%d] is different with tcore pb[%d]", req_data->phonebook_type, pbt);
-		_select(o, ur, req_data->phonebook_type);
-		return TCORE_RETURN_SUCCESS;
+		return _select(o, ur, req_data->phonebook_type);
 	}
 
 	cmd_str = g_strdup_printf("AT+CPBS?");
@@ -753,12 +886,11 @@ static	TReturn s_get_count(CoreObject *o, UserRequest *ur)
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, VAL_ZERO);
-	
+
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, on_response_get_count, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
-	
+
 	tcore_hal_send_request(hal, pending);
 
 	g_free(cmd_str);
@@ -785,8 +917,7 @@ static	TReturn s_get_info(CoreObject *o, UserRequest *ur)
 	pbt = tcore_phonebook_get_selected_type(o);
 	if (req_data->phonebook_type != pbt) {
 		dbg("req pb[%d] is different with tcore pb[%d]", req_data->phonebook_type, pbt);
-		_select(o, ur, req_data->phonebook_type);
-		return TCORE_RETURN_SUCCESS;
+		return _select(o, ur, req_data->phonebook_type);
 	}
 
 	pb_type = calloc(sizeof(enum tel_phonebook_type),VAL_ONE);
@@ -807,7 +938,6 @@ static	TReturn s_get_info(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, on_response_get_info, (void*)pb_type);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
 
 	tcore_hal_send_request(hal, pending);
 
@@ -843,10 +973,11 @@ static TReturn s_read_record(CoreObject *o, UserRequest *ur)
 	pbt = tcore_phonebook_get_selected_type(o);
 	if (req_data->phonebook_type != pbt) {
 		dbg("req pb[%d] is different with tcore pb[%d]", req_data->phonebook_type, pbt);
-		_select(o, ur, req_data->phonebook_type);
-		return TCORE_RETURN_SUCCESS;
+		return _select(o, ur, req_data->phonebook_type);
 	}
-
+	if(!__pbindex.indexlist_populated){
+		return _getindexlist(o, ur, req_data->phonebook_type);
+	}
 	pb_type = calloc(sizeof(enum tel_phonebook_type),VAL_ONE);
 	if(pb_type == NULL) {
 		err("Failed to allocate memory");
@@ -854,9 +985,8 @@ static TReturn s_read_record(CoreObject *o, UserRequest *ur)
 	}
 	*pb_type = pbt;
 	dbg("pb_type %d", *pb_type);
-
-	cmd_str = g_strdup_printf("AT+CPBR=%d,%d", req_data->index, req_data->index);
-	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+	cmd_str = g_strdup_printf("AT+CPBR=%d", __pbindex.indexlist[__pbindex.current_index]);
+	req = tcore_at_request_new(cmd_str, "+CPBR", TCORE_AT_MULTILINE);
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	hal = tcore_object_get_hal(o);
@@ -865,7 +995,6 @@ static TReturn s_read_record(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, on_response_read_record, (void*)pb_type);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
 
 	tcore_hal_send_request(hal, pending);
 
@@ -892,8 +1021,7 @@ static	TReturn s_update_record(CoreObject *o, UserRequest *ur)
 	pbt = tcore_phonebook_get_selected_type(o);
 	if (req_data->phonebook_type != pbt) {
 		dbg("req pb[%d] is different with tcore pb[%d]", req_data->phonebook_type, pbt);
-		_select(o, ur, req_data->phonebook_type);
-		return TCORE_RETURN_SUCCESS;
+		return _select(o, ur, req_data->phonebook_type);
 	}
 
 	cmd_str = g_strdup_printf("AT+CPBW=,\"%s\",%d,\"%s\"", req_data->number, ((PB_TON_INTERNATIONAL == req_data->ton) ? TON_INTERNATIONAL: TON_UNKNOWN), req_data->name);
@@ -902,11 +1030,10 @@ static	TReturn s_update_record(CoreObject *o, UserRequest *ur)
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, VAL_ZERO);
-	
+
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, on_response_update_record, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
 
 	tcore_hal_send_request(hal, pending);
 
@@ -933,8 +1060,7 @@ static	TReturn s_delete_record(CoreObject *o, UserRequest *ur)
 	pbt = tcore_phonebook_get_selected_type(o);
 	if (req_data->phonebook_type != pbt) {
 		dbg("req pb[%d] is different with tcore pb[%d]", req_data->phonebook_type, pbt);
-		_select(o, ur, req_data->phonebook_type);
-		return TCORE_RETURN_SUCCESS;
+		return _select(o, ur, req_data->phonebook_type);
 	}
 
 	cmd_str = g_strdup_printf("AT+CPBW=%d", req_data->index);
@@ -947,7 +1073,6 @@ static	TReturn s_delete_record(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, VAL_ZERO, req);
 	tcore_pending_set_response_callback(pending, on_response_delete_record, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_phonebook_message_send, NULL);
 
 	tcore_hal_send_request(hal, pending);
 

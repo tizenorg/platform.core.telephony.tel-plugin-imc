@@ -10,13 +10,15 @@ SET(INCLUDEDIR "\${prefix}/include")
 
 # Set required packages
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED glib-2.0 tcore dlog db-util)
+pkg_check_modules(pkgs REQUIRED glib-2.0 tcore dlog db-util libxml-2.0)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
 ENDFOREACH(flag)
 
-INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include/)
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include
+					/usr/include/libxml2
+					)
 
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Werror -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wdeclaration-after-statement -Wmissing-declarations -Wredundant-decls -Wcast-align")
 
@@ -39,6 +41,7 @@ SET(SRCS
 		src/s_sms.c
 		src/s_phonebook.c
 		src/s_sap.c
+		src/s_gps.c
 )
 
 

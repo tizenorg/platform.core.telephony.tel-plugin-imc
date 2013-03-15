@@ -55,9 +55,9 @@ static gboolean _query_cp_state(gpointer data)
 	CoreObject* obj = NULL;
 	TcoreHal* h = NULL;
 
-	p = (TcorePlugin*)data;
+	p = (TcorePlugin *) data;
 
-	if(cp_count > MAX_CP_QUERY_COUNT){
+	if (cp_count > MAX_CP_QUERY_COUNT) {
 		dbg("cp query counter exceeds MAX_CP_QUERY_COUNT");
 		return FALSE;
 	}
@@ -65,12 +65,11 @@ static gboolean _query_cp_state(gpointer data)
 	h = tcore_object_get_hal(obj);
 	power_state = tcore_hal_get_power_state(h);
 
-	if(TRUE == power_state){
+	if (TRUE == power_state) {
 		dbg("CP READY");
 		s_modem_send_poweron(p);
 		return FALSE;
-	}
-	else{
+	} else {
 		dbg("CP NOT READY, cp_count :%d", cp_count);
 		cp_count++;
 		return TRUE;
@@ -209,6 +208,7 @@ static gboolean on_init(TcorePlugin *p)
 	s_sms_init(p, h);
 	s_phonebook_init(p, h);
 	s_sap_init(p, h);
+	s_gps_init(p, h);
 
 	g_free(cp_name);
 

@@ -108,6 +108,7 @@ static void on_timeout_modem_poweron(TcorePending *p, void *user_data)
 {
 	unsigned int data_len = 0;
 	char data[] = "AT+CPAS";
+
 	dbg("TIMEOUT for 1st AT Command !!!!! NO Response for initial AT command. Resending it");
 	data_len = sizeof(data);
 
@@ -171,6 +172,7 @@ void prepare_and_send_pending_request(TcorePlugin *plugin, char *co_name, const 
 void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
+
 	dbg("entry of on_response_bootup_subscription() - response comes\n");
 
 	if (resp->success) {
@@ -183,6 +185,7 @@ void on_response_bootup_subscription(TcorePending *p, int data_len, const void *
 void on_response_last_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
+
 	dbg("enry of on_response_last_bootup_subscription() - final response comes\n");
 	if (resp->success) {
 		dbg("SEND OK");
@@ -197,6 +200,7 @@ static void on_response_power_off(TcorePending *p, int data_len, const void *dat
 {
 	CoreObject *o = 0;
 	TcoreHal *h = 0;
+
 	o = tcore_pending_ref_core_object(p);
 	h = tcore_object_get_hal(o);
 
@@ -560,6 +564,10 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 
 	/* XBCSTAT subscription */
 	prepare_and_send_pending_request(plugin, "sap", "at+xbcstat=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+	/* AGPS- assist data and reset assist data subscription */
+	prepare_and_send_pending_request(plugin, "gps", "at+cposr=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
+
+	prepare_and_send_pending_request(plugin, "gps", "at+xcposr=1", NULL, TCORE_AT_NO_RESULT, on_response_bootup_subscription);
 
 	/* text/pdu mode subscription*/
 	prepare_and_send_pending_request(plugin, "umts_sms", "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, on_response_last_bootup_subscription);
@@ -574,6 +582,7 @@ static void on_response_setupmux(TcorePending *p, int data_len, const void *data
 	TcorePlugin *plugin = NULL;
 	TcoreHal *hal = NULL;
 	TReturn ret;
+
 	dbg("Entry");
 
 	/* IMC Plugin dereferenced from pending request */
@@ -600,6 +609,7 @@ static void setup_mux(CoreObject *o)
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
+
 	dbg("Entered");
 
 	/* HAL has type itself,
@@ -622,6 +632,7 @@ static void setup_mux(CoreObject *o)
 static gboolean on_event_mux_channel_up(CoreObject *o, const void *event_info, void *user_data)
 {
 	TcorePlugin *plugin = NULL;
+
 	dbg("Entry");
 
 	plugin = (TcorePlugin *) user_data;
@@ -784,7 +795,7 @@ static TReturn get_imei(CoreObject *o, UserRequest *ur)
 	TcorePending *pending = NULL;
 
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
+	if (FALSE == tcore_hal_get_power_state(hal)) {
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}
@@ -812,7 +823,7 @@ static TReturn get_version(CoreObject *o, UserRequest *ur)
 	TcorePending *pending = NULL;
 
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
+	if (FALSE == tcore_hal_get_power_state(hal)) {
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}
@@ -841,7 +852,7 @@ static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
 	char *cmd_str = NULL;
 
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
+	if (FALSE == tcore_hal_get_power_state(hal)) {
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}

@@ -112,20 +112,7 @@ static TReturn _get_file_info(CoreObject *o, UserRequest *ur, const enum tel_sim
 static gboolean _get_file_data(CoreObject *o, UserRequest *ur, const enum tel_sim_file_id ef, const int offset, const int length);
 static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_sim_file_id ef, const int index, const int length);
 static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status);
-static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, void *user_data);      // from Kernel
 extern gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
-
-static void on_confirmation_sim_message_send(TcorePending *p, gboolean result, void *user_data)
-{
-	dbg("on_confirmation_sim_message_send - msg out from queue.\n");
-
-	if (result == FALSE) {
-		/* Fail */
-		dbg("SEND FAIL");
-	} else {
-		dbg("SEND OK");
-	}
-}
 
 static enum tcore_response_command _find_resp_command(UserRequest *ur)
 {
@@ -248,7 +235,7 @@ static int _sim_get_current_pin_facility(enum s_sim_sec_op_e op)
 	int ret_type = 0;
 
 	dbg("current sec_op[%d]", op);
-	
+
 	switch (op) {
 	case SEC_PIN1_VERIFY:
 	case SEC_PIN1_CHANGE:
@@ -1659,7 +1646,6 @@ static gboolean _get_sim_type(CoreObject *o)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, _response_get_sim_type, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
 	tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
@@ -1728,8 +1714,6 @@ static gboolean _get_file_data(CoreObject *o, UserRequest *ur, const enum tel_si
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, _response_get_file_data, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-
 	tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
@@ -1765,8 +1749,6 @@ static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, _response_get_file_data, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-
 	tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
@@ -1851,7 +1833,6 @@ static TReturn _get_retry_count(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, _on_response_get_retry_count, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
 	tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
@@ -2032,8 +2013,6 @@ OUT:
 	return TRUE;
 }
 
-
-
 static void on_response_verify_pins(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
@@ -2062,7 +2041,7 @@ static void on_response_verify_pins(TcorePending *p, int data_len, const void *d
 			if (tcore_sim_get_status(co_sim) != SIM_STATUS_INIT_COMPLETED)
 				_sim_status_update(co_sim, SIM_STATUS_INITIALIZING);
 		}
-		tcore_user_request_send_response(ur, TRESP_SIM_VERIFY_PINS, sizeof(struct tresp_sim_verify_pins), &res);
+		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_verify_pins), &res);
 	} else {
 		dbg("RESPONSE NOK");
 		line = (const char *) resp->final_response;
@@ -2070,6 +2049,7 @@ static void on_response_verify_pins(TcorePending *p, int data_len, const void *d
 		if (g_slist_length(tokens) < 1) {
 			dbg("err cause not specified or string corrupted");
 			res.result = TCORE_RETURN_3GPP_ERROR;
+			tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_verify_pins), &res);
 		} else {
 			err = atoi(g_slist_nth_data(tokens, 0));
 			dbg("on_response_verify_pins: err = %d", err);
@@ -2106,7 +2086,7 @@ static void on_response_verify_puks(TcorePending *p, int data_len, const void *d
 		dbg("RESPONSE OK");
 		res.result = SIM_PIN_OPERATION_SUCCESS;
 		res.pin_type = _sim_get_current_pin_facility(sp->current_sec_op);
-		tcore_user_request_send_response(ur, TRESP_SIM_VERIFY_PUKS, sizeof(struct tresp_sim_verify_pins), &res);
+		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_verify_pins), &res);
 	} else {
 		dbg("RESPONSE NOK");
 		line = (const char *) resp->final_response;
@@ -2115,6 +2095,7 @@ static void on_response_verify_puks(TcorePending *p, int data_len, const void *d
 		if (g_slist_length(tokens) < 1) {
 			dbg("err cause not specified or string corrupted");
 			res.result = TCORE_RETURN_3GPP_ERROR;
+			tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_verify_pins), &res);
 		} else {
 			err = atoi(g_slist_nth_data(tokens, 0));
 			queue = tcore_object_ref_user_data(co_sim);
@@ -2150,7 +2131,7 @@ static void on_response_change_pins(TcorePending *p, int data_len, const void *d
 		dbg("RESPONSE OK");
 		res.result = SIM_PIN_OPERATION_SUCCESS;
 		res.pin_type = _sim_get_current_pin_facility(sp->current_sec_op);
-		tcore_user_request_send_response(ur, TRESP_SIM_CHANGE_PINS, sizeof(struct tresp_sim_change_pins), &res);
+		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_change_pins), &res);
 	} else {
 		dbg("RESPONSE NOK");
 		line = (const char *) resp->final_response;
@@ -2159,6 +2140,7 @@ static void on_response_change_pins(TcorePending *p, int data_len, const void *d
 		if (g_slist_length(tokens) < 1) {
 			dbg("err cause not specified or string corrupted");
 			res.result = TCORE_RETURN_3GPP_ERROR;
+			tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_change_pins), &res);
 		} else {
 			err = atoi(g_slist_nth_data(tokens, 0));
 			queue = tcore_object_ref_user_data(co_sim);
@@ -2188,7 +2170,7 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
 
 	memset(&res, 0, sizeof(struct tresp_sim_get_facility_status));
 
-	res.result = SIM_PIN_OPERATION_SUCCESS;
+	res.result = SIM_INCOMPATIBLE_PIN_OPERATION;
 	res.type = _sim_get_current_pin_facility(sp->current_sec_op);
 
 	if (resp->success > 0) {
@@ -2198,18 +2180,16 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 1) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto OUT;
 			}
 		}
 		res.b_enable = atoi(g_slist_nth_data(tokens, 0));
 	} else {
 		dbg("RESPONSE NOK");
-		res.result = SIM_INCOMPATIBLE_PIN_OPERATION;
 	}
-
+OUT:
 	if (ur) {
-		tcore_user_request_send_response(ur, TRESP_SIM_GET_FACILITY_STATUS,
+		tcore_user_request_send_response(ur, _find_resp_command(ur),
 										 sizeof(struct tresp_sim_get_facility_status), &res);
 	}
 	tcore_at_tok_free(tokens);
@@ -2235,7 +2215,7 @@ static void on_response_enable_facility(TcorePending *p, int data_len, const voi
 
 	memset(&res, 0, sizeof(struct tresp_sim_enable_facility));
 
-	res.result = SIM_PIN_OPERATION_SUCCESS;
+	res.result = SIM_CARD_ERROR;
 	res.type = _sim_get_current_pin_facility(sp->current_sec_op);
 
 	if (resp->success > 0) {
@@ -2245,13 +2225,15 @@ static void on_response_enable_facility(TcorePending *p, int data_len, const voi
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 1) {
 				msg("invalid message");
+				tcore_user_request_send_response(ur, _find_resp_command(ur),
+											 sizeof(struct tresp_sim_enable_facility), &res);
 				tcore_at_tok_free(tokens);
 				return;
 			}
 		}
 		res.result = SIM_PIN_OPERATION_SUCCESS;
 		if (ur) {
-			tcore_user_request_send_response(ur, TRESP_SIM_ENABLE_FACILITY,
+			tcore_user_request_send_response(ur, _find_resp_command(ur),
 											 sizeof(struct tresp_sim_enable_facility), &res);
 		}
 		tcore_at_tok_free(tokens);
@@ -2283,7 +2265,7 @@ static void on_response_disable_facility(TcorePending *p, int data_len, const vo
 
 	memset(&res, 0, sizeof(struct tresp_sim_disable_facility));
 
-	res.result = SIM_PIN_OPERATION_SUCCESS;
+	res.result = SIM_CARD_ERROR;
 	res.type = _sim_get_current_pin_facility(sp->current_sec_op);
 
 	if (resp->success > 0) {
@@ -2293,13 +2275,15 @@ static void on_response_disable_facility(TcorePending *p, int data_len, const vo
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 1) {
 				msg("invalid message");
+				tcore_user_request_send_response(ur, _find_resp_command(ur),
+											 sizeof(struct tresp_sim_disable_facility), &res);
 				tcore_at_tok_free(tokens);
 				return;
 			}
 		}
 		res.result = SIM_PIN_OPERATION_SUCCESS;
 		if (ur) {
-			tcore_user_request_send_response(ur, TRESP_SIM_DISABLE_FACILITY,
+			tcore_user_request_send_response(ur, _find_resp_command(ur),
 											 sizeof(struct tresp_sim_disable_facility), &res);
 		}
 		tcore_at_tok_free(tokens);
@@ -2428,7 +2412,7 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 	struct tresp_sim_set_data resp_language = {0, };
 	struct s_sim_property *sp = NULL;
 	GSList *tokens = NULL;
-	enum tel_sim_access_result result;
+	enum tel_sim_access_result result = SIM_CARD_ERROR;
 	const char *line;
 	int sw1 = 0;
 	int sw2 = 0;
@@ -2446,8 +2430,7 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 2) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto OUT;
 			}
 		}
 		sw1 = atoi(g_slist_nth_data(tokens, 0));
@@ -2462,10 +2445,11 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 		dbg("RESPONSE NOK");
 		result = SIM_ACCESS_FAILED;
 	}
-
+OUT:
 	switch (sp->file_id) {
 	case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
 	case SIM_EF_USIM_CFIS:
+		resp_cf.result = result;
 		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_set_data), &resp_cf);
 		break;
 
@@ -2473,6 +2457,7 @@ static void on_response_update_file(TcorePending *p, int data_len, const void *d
 	case SIM_EF_LP:
 	case SIM_EF_USIM_LI:
 	case SIM_EF_USIM_PL:
+		resp_language.result = result;
 		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_set_data), &resp_language);
 		break;
 
@@ -2489,7 +2474,6 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 	const TcoreATResponse *resp = data;
 	UserRequest *ur = NULL;
 	CoreObject *co_sim = NULL;
-	struct s_sim_property *sp = NULL;
 	GSList *tokens = NULL;
 	struct tresp_sim_transmit_apdu res;
 	const char *line;
@@ -2497,14 +2481,13 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 	dbg(" Function entry ");
 
 	co_sim = tcore_pending_ref_core_object(p);
-	sp = tcore_sim_ref_userdata(co_sim);
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_transmit_apdu));
+	res.result = SIM_ACCESS_FAILED;
 
 	if (resp->success > 0) {
 		dbg("RESPONSE OK");
-		res.result = SIM_ACCESS_SUCCESS;
 		if (resp->lines) {
 			char *tmp = NULL;
 			char *decoded_data = NULL;
@@ -2512,8 +2495,7 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 2) {
 				msg("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto OUT;
 			}
 			res.apdu_resp_length = atoi(g_slist_nth_data(tokens, 0)) / 2;
 
@@ -2523,14 +2505,61 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 			memcpy((char *) res.apdu_resp, decoded_data, res.apdu_resp_length);
 			free(tmp);
 			free(decoded_data);
+			res.result = SIM_ACCESS_SUCCESS;
 		}
 	} else {
 		dbg("RESPONSE NOK");
-		res.result = SIM_ACCESS_FAILED;
 	}
-	ur = tcore_pending_ref_user_request(p);
+OUT:
 	if (ur) {
 		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_transmit_apdu), &res);
+	}
+	tcore_at_tok_free(tokens);
+	dbg(" Function exit");
+}
+
+static void on_response_get_atr(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	struct tresp_sim_get_atr res;
+	const char *line;
+
+	dbg(" Function entry ");
+
+	memset(&res, 0, sizeof(struct tresp_sim_get_atr));
+	ur = tcore_pending_ref_user_request(p);
+
+	res.result = SIM_ACCESS_FAILED;
+	if (resp->success > 0) {
+		dbg("RESPONSE OK");
+		if (resp->lines) {
+			char *tmp = NULL;
+			char *decoded_data = NULL;
+			line = (const char *) resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				goto OUT;
+			}
+
+			tmp = util_removeQuotes(g_slist_nth_data(tokens, 0));
+			decoded_data = util_hexStringToBytes(tmp);
+
+			res.atr_length = strlen(decoded_data);
+			memcpy((char *) res.atr, decoded_data, res.atr_length);
+			free(tmp);
+			free(decoded_data);
+			res.result = SIM_ACCESS_SUCCESS;
+		}
+	} else {
+		dbg("RESPONSE NOK");
+	}
+
+OUT:
+	if (ur) {
+		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_get_atr), &res);
 	}
 	tcore_at_tok_free(tokens);
 	dbg(" Function exit");
@@ -2544,8 +2573,12 @@ static TReturn s_verify_pins(CoreObject *o, UserRequest *ur)
 	char *cmd_str = NULL;
 	const struct treq_sim_verify_pins *req_data = NULL;
 	struct s_sim_property *sp = NULL;
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2556,9 +2589,6 @@ static TReturn s_verify_pins(CoreObject *o, UserRequest *ur)
 	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->pin_type == SIM_PTYPE_PIN1) {
 		sp->current_sec_op = SEC_PIN1_VERIFY;
@@ -2583,12 +2613,11 @@ static TReturn s_verify_pins(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_verify_pins, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_verify_puks(CoreObject *o, UserRequest *ur)
@@ -2599,8 +2628,12 @@ static TReturn s_verify_puks(CoreObject *o, UserRequest *ur)
 	char *cmd_str = NULL;
 	const struct treq_sim_verify_puks *req_data;
 	struct s_sim_property *sp = NULL;
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2611,9 +2644,6 @@ static TReturn s_verify_puks(CoreObject *o, UserRequest *ur)
 	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->puk_type == SIM_PTYPE_PUK1) {
 		sp->current_sec_op = SEC_PUK1_VERIFY;
@@ -2631,12 +2661,11 @@ static TReturn s_verify_puks(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_verify_puks, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_change_pins(CoreObject *o, UserRequest *ur)
@@ -2649,8 +2678,12 @@ static TReturn s_change_pins(CoreObject *o, UserRequest *ur)
 	struct s_sim_property *sp = NULL;
 	char *pin1 = "SC";
 	char *pin2 = "P2";
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2661,9 +2694,6 @@ static TReturn s_change_pins(CoreObject *o, UserRequest *ur)
 	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->type == SIM_PTYPE_PIN1) {
 		sp->current_sec_op = SEC_PIN1_CHANGE;
@@ -2681,12 +2711,11 @@ static TReturn s_change_pins(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_change_pins, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
@@ -2696,11 +2725,14 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 	TcorePending *pending = NULL;
 	char *cmd_str = NULL;
 	const struct treq_sim_get_facility_status *req_data;
-	struct s_sim_property *sp = NULL;
 	char *fac = "SC";
 	int mode = 2;       /* 0:unlock, 1:lock, 2:query*/
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2708,12 +2740,8 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_ENOSYS;
 	}
 
-	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->type == SIM_FACILITY_PS) {
 		fac = "PS";                             /*PH-SIM, Lock PHone to SIM/UICC card*/
@@ -2740,12 +2768,11 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_get_facility_status, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_enable_facility(CoreObject *o, UserRequest *ur)
@@ -2758,8 +2785,12 @@ static TReturn s_enable_facility(CoreObject *o, UserRequest *ur)
 	struct s_sim_property *sp = NULL;
 	char *fac = "SC";
 	int mode = 1;       /* 0:unlock, 1:lock, 2:query*/
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2770,9 +2801,6 @@ static TReturn s_enable_facility(CoreObject *o, UserRequest *ur)
 	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->type == SIM_FACILITY_PS) {
 		fac = "PS";                             /*PH-SIM, Lock PHone to SIM/UICC card*/
@@ -2806,12 +2834,11 @@ static TReturn s_enable_facility(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_enable_facility, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_disable_facility(CoreObject *o, UserRequest *ur)
@@ -2824,8 +2851,12 @@ static TReturn s_disable_facility(CoreObject *o, UserRequest *ur)
 	struct s_sim_property *sp = NULL;
 	char *fac = "SC";
 	int mode = 0;       /* 0:unlock, 1:lock, 2:query*/
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -2836,9 +2867,6 @@ static TReturn s_disable_facility(CoreObject *o, UserRequest *ur)
 	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	if (req_data->type == SIM_FACILITY_PS) {
 		fac = "PS";                             /*PH-SIM, Lock PHone to SIM/UICC card*/
@@ -2872,12 +2900,11 @@ static TReturn s_disable_facility(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_disable_facility, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
@@ -2888,21 +2915,20 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
 	char *cmd_str = NULL;
 	char *lock_type = NULL;
 	const struct treq_sim_get_lock_info *req_data;
-	struct s_sim_property *sp = NULL;
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}
-	sp = tcore_sim_ref_userdata(o);
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	switch (req_data->type) {
 	case SIM_FACILITY_PS:
@@ -2944,12 +2970,11 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_get_lock_info, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_read_file(CoreObject *o, UserRequest *ur)
@@ -2957,13 +2982,12 @@ static TReturn s_read_file(CoreObject *o, UserRequest *ur)
 	TReturn api_ret = TCORE_RETURN_SUCCESS;
 	enum tcore_request_command command;
 
-	command = tcore_user_request_get_command(ur);
-
 	dbg(" Function entry ");
 
 	if (!o || !ur)
 		return TCORE_RETURN_EINVAL;
 
+	command = tcore_user_request_get_command(ur);
 	if(FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))){
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
@@ -3056,7 +3080,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	TcoreATRequest *req;
 	TcorePending *pending = NULL;
 	char *cmd_str = NULL;
-	TReturn api_ret = TCORE_RETURN_SUCCESS;
+	TReturn ret = TCORE_RETURN_SUCCESS;
 	char *encoded_data = NULL;
 	int encoded_len = 0;
 	enum tcore_request_command command;
@@ -3078,6 +3102,10 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 
 	dbg(" Function entry ");
 
+	if (!o || !ur) {
+		return TCORE_RETURN_EINVAL;
+	}
+
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
 		dbg("cp not ready/n");
@@ -3085,10 +3113,6 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	}
 
 	pending = tcore_pending_new(o, 0);
-
-	if (!o || !ur) {
-		return TCORE_RETURN_EINVAL;
-	}
 
 	switch (command) {
 	case TREQ_SIM_SET_LANGUAGE:
@@ -3129,7 +3153,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 			dbg("encoded_data - %s ---", encoded_data);
 			dbg("out_length - %d ---", out_length);
 		} else {
-			api_ret = TCORE_RETURN_ENOSYS;
+			ret = TCORE_RETURN_ENOSYS;
 		}
 		break;
 
@@ -3160,7 +3184,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 
 	default:
 		dbg("error - not handled update treq command[%d]", command);
-		api_ret = TCORE_RETURN_EINVAL;
+		ret = TCORE_RETURN_EINVAL;
 		break;
 	}
 	file_meta.file_id = ef;
@@ -3177,9 +3201,8 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_update_file, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
+	ret = tcore_hal_send_request(hal, pending);
 
-	tcore_hal_send_request(hal, pending);
 	if (NULL != encoded_data) {
 		g_free(encoded_data);
 	}
@@ -3190,7 +3213,7 @@ static TReturn s_update_file(CoreObject *o, UserRequest *ur)
 	}
 
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
 }
 
 static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
@@ -3203,8 +3226,12 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	int apdu_len = 0;
 	int result = 0;
 	const struct treq_sim_transmit_apdu *req_data;
+	TReturn ret = TCORE_RETURN_FAILURE;
 
 	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
 	if(FALSE == tcore_hal_get_power_state(hal)){
@@ -3214,9 +3241,6 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
-
-	if (!o || !ur)
-		return TCORE_RETURN_EINVAL;
 
 	apdu = (char *) malloc((2 * req_data->apdu_length) + 1);
 	memset(apdu, 0x00, (2 * req_data->apdu_length) + 1);
@@ -3229,13 +3253,46 @@ static TReturn s_transmit_apdu(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_transmit_apdu, hal);
 	tcore_pending_link_user_request(pending, ur);
-	tcore_pending_set_send_callback(pending, on_confirmation_sim_message_send, NULL);
-	tcore_hal_send_request(hal, pending);
+	ret = tcore_hal_send_request(hal, pending);
 
 	free(cmd_str);
 	free(apdu);
 	dbg(" Function exit");
-	return TCORE_RETURN_SUCCESS;
+	return ret;
+}
+
+static TReturn s_get_atr(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal = NULL;
+	TcoreATRequest *req = NULL;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	TReturn ret = TCORE_RETURN_FAILURE;
+
+	dbg(" Function entry ");
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+	pending = tcore_pending_new(o, 0);
+
+	cmd_str = g_strdup_printf("AT+XGATR");
+	req = tcore_at_request_new(cmd_str, "+XGATR:", TCORE_AT_SINGLELINE);
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_get_atr, hal);
+	tcore_pending_link_user_request(pending, ur);
+	ret = tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return ret;
 }
 
 static struct tcore_sim_operations sim_ops = {
@@ -3249,7 +3306,7 @@ static struct tcore_sim_operations sim_ops = {
 	.read_file = s_read_file,
 	.update_file = s_update_file,
 	.transmit_apdu = s_transmit_apdu,
-	.get_atr = NULL,
+	.get_atr = s_get_atr,
 	.req_authentication = NULL,
 };
 
