@@ -99,7 +99,7 @@ typedef struct {
 
 
 static void prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback);
-static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data);     // from Kernel
+static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data);
 static void on_response_network_registration(TcorePending *p, int data_len, const void *data, void *user_data);
 static void on_response_enable_proactive_command(TcorePending *p, int data_len, const void *data, void *user_data);
 
@@ -398,40 +398,26 @@ OUT:
 	return;
 }
 
-static gboolean on_event_bootup_sim_status(CoreObject *o, const void *event_info, void *user_data)
+static enum tcore_hook_return on_hook_sim_status(Server *s, CoreObject *source, enum tcore_notification_command command,
+											   unsigned int data_len, void *data, void *user_data)
 {
-	GSList *tok = NULL;
-	GSList *lines = NULL;
-	int value = -1;
-	char *line = NULL;
+	const struct tnoti_sim_status *sim = data;
+	CoreObject *co_sat;
+	CoreObject *co_network;
+	TcorePlugin *plugin = tcore_object_ref_plugin(source);
 
-	lines = (GSList *) event_info;
-	if (1 != g_slist_length(lines)) {
-		dbg("unsolicited msg but multiple line");
-		goto OUT;
-	}
-	line = (char *) (lines->data);
-	dbg("on_bootup_event_sim_status notification : %s", line);
+	co_sat = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SAT);
+	co_network = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_NETWORK);
 
-	tok = tcore_at_tok_new(line);
-	value = atoi(g_slist_nth_data(tok, 0));
-
-	if (7 == value) {
-		dbg("SIM ready. request COPS & remove callback");
-		dbg("power on done set for proactive command receiving mode");
-		prepare_and_send_pending_request(o, "AT+CFUN=6", NULL, TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
-		prepare_and_send_pending_request(o, "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_network_registration);
-		return FALSE;
+	if (sim->sim_status == SIM_STATUS_INIT_COMPLETED) {
+		dbg("SIM ready for attach");
+		dbg("Enable STK and Fetching of proactive Commands");
+		prepare_and_send_pending_request(co_sat, "AT+CFUN=6", NULL, TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
+		prepare_and_send_pending_request(co_network, "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_network_registration);
 	}
 
-OUT:
-	if (tok != NULL)
-		tcore_at_tok_free(tok);
-
-	return TRUE;
+	return TCORE_HOOK_RETURN_CONTINUE;
 }
-
-
 
 gboolean modem_power_on(TcorePlugin *p)
 {
@@ -622,8 +608,7 @@ gboolean s_modem_init(TcorePlugin *cp, CoreObject *co_modem)
 	sn_property = g_try_new0(TelMiscSNInformation, 1);
 	tcore_plugin_link_property(cp, "SN", sn_property);
 
-	dbg("Registering for +XSIM event");
-	tcore_object_override_callback(co_modem, "+XSIM", on_event_bootup_sim_status, NULL);
+	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp), TNOTI_SIM_STATUS, on_hook_sim_status, co_modem);
 
 	dbg("Exit");
 
