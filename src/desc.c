@@ -28,6 +28,7 @@
 #include <core_object.h>
 #include <hal.h>
 #include <at.h>
+#include <server.h>
 
 #include "s_network.h"
 #include "s_modem.h"
@@ -40,6 +41,7 @@
 #include "s_sat.h"
 #include "s_phonebook.h"
 #include "s_gps.h"
+
 
 static gboolean on_load()
 {
@@ -225,6 +227,7 @@ struct object_deinitializer deinit_table = {
 
 static gboolean on_init(TcorePlugin *p)
 {
+	CoreObject *co_modem;
 	if (!p)
 		return FALSE;
 
@@ -235,7 +238,8 @@ static gboolean on_init(TcorePlugin *p)
 	}
 
 	dbg("i'm init!");
-
+	co_modem = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_MODEM);
+	tcore_server_send_notification(tcore_plugin_ref_server(p), co_modem, TNOTI_MODEM_ADDED, 0, NULL);
 	modem_subscribe_events(p);
 
 	return TRUE;
