@@ -114,6 +114,32 @@ static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_
 static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status);
 extern gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
+static void sim_prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback)
+{
+	TcoreATRequest *req = NULL;
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	TReturn ret;
+
+
+	hal = tcore_object_get_hal(co);
+	dbg("hal: %p", hal);
+
+	pending = tcore_pending_new(co, 0);
+	if (!pending)
+		dbg("Pending is NULL");
+	req = tcore_at_request_new(at_cmd, prefix, at_cmd_type);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, callback, NULL);
+	tcore_pending_link_user_request(pending, NULL); // set user request to NULL - this is internal request
+	ret = tcore_hal_send_request(hal, pending);
+	return;
+}
+
+
 static enum tcore_response_command _find_resp_command(UserRequest *ur)
 {
 	enum tcore_request_command command;
@@ -587,6 +613,7 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 	case SIM_EF_MBDN:
 	case SIM_EF_CPHS_MAILBOX_NUMBERS:
 	case SIM_EF_CPHS_INFORMATION_NUMBERS:
+	case SIM_EF_MSISDN:
 		file_meta->current_index++;
 		_get_file_record(o, ur, ef, file_meta->current_index, file_meta->rec_length);
 		break;
@@ -1672,7 +1699,7 @@ static TReturn _get_file_info(CoreObject *o, UserRequest *ur, const enum tel_sim
 	trt = tcore_user_request_set_metainfo(ur, sizeof(struct s_sim_property), &file_meta);
 	dbg("trt[%d]", trt);
 	cmd_str = g_strdup_printf("AT+CRSM=192, %d", ef);           /*command - 192 : GET RESPONSE*/
-	dbg("cmd_str: %x", cmd_str);
+	dbg("cmd_str: %s", cmd_str);
 
 	pending = tcore_at_pending_new(o, cmd_str, "+CRSM:", TCORE_AT_SINGLELINE, _response_get_file_info, NULL);
 	tcore_pending_link_user_request(pending, ur);
@@ -1875,7 +1902,7 @@ OUT:
 
 static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void *user_data)
 {
-	UserRequest *ur = NULL;
+
 	struct s_sim_property *sp = NULL;
 	enum tel_sim_status sim_status = SIM_STATUS_INITIALIZING;
 	GSList *tokens = NULL;
@@ -1895,12 +1922,16 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	line = (char *) (lines->data);
 
 	tokens = tcore_at_tok_new(line);
-	if (g_slist_length(tokens) != 1) {
+
+	if (g_slist_length(tokens) == 4) {
+		sim_state = atoi(g_slist_nth_data(tokens, 1));
+	} else if (g_slist_length(tokens) == 1)
+		sim_state = atoi(g_slist_nth_data(tokens, 0));
+	else {
 		msg("invalid message");
 		tcore_at_tok_free(tokens);
 		return TRUE;
 	}
-	sim_state = atoi(g_slist_nth_data(tokens, 0));
 
 	switch (sim_state) {
 	case 0:                                                         // sim state = SIM not present
@@ -2011,6 +2042,42 @@ OUT:
 	if (NULL != tokens)
 		tcore_at_tok_free(tokens);
 	return TRUE;
+}
+
+static void on_response_get_sim_status(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	CoreObject *co_sim = NULL;
+
+	dbg(" Function entry ");
+
+	co_sim = tcore_pending_ref_core_object(p);
+
+	if (resp->success > 0) {
+		dbg("RESPONSE OK");
+		if (resp->lines)
+			on_event_pin_status(co_sim, resp->lines, NULL);
+	} else {
+		dbg("RESPONSE NOK");
+	}
+
+	dbg(" Function exit");
+}
+
+static enum tcore_hook_return on_hook_modem_power(Server *s, CoreObject *source, enum tcore_notification_command command,
+											   unsigned int data_len, void *data, void *user_data)
+{
+	TcorePlugin *plugin = tcore_object_ref_plugin(source);
+	CoreObject *co_sim = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SIM);
+
+	if (co_sim == NULL)
+		return TCORE_HOOK_RETURN_CONTINUE;
+
+	dbg("Get SIM status");
+	
+	sim_prepare_and_send_pending_request(co_sim, "AT+XSIMSTATE?", "+XSIMSTATE:", TCORE_AT_SINGLELINE, on_response_get_sim_status);
+
+	return TCORE_HOOK_RETURN_CONTINUE;
 }
 
 static void on_response_verify_pins(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -3326,6 +3393,8 @@ gboolean s_sim_init(TcorePlugin *cp, CoreObject *co_sim)
 
 	tcore_object_override_callback(co_sim, "+XLOCK", on_event_facility_lock_status, NULL);
 	tcore_object_override_callback(co_sim, "+XSIM", on_event_pin_status, NULL);
+
+	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp), TNOTI_MODEM_POWER, on_hook_modem_power, co_sim);
 
 	dbg("Exit");
 
