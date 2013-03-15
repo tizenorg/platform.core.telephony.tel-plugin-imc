@@ -98,7 +98,6 @@ struct s_sim_property {
 	int rec_count; /**< Number of records in file */
 	int data_size; /**< File size */
 	int current_index; /**< current index to read */
-	enum tel_sim_status first_recv_status;
 	enum s_sim_sec_op_e current_sec_op; /**< current index to read */
 	struct tel_sim_mbi_list mbi_list;
 	struct tel_sim_mb_number mb_list[SIM_MSP_CNT_MAX*5];
@@ -828,7 +827,13 @@ static void _response_get_sim_type(TcorePending *p, int data_len, const void *da
 	}
 
 	tcore_sim_set_type(co_sim, sim_type);
-	_sim_status_update(co_sim, sp->first_recv_status);
+
+	if (sim_type != SIM_TYPE_UNKNOWN) {
+		/* set user request for using ur metainfo set/ref functionality */
+		ur = tcore_user_request_new(NULL, NULL);
+		_get_file_info(co_sim, ur, SIM_EF_IMSI);
+	}
+
 	tcore_at_tok_free(tokens);
 	dbg(" Function exit");
 }
@@ -1996,8 +2001,10 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 
 	switch (sim_status) {
 	case SIM_STATUS_INIT_COMPLETED:
-		ur = tcore_user_request_new(NULL, NULL);     // this is for using ur metainfo set/ref functionality.
-		_get_file_info(o, ur, SIM_EF_IMSI);
+		if (tcore_sim_get_type(o) == SIM_TYPE_UNKNOWN)
+			_get_sim_type(o);
+		else
+			_sim_status_update(o, sim_status);
 		break;
 
 	case SIM_STATUS_INITIALIZING:
@@ -2009,17 +2016,7 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	case SIM_STATUS_SPCK_REQUIRED:
 	case SIM_STATUS_CCK_REQUIRED:
 	case SIM_STATUS_LOCK_REQUIRED:
-		if (sp->first_recv_status == SIM_STATUS_UNKNOWN) {
-			dbg("first received sim status[%d]", sim_status);
-			sp->first_recv_status = sim_status;
-			_get_sim_type(o);
-		} else {
-			dbg("second or later received lock status[%d]", sim_status);
-			if (tcore_sim_get_status(o) != SIM_STATUS_INIT_COMPLETED) {
-				dbg("sim is not init complete in telephony side yet");
-				_sim_status_update(o, sim_status);
-			}
-		}
+		_sim_status_update(o, sim_status);
 		break;
 
 	case SIM_STATUS_CARD_REMOVED:
@@ -2029,6 +2026,8 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 			dbg("[SIM]SIM CARD REMOVED!!");
 			sim_status = SIM_STATUS_CARD_REMOVED;
 		}
+
+		tcore_sim_set_type(o, SIM_TYPE_UNKNOWN);
 		_sim_status_update(o, sim_status);
 		break;
 
