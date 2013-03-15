@@ -778,11 +778,13 @@ static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status)
 {
 	struct tnoti_sim_status noti_data = {0, };
 
-	dbg("tcore_sim_set_status and send noti w/ [%d]", sim_status);
-	tcore_sim_set_status(o, sim_status);
-	noti_data.sim_status = sim_status;
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SIM_STATUS,
-								   sizeof(struct tnoti_sim_status), &noti_data);
+	if (sim_status != tcore_sim_get_status(o)) {
+		dbg("tcore_sim_set_status and send noti w/ [%d]", sim_status);
+		tcore_sim_set_status(o, sim_status);
+		noti_data.sim_status = sim_status;
+		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SIM_STATUS,
+									   sizeof(struct tnoti_sim_status), &noti_data);
+	}
 }
 
 static void _response_get_sim_type(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -1699,7 +1701,7 @@ static TReturn _get_file_info(CoreObject *o, UserRequest *ur, const enum tel_sim
 	dbg(" Function entry ");
 
 	file_meta.file_id = ef;
-	dbg("file_meta.file_id: %d", file_meta.file_id);
+	dbg("file_meta.file_id: [0x%02x]", file_meta.file_id);
 	hal = tcore_object_get_hal(o);
 	dbg("hal: %x", hal);
 
@@ -2091,7 +2093,7 @@ static enum tcore_hook_return on_hook_modem_power(Server *s, CoreObject *source,
 		return TCORE_HOOK_RETURN_CONTINUE;
 
 	dbg("Get SIM status");
-	
+
 	sim_prepare_and_send_pending_request(co_sim, "AT+XSIMSTATE?", "+XSIMSTATE:", TCORE_AT_SINGLELINE, on_response_get_sim_status);
 
 	return TCORE_HOOK_RETURN_CONTINUE;

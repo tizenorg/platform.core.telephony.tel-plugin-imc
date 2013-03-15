@@ -24,6 +24,7 @@
 #include <sys/utsname.h>
 #include <glib.h>
 #include <tcore.h>
+#include <server.h>
 #include <plugin.h>
 #include <core_object.h>
 #include <hal.h>
@@ -42,14 +43,6 @@
 #include "s_phonebook.h"
 #include "s_gps.h"
 
-
-static gboolean on_load()
-{
-	dbg("i'm load!");
-
-	return TRUE;
-}
-
 static void on_confirmation_modem_message_send(TcorePending *p,
 						gboolean result,
 						void *user_data)
@@ -59,24 +52,37 @@ static void on_confirmation_modem_message_send(TcorePending *p,
 	dbg("%s", result == FALSE ? "SEND FAIL" : "SEND OK");
 }
 
-static void on_response_bootup_subscription(TcorePending *p, int data_len, const void *data, void *user_data)
+static void on_response_bootup_subscription(TcorePending *p,
+							int data_len, const void *data, void *user_data)
 {
-	TcorePlugin *plugin = user_data;
 	const TcoreATResponse *resp = data;
-
 	dbg("Entry");
 
 	if (resp->success > 0) {
-		dbg("result OK");
+		dbg("RESULT - OK");
 	} else {
-		dbg("result ERROR");
+		err("RESULT - ERROR");
 	}
-
-	if (plugin != NULL)
-		modem_power_on(plugin);
 }
 
-static void modem_subscribe_events(TcorePlugin *plugin)
+static void on_response_last_bootup_subscription(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	dbg("Last Subscription - COMPLETED");
+
+	if (resp->success) {
+		dbg("RESULT - OK");
+	} else {
+		err("RESULT - FAIL");
+	}
+
+	dbg("Boot-up configration completed for IMC modem. %s",
+				"Bring CP to ONLINE state based on Flightmode status");
+	modem_power_on(tcore_pending_ref_plugin(p));
+}
+
+static void _modem_subscribe_events(TcorePlugin *plugin)
 {
 	CoreObject *co_call = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
 	CoreObject *co_sim = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SIM);
@@ -178,7 +184,7 @@ static void modem_subscribe_events(TcorePlugin *plugin)
 
 	/* XBCSTAT subscription */
 	tcore_prepare_and_send_at_request(co_sap, "at+xbcstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL, 
+						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 	/* AGPS- assist data and reset assist data subscription */
 	tcore_prepare_and_send_at_request(co_gps, "at+cposr=1", NULL, TCORE_AT_NO_RESULT, NULL,
@@ -191,12 +197,13 @@ static void modem_subscribe_events(TcorePlugin *plugin)
 
 	/* text/pdu mode subscription*/
 	tcore_prepare_and_send_at_request(co_sms, "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, plugin,
+						on_response_last_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
 	dbg("Exit");
 }
 
+/* Initializer Table */
 struct object_initializer init_table = {
 	.modem_init = s_modem_init,
 	.sim_init = s_sim_init,
@@ -211,6 +218,7 @@ struct object_initializer init_table = {
 	.gps_init = s_gps_init,
 };
 
+/* Deinitializer Table */
 struct object_deinitializer deinit_table = {
 	.modem_deinit = s_modem_exit,
 	.sim_deinit = s_sim_exit,
@@ -225,36 +233,48 @@ struct object_deinitializer deinit_table = {
 	.gps_deinit = s_gps_exit,
 };
 
+static gboolean on_load()
+{
+	dbg("Load!!!");
+
+	return TRUE;
+}
+
 static gboolean on_init(TcorePlugin *p)
 {
-	CoreObject *co_modem;
-	if (!p)
+	dbg("Init!!!");
+	if (p == NULL)
 		return FALSE;
 
+	/* Initialize Modules (Core Objects) */
 	if (tcore_object_init_objects(p, &init_table)
 			!= TCORE_RETURN_SUCCESS) {
 		err("Failed to initialize Core Objects");
 		return FALSE;
 	}
 
-	dbg("i'm init!");
-	co_modem = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_MODEM);
-	tcore_server_send_notification(tcore_plugin_ref_server(p), co_modem, TNOTI_MODEM_ADDED, 0, NULL);
-	modem_subscribe_events(p);
+	/* Notify addition of Plug-in to Upper Layers */
+	tcore_server_send_notification(tcore_plugin_ref_server(p), NULL,
+								TNOTI_SERVER_ADDED_PLUGIN, 0, p);
+
+	/* Subscribe for the Events from CP */
+	_modem_subscribe_events(p);
 
 	return TRUE;
 }
 
 static void on_unload(TcorePlugin *p)
 {
-	if (!p)
+	dbg("Unload!!!");
+
+	if (p == NULL)
 		return;
 
+	/* Deinitialize Modules (Core Objects) */
 	tcore_object_deinit_objects(p, &deinit_table);
-
-	dbg("i'm unload");
 }
 
+/* IMC - Modem Plug-in Descriptor */
 struct tcore_plugin_define_desc plugin_define_desc = {
 	.name = "IMC",
 	.priority = TCORE_PLUGIN_PRIORITY_MID,
