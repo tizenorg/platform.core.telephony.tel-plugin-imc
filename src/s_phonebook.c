@@ -133,40 +133,23 @@ static enum tel_phonebook_ton _find_num_plan(int number_plan)
 
 static char* _get_phonebook_type(enum tel_phonebook_type pb_type)
 {
-	char *phonebook_type = NULL;
-	dbg(" Function entry ");
 	dbg("pb_type = %d", pb_type);
 
-	phonebook_type = (char*)calloc(sizeof(char), VAL_FIVE);
-	if(NULL == phonebook_type) {
-		err("Memory allcoation failed");
-		return phonebook_type;
-	}
-
-	switch(pb_type)
-	{
+	switch(pb_type) {
 		case PB_TYPE_FDN:
-			phonebook_type = "FD";
-			break;
+			return "FD";
 		case PB_TYPE_ADN:
 		case PB_TYPE_AAS:
 		case PB_TYPE_GAS:
-			phonebook_type = "SM";
-			break;
+			return "SM";
 		case PB_TYPE_SDN:
-			phonebook_type = "SN";
-			break;
+			return "SN";
 		case PB_TYPE_USIM:
-			phonebook_type = "AP";
-			break;
+			return "AP";
 		default:
 			dbg("Invalid pb_type [%02x]", pb_type);
-			free(phonebook_type);
-			phonebook_type = NULL;
-			break;
+			return NULL;
 	}
-	dbg(" Function exit");
-	return phonebook_type;
 }
 
 static enum tel_phonebook_type _get_phonebook_enum(const char* pb_type)
@@ -811,7 +794,6 @@ static	TReturn _select(CoreObject *o, UserRequest *ur, enum tel_phonebook_type p
 
 	tcore_hal_send_request(hal, pending);
 
-	free(phonebook_type);
 	g_free(cmd_str);
 	dbg(" Function exit");
 	return TCORE_RETURN_SUCCESS;
