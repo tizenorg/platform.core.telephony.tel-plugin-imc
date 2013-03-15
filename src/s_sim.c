@@ -28,12 +28,14 @@
 #include <plugin.h>
 #include <queue.h>
 #include <co_sim.h>
+#include <co_sms.h>
 #include <storage.h>
 #include <user_request.h>
 #include <server.h>
 #include <at.h>
 
 #include "s_common.h"
+#include "s_sms.h"
 #include "s_sim.h"
 
 #define ID_RESERVED_AT 0x0229
@@ -1914,6 +1916,7 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	GSList *lines = NULL;
 	const char *line = NULL;
 	int sim_state = 0;
+	int sms_state = 0;
 
 	dbg(" Function entry ");
 
@@ -1930,6 +1933,7 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 
 	if (g_slist_length(tokens) == 4) {
 		sim_state = atoi(g_slist_nth_data(tokens, 1));
+		sms_state = atoi(g_slist_nth_data(tokens, 3));
 	} else if (g_slist_length(tokens) == 1)
 		sim_state = atoi(g_slist_nth_data(tokens, 0));
 	else {
@@ -2005,6 +2009,20 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 			_get_sim_type(o);
 		else
 			_sim_status_update(o, sim_status);
+
+		if (sms_state) {
+			struct tnoti_sms_ready_status readyStatusInfo = {0, };
+			CoreObject *sms;
+			TcorePlugin *plugin;
+
+			dbg("SMS Ready");
+			readyStatusInfo.status = TRUE;
+			plugin = tcore_object_ref_plugin(o);
+			sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
+			tcore_sms_set_ready_status(sms, readyStatusInfo.status);
+
+			tcore_server_send_notification(tcore_plugin_ref_server(plugin), sms, TNOTI_SMS_DEVICE_READY, sizeof(struct tnoti_sms_ready_status), &readyStatusInfo);
+		}
 		break;
 
 	case SIM_STATUS_INITIALIZING:
