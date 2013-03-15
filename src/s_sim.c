@@ -2240,22 +2240,15 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
 {
 	const TcoreATResponse *resp = data;
 	UserRequest *ur = NULL;
-	CoreObject *co_sim = NULL;
-	struct s_sim_property *sp = NULL;
 	GSList *tokens = NULL;
-	struct tresp_sim_get_facility_status res;
+	struct tresp_sim_get_facility_status *res = user_data;
 	const char *line;
 
 	dbg(" Function entry ");
 
-	co_sim = tcore_pending_ref_core_object(p);
-	sp = tcore_sim_ref_userdata(co_sim);
 	ur = tcore_pending_ref_user_request(p);
 
-	memset(&res, 0, sizeof(struct tresp_sim_get_facility_status));
-
-	res.result = SIM_INCOMPATIBLE_PIN_OPERATION;
-	res.type = _sim_get_current_pin_facility(sp->current_sec_op);
+	res->result = SIM_PIN_OPERATION_SUCCESS;
 
 	if (resp->success > 0) {
 		dbg("RESPONSE OK");
@@ -2264,19 +2257,22 @@ static void on_response_get_facility_status(TcorePending *p, int data_len, const
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) != 1) {
 				msg("invalid message");
-				goto OUT;
+				tcore_at_tok_free(tokens);
+				return;
 			}
 		}
-		res.b_enable = atoi(g_slist_nth_data(tokens, 0));
+		res->b_enable = atoi(g_slist_nth_data(tokens, 0));
 	} else {
 		dbg("RESPONSE NOK");
+		res->result = SIM_INCOMPATIBLE_PIN_OPERATION;
 	}
-OUT:
+
 	if (ur) {
 		tcore_user_request_send_response(ur, _find_resp_command(ur),
-										 sizeof(struct tresp_sim_get_facility_status), &res);
+										 sizeof(struct tresp_sim_get_facility_status), res);
 	}
 	tcore_at_tok_free(tokens);
+	g_free(res);
 	dbg(" Function exit");
 }
 
@@ -2809,6 +2805,7 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 	TcorePending *pending = NULL;
 	char *cmd_str = NULL;
 	const struct treq_sim_get_facility_status *req_data;
+	struct tresp_sim_get_facility_status *res;
 	char *fac = "SC";
 	int mode = 2;       /* 0:unlock, 1:lock, 2:query*/
 	TReturn ret = TCORE_RETURN_FAILURE;
@@ -2826,6 +2823,12 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	res = g_try_new0(struct tresp_sim_get_facility_status, 1);
+	if (!res)
+		return TCORE_RETURN_ENOMEM;
+
+	res->type = req_data->type;
 
 	if (req_data->type == SIM_FACILITY_PS) {
 		fac = "PS";                             /*PH-SIM, Lock PHone to SIM/UICC card*/
@@ -2850,7 +2853,7 @@ static TReturn s_get_facility_status(CoreObject *o, UserRequest *ur)
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
-	tcore_pending_set_response_callback(pending, on_response_get_facility_status, hal);
+	tcore_pending_set_response_callback(pending, on_response_get_facility_status, res);
 	tcore_pending_link_user_request(pending, ur);
 	ret = tcore_hal_send_request(hal, pending);
 
