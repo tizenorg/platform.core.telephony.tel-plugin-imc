@@ -2994,7 +2994,75 @@ static TReturn s_disable_facility(CoreObject *o, UserRequest *ur)
 	return ret;
 }
 
-static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
+static TReturn s_get_lock_info_n(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal = NULL;
+	TcoreATRequest *req = NULL;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	int lock_type = 0;
+	const struct treq_sim_get_lock_info *req_data;
+	struct s_sim_property *sp = NULL;
+
+	dbg(" Function entry ");
+
+	hal = tcore_object_get_hal(o);
+
+	sp = tcore_sim_ref_userdata(o);
+	pending = tcore_pending_new(o, 0);
+	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+
+	switch (req_data->type) {
+	case SIM_FACILITY_PS:
+		lock_type = 9; // IMSI lock
+		break;
+
+	case SIM_FACILITY_SC:
+		lock_type = 1;
+		break;
+
+	case SIM_FACILITY_FD:
+		lock_type = 2;
+		break;
+
+	case SIM_FACILITY_PN:
+		lock_type = 5;
+		break;
+
+	case SIM_FACILITY_PU:
+		lock_type = 6;
+		break;
+
+	case SIM_FACILITY_PP:
+		lock_type = 7;
+		break;
+
+	case SIM_FACILITY_PC:
+		lock_type = 8;
+		break;
+
+	default:
+		break;
+	}
+	cmd_str = g_strdup_printf("AT+XPINCNT =%d", lock_type);
+	req = tcore_at_request_new(cmd_str, "+XPINCNT:", TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_get_lock_info, hal);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn s_get_lock_info_str(CoreObject *o, UserRequest *ur)
 {
 	TcoreHal *hal = NULL;
 	TcoreATRequest *req = NULL;
@@ -3010,10 +3078,7 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
-		dbg("cp not ready/n");
-		return TCORE_RETURN_ENOSYS;
-	}
+
 	pending = tcore_pending_new(o, 0);
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
@@ -3062,6 +3127,17 @@ static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
 	free(cmd_str);
 	dbg(" Function exit");
 	return ret;
+}
+
+static TReturn s_get_lock_info(CoreObject *o, UserRequest *ur)
+{
+	TcorePlugin *plugin = tcore_object_ref_plugin(o);
+	const char *cpname = tcore_server_get_cp_name_by_plugin(plugin);
+
+	if (g_str_has_prefix(cpname, "mfld_blackbay") == TRUE)
+		return s_get_lock_info_n(o, ur);
+	else
+		return s_get_lock_info_str(o, ur);
 }
 
 static TReturn s_read_file(CoreObject *o, UserRequest *ur)
