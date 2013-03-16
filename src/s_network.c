@@ -1302,7 +1302,7 @@ Note: <Act> is supporting from R7 and above Protocol Stack.
 		regist_status.roaming_status = tcore_network_get_roaming_state(o);
 
 		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
-									   TNOTI_NETWORK_REGISTRATION_STATUS, sizeof(struct tnoti_network_registration_status), &regist_status);
+									   TNOTI_NETWORK_REGISTRATION_STATUS, sizeof(regist_status), &regist_status);
 #if 0
 		if (service_type == NETWORK_SERVICE_TYPE_HSDPA)
 			noti.status = TELEPHONY_HSDPA_ON;

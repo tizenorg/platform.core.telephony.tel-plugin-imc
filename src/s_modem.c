@@ -296,7 +296,8 @@ static void on_response_imei(TcorePending *p, int data_len, const void *data, vo
 	}
 
 	ur = tcore_pending_ref_user_request(p);
-	tcore_user_request_send_response(ur, TRESP_MODEM_GET_IMEI, sizeof(struct tresp_modem_get_imei), &res);
+	tcore_user_request_send_response(ur, TRESP_MODEM_GET_IMEI,
+					sizeof(struct tresp_modem_get_imei), &res);
 
 OUT:
 	if (tokens != NULL)
@@ -338,14 +339,15 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 				pcode = g_slist_nth_data(tokens, 3);
 				id = g_slist_nth_data(tokens, 4);
 
-				dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]", swver, hwver, caldate, pcode, id);
+				dbg("version: sw=[%s], hw=[%s], rf_cal=[%s], product_code=[%s], model_id=[%s]",
+								swver, hwver, caldate, pcode, id);
 			} else {
 				msg("invalid message");
 				goto OUT;
 			}
 		}
 
-		vi = calloc(sizeof(TelMiscVersionInformation), 1);
+		vi = g_try_new0(TelMiscVersionInformation, 1);
 		if (NULL != swver)
 			memcpy(vi->szSwVersion, swver, strlen(swver));
 		if (NULL != hwver)
@@ -359,10 +361,17 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 
 		memset(&res, 0, sizeof(struct tresp_modem_get_version));
 
-		if (NULL != swver)
-			snprintf(res.software, (AT_VER_LEN > strlen(swver) ? strlen(swver) : AT_VER_LEN), "%s", swver);
-		if (NULL != hwver)
-			snprintf(res.hardware, (AT_VER_LEN > strlen(hwver) ? strlen(hwver) : AT_VER_LEN), "%s", hwver);
+		if (NULL != swver) {
+			snprintf(res.software,
+				(AT_VER_LEN > strlen(swver) ? strlen(swver) : AT_VER_LEN),
+				"%s", swver);
+		}
+
+		if (NULL != hwver) {
+			snprintf(res.hardware,
+				(AT_VER_LEN > strlen(hwver) ? strlen(hwver) : AT_VER_LEN),
+				"%s", hwver);
+		}
 
 		plugin = tcore_pending_ref_plugin(p);
 		vi_property = tcore_plugin_ref_property(plugin, "VERSION");
@@ -389,7 +398,8 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 	}
 
 	ur = tcore_pending_ref_user_request(p);
-	tcore_user_request_send_response(ur, TRESP_MODEM_GET_VERSION, sizeof(struct tresp_modem_get_version), &res);
+	tcore_user_request_send_response(ur, TRESP_MODEM_GET_VERSION,
+						sizeof(struct tresp_modem_get_version), &res);
 
 OUT:
 	if (tokens != NULL)
@@ -398,22 +408,41 @@ OUT:
 	return;
 }
 
-static enum tcore_hook_return on_hook_sim_status(Server *s, CoreObject *source, enum tcore_notification_command command,
-											   unsigned int data_len, void *data, void *user_data)
+static enum tcore_hook_return on_hook_sim_status(Server *s,
+				CoreObject *source, enum tcore_notification_command command,
+				unsigned int data_len, void *data, void *user_data)
 {
-	const struct tnoti_sim_status *sim = data;
+	TcorePlugin *plugin;
+	const struct tnoti_sim_status *noti_sim_status;
 	CoreObject *co_sat;
 	CoreObject *co_network;
-	TcorePlugin *plugin = tcore_object_ref_plugin(source);
 
+	plugin = tcore_object_ref_plugin(source);
 	co_sat = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SAT);
-	co_network = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_NETWORK);
+	if (co_sat == NULL)
+		return TCORE_HOOK_RETURN_CONTINUE;
 
-	if (sim->sim_status == SIM_STATUS_INIT_COMPLETED) {
-		dbg("SIM ready for attach");
-		dbg("Enable STK and Fetching of proactive Commands");
-		prepare_and_send_pending_request(co_sat, "AT+CFUN=6", NULL, TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
-		prepare_and_send_pending_request(co_network, "AT+COPS=0", NULL, TCORE_AT_NO_RESULT, on_response_network_registration);
+	co_network = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_NETWORK);
+	if (co_network == NULL)
+		return TCORE_HOOK_RETURN_CONTINUE;
+
+	dbg("Get SIM status");
+	noti_sim_status = data;
+	if (noti_sim_status == NULL)
+		return TCORE_HOOK_RETURN_CONTINUE;
+
+	/* If SIM is initialized, Enable STK and and attach to Network */
+	dbg("SIM Status: [%d]", noti_sim_status->sim_status);
+	if (noti_sim_status->sim_status == SIM_STATUS_INIT_COMPLETED) {
+		dbg("SIM ready for attach!!! Enable STK and attach to Network");
+
+		/* Sending AT+CFUN=6 */
+		prepare_and_send_pending_request(co_sat, "AT+CFUN=6", NULL,
+						TCORE_AT_NO_RESULT, on_response_enable_proactive_command);
+
+		/* Sending AT+COPS */
+		prepare_and_send_pending_request(co_network, "AT+COPS=0", NULL,
+						TCORE_AT_NO_RESULT, on_response_network_registration);
 	}
 
 	return TCORE_HOOK_RETURN_CONTINUE;
@@ -424,38 +453,50 @@ gboolean modem_power_on(TcorePlugin *p)
 	CoreObject *co_modem = NULL;
 	struct treq_modem_set_flightmode flight_mode_set = {0};
 	struct tnoti_modem_power modem_power = {0};
-	TcoreHal *h = NULL;
 	Storage *strg = NULL;
 
 	co_modem = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_MODEM);
+	if (co_modem == NULL) {
+		err("Modem Core object is NULL");
+		return FALSE;
+	}
 
+	/* Set Modem Power State to 'ON' */
+	tcore_modem_set_powered(co_modem, TRUE);
+
+	/* Get Flight mode from VCONFKEY */
 	strg = tcore_server_find_storage(tcore_plugin_ref_server(p), "vconf");
 	flight_mode_set.enable = tcore_storage_get_bool(strg, STORAGE_KEY_FLIGHT_MODE_BOOL);
 
-	h = tcore_object_get_hal(co_modem);
-	tcore_hal_set_power_state(h, TRUE);
-
 	/* Set Flight mode as per AP settings */
-	if (flight_mode_set.enable) { /* Radio Off */
-		prepare_and_send_pending_request(co_modem, "AT+CFUN=4", NULL, TCORE_AT_NO_RESULT, on_response_set_flight_mode);
+	if (flight_mode_set.enable) {		/* Radio OFF */
+		prepare_and_send_pending_request(co_modem, "AT+CFUN=4", NULL,
+							TCORE_AT_NO_RESULT, on_response_set_flight_mode);
+
+		/* Set Flight mode TRUE */
 		tcore_modem_set_flight_mode_state(co_modem, TRUE);
-	} else { /* Radio On */
-		prepare_and_send_pending_request(co_modem, "AT+CFUN=1", NULL, TCORE_AT_NO_RESULT, on_response_set_flight_mode);
+	} else {							/* Radio ON */
+		prepare_and_send_pending_request(co_modem, "AT+CFUN=1", NULL,
+							TCORE_AT_NO_RESULT, on_response_set_flight_mode);
+
+		/* Set Flight mode FALSE */
 		tcore_modem_set_flight_mode_state(co_modem, FALSE);
 	}
 
 	/* Get IMEI */
-	prepare_and_send_pending_request(co_modem, "AT+CGSN", NULL, TCORE_AT_NUMERIC, on_response_imei);
+	prepare_and_send_pending_request(co_modem, "AT+CGSN", NULL,
+							TCORE_AT_NUMERIC, on_response_imei);
 
 	/* Get Version Number  */
-	prepare_and_send_pending_request(co_modem, "AT+CGMR", NULL, TCORE_AT_SINGLELINE, on_response_version);
+	prepare_and_send_pending_request(co_modem, "AT+CGMR", NULL,
+							TCORE_AT_SINGLELINE, on_response_version);
 
-	tcore_modem_set_powered(co_modem, TRUE);
-
+	/* Send Notification to TAPI - MODEM_POWER */
 	modem_power.state = MODEM_STATE_ONLINE;
 
-	tcore_server_send_notification(tcore_plugin_ref_server(p), co_modem, TNOTI_MODEM_POWER,
-								   sizeof(struct tnoti_modem_power), &modem_power);
+	dbg("Sending notification - Modem Power state: [ONLINE]");
+	tcore_server_send_notification(tcore_plugin_ref_server(p),
+		co_modem, TNOTI_MODEM_POWER, sizeof(modem_power), &modem_power);
 
 	return TRUE;
 }
@@ -471,7 +512,8 @@ static TReturn power_off(CoreObject *o, UserRequest *ur)
 
 	req = tcore_at_request_new("AT+CFUN=0", NULL, TCORE_AT_NO_RESULT);
 
-	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+	dbg("Command: [%s], Prefix(if any): [%s], Command Length: [%d]",
+						req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_power_off, hal);
@@ -498,16 +540,15 @@ static TReturn get_imei(CoreObject *o, UserRequest *ur)
 
 	req = tcore_at_request_new("AT+CGSN", NULL, TCORE_AT_NUMERIC);
 
-	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+	dbg("Command: [%s], Prefix(if any): [%s], Command Length: [%d]",
+						req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_imei, hal);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
 
-	tcore_hal_send_request(hal, pending);
-
-	return TCORE_RETURN_SUCCESS;
+	return tcore_hal_send_request(hal, pending);
 }
 
 
@@ -526,16 +567,15 @@ static TReturn get_version(CoreObject *o, UserRequest *ur)
 
 	req = tcore_at_request_new("AT+CGMR", NULL, TCORE_AT_SINGLELINE);
 
-	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+	dbg("Command: [%s], Prefix(if any): [%s], Command Length: [%d]",
+						req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_version, hal);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
 
-	tcore_hal_send_request(hal, pending);
-
-	return TCORE_RETURN_SUCCESS;
+	return tcore_hal_send_request(hal, pending);
 }
 
 static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
@@ -563,18 +603,18 @@ static TReturn set_flight_mode(CoreObject *o, UserRequest *ur)
 		cmd_str = g_strdup("AT+CFUN=1");
 	}
 
-	req = tcore_at_request_new((const char *) cmd_str, NULL, TCORE_AT_NO_RESULT);
+	req = tcore_at_request_new((const char *)cmd_str, NULL, TCORE_AT_NO_RESULT);
+	g_free(cmd_str);
 
-	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+	dbg("Command: [%s], Prefix(if any): [%s], Command Length: [%d]",
+						req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, on_response_set_flight_mode, hal);
 	tcore_pending_link_user_request(pending, ur);
 	tcore_pending_set_send_callback(pending, on_confirmation_modem_message_send, NULL);
 
-	tcore_hal_send_request(hal, pending);
-
-	return TCORE_RETURN_SUCCESS;
+	return tcore_hal_send_request(hal, pending);
 }
 
 
@@ -608,10 +648,10 @@ gboolean s_modem_init(TcorePlugin *cp, CoreObject *co_modem)
 	sn_property = g_try_new0(TelMiscSNInformation, 1);
 	tcore_plugin_link_property(cp, "SN", sn_property);
 
-	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp), TNOTI_SIM_STATUS, on_hook_sim_status, co_modem);
+	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp),
+							TNOTI_SIM_STATUS, on_hook_sim_status, NULL);
 
 	dbg("Exit");
-
 	return TRUE;
 }
 

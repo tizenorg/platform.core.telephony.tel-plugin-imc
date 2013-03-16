@@ -69,6 +69,7 @@ static void on_response_last_bootup_subscription(TcorePending *p,
 							int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
+	gboolean ret;
 	dbg("Last Subscription - COMPLETED");
 
 	if (resp->success) {
@@ -79,7 +80,8 @@ static void on_response_last_bootup_subscription(TcorePending *p,
 
 	dbg("Boot-up configration completed for IMC modem. %s",
 				"Bring CP to ONLINE state based on Flightmode status");
-	modem_power_on(tcore_pending_ref_plugin(p));
+	ret = modem_power_on(tcore_pending_ref_plugin(p));
+	dbg("Modem Power ON: [%s]", (ret == TRUE ? "SUCCESS" : "FAIL"));
 }
 
 static void _modem_subscribe_events(TcorePlugin *plugin)
@@ -87,7 +89,6 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 	CoreObject *co_call = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
 	CoreObject *co_sim = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SIM);
 	CoreObject *co_sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
-	CoreObject *co_modem = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_MODEM);
 	CoreObject *co_network = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_NETWORK);
 	CoreObject *co_ps = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_PS);
 	CoreObject *co_sap = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SAP);
@@ -95,98 +96,101 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 
 	dbg("Entry");
 
-	/* XCALLSTAT subscription */
-	tcore_prepare_and_send_at_request(co_call, "at+xcallstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
+	/* URC Subscriptions per Module */
 
-	/* XSIMSTATE subscription */
+	/****** SIM subscriptions ******/
+	/* XSIMSTATE  */
 	tcore_prepare_and_send_at_request(co_sim, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	tcore_prepare_and_send_at_request(co_sms, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-	tcore_prepare_and_send_at_request(co_modem, "at+xsimstate=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* CREG subscription */
-	tcore_prepare_and_send_at_request(co_network, "at+creg=2", NULL, TCORE_AT_NO_RESULT, NULL,
+	/****** CALL subscriptions ******/
+	/* XCALLSTAT */
+	tcore_prepare_and_send_at_request(co_call, "at+xcallstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/* CGREG subscription */
-	tcore_prepare_and_send_at_request(co_network, "at+cgreg=2", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* Allow automatic time Zone updation via NITZ */
-	tcore_prepare_and_send_at_request(co_network, "at+ctzu=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* TZ, time & daylight changing event reporting subscription */
-	tcore_prepare_and_send_at_request(co_network, "at+ctzr=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* XMER subscription */
-	tcore_prepare_and_send_at_request(co_network, "at+xmer=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* CGEREP subscription */
-	tcore_prepare_and_send_at_request(co_ps, "at+cgerep=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* XDATASTAT subscription */
-	tcore_prepare_and_send_at_request(co_ps, "at+xdatastat=1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* CSSN subscription */
+	/* CSSN */
 	tcore_prepare_and_send_at_request(co_call, "at+cssn=1,1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/* CUSD subscription */
+	/* CUSD */
 	tcore_prepare_and_send_at_request(co_call, "at+cusd=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/* XDNS subscription */
-	tcore_prepare_and_send_at_request(co_ps, "at+xdns=1,1", NULL, TCORE_AT_NO_RESULT, NULL,
-						on_response_bootup_subscription, NULL,
-						on_confirmation_modem_message_send, NULL);
-
-	/* CLIP subscription */
+	/* CLIP */
 	tcore_prepare_and_send_at_request(co_call, "at+clip=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/*CMEE subscription for ps*/
+	/****** NETWORK subscriptions ******/
+	/* CREG */
+	tcore_prepare_and_send_at_request(co_network, "at+creg=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CGREG */
+	tcore_prepare_and_send_at_request(co_network, "at+cgreg=2", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* Allow Automatic Time Zone updation via NITZ */
+	tcore_prepare_and_send_at_request(co_network, "at+ctzu=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* TZ, Time & Daylight changing event reporting Subscription */
+	tcore_prepare_and_send_at_request(co_network, "at+ctzr=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XMER */
+	tcore_prepare_and_send_at_request(co_network, "at+xmer=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/****** PS subscriptions ******/
+	/* CGEREP */
+	tcore_prepare_and_send_at_request(co_ps, "at+cgerep=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* XDATASTAT */
+	tcore_prepare_and_send_at_request(co_ps, "at+xdatastat=1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+
+	/* XDNS */
+	tcore_prepare_and_send_at_request(co_ps, "at+xdns=1,1", NULL, TCORE_AT_NO_RESULT, NULL,
+						on_response_bootup_subscription, NULL,
+						on_confirmation_modem_message_send, NULL);
+
+	/* CMEE */
 	tcore_prepare_and_send_at_request(co_ps, "at+cmee=2", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/*CMEE subscription for sms*/
+	/****** SMS subscriptions ******/
+	/* CMEE */
 	tcore_prepare_and_send_at_request(co_sms, "at+cmee=2", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/*incoming sms,cb,status report subscription*/
+	/* Incoming SMS, Cell Broadcast, Status Report Subscription */
 	tcore_prepare_and_send_at_request(co_sms, "at+cnmi=1,2,2,1,0", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/* XBCSTAT subscription */
-	tcore_prepare_and_send_at_request(co_sap, "at+xbcstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
+	/* Text/PDU mode Subscription */
+	tcore_prepare_and_send_at_request(co_sms, "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
-	/* AGPS- assist data and reset assist data subscription */
+
+	/****** GPS subscriptions ******/
+	/* AGPS- Assist Data and Reset Assist Data Subscription */
 	tcore_prepare_and_send_at_request(co_gps, "at+cposr=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
@@ -195,8 +199,9 @@ static void _modem_subscribe_events(TcorePlugin *plugin)
 						on_response_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
-	/* text/pdu mode subscription*/
-	tcore_prepare_and_send_at_request(co_sms, "at+cmgf=0", NULL, TCORE_AT_NO_RESULT, NULL,
+	/****** SAP subscriptions ******/
+	/* XBCSTAT */
+	tcore_prepare_and_send_at_request(co_sap, "at+xbcstat=1", NULL, TCORE_AT_NO_RESULT, NULL,
 						on_response_last_bootup_subscription, NULL,
 						on_confirmation_modem_message_send, NULL);
 
@@ -253,13 +258,10 @@ static gboolean on_init(TcorePlugin *p)
 		return FALSE;
 	}
 
-	/* Notify addition of Plug-in to Upper Layers */
-	tcore_server_send_notification(tcore_plugin_ref_server(p), NULL,
-								TNOTI_SERVER_ADDED_PLUGIN, 0, p);
-
 	/* Subscribe for the Events from CP */
 	_modem_subscribe_events(p);
 
+	dbg("Init - Successful");
 	return TRUE;
 }
 

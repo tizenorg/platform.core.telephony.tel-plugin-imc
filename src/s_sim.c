@@ -2023,7 +2023,11 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 			sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
 			tcore_sms_set_ready_status(sms, readyStatusInfo.status);
 
-			tcore_server_send_notification(tcore_plugin_ref_server(plugin), sms, TNOTI_SMS_DEVICE_READY, sizeof(struct tnoti_sms_ready_status), &readyStatusInfo);
+			/* Send notification - SMS Ready */
+			tcore_server_send_notification(tcore_plugin_ref_server(plugin),
+										sms, TNOTI_SMS_DEVICE_READY,
+										sizeof(struct tnoti_sms_ready_status),
+										&readyStatusInfo);
 		}
 		break;
 
@@ -2042,7 +2046,8 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	case SIM_STATUS_CARD_REMOVED:
 	case SIM_STATUS_CARD_NOT_PRESENT:
 	case SIM_STATUS_CARD_ERROR:
-		if (sim_status == SIM_STATUS_CARD_NOT_PRESENT && tcore_sim_get_status(o) != SIM_STATUS_UNKNOWN) {
+		if (sim_status == SIM_STATUS_CARD_NOT_PRESENT
+				&& tcore_sim_get_status(o) != SIM_STATUS_UNKNOWN) {
 			dbg("[SIM]SIM CARD REMOVED!!");
 			sim_status = SIM_STATUS_CARD_REMOVED;
 		}
@@ -2052,7 +2057,7 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		break;
 
 	default:
-		dbg("not handled status[%d]", sim_status);
+		dbg("Not handled SIM State: [0x02x]", sim_status);
 
 		break;
 	}
@@ -3489,10 +3494,13 @@ gboolean s_sim_init(TcorePlugin *cp, CoreObject *co_sim)
 
 	tcore_sim_link_userdata(co_sim, file_meta);
 
-	tcore_object_override_callback(co_sim, "+XLOCK", on_event_facility_lock_status, NULL);
-	tcore_object_override_callback(co_sim, "+XSIM", on_event_pin_status, NULL);
+	tcore_object_override_callback(co_sim, "+XLOCK",
+								on_event_facility_lock_status, NULL);
+	tcore_object_override_callback(co_sim, "+XSIM",
+								on_event_pin_status, NULL);
 
-	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp), TNOTI_MODEM_POWER, on_hook_modem_power, co_sim);
+	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp),
+							TNOTI_MODEM_POWER, on_hook_modem_power, co_sim);
 
 	dbg("Exit");
 
