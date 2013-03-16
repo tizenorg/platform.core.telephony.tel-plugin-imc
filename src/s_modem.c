@@ -376,7 +376,7 @@ static void on_response_version(TcorePending *p, int data_len, const void *data,
 		plugin = tcore_pending_ref_plugin(p);
 		vi_property = tcore_plugin_ref_property(plugin, "VERSION");
 		memcpy(vi_property, vi, sizeof(TelMiscVersionInformation));
-		free(vi);
+		g_free(vi);
 	} else {
 		dbg("RESPONSE NOK");
 		if (resp->lines) {

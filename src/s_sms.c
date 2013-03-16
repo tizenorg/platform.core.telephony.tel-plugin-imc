@@ -672,7 +672,7 @@ static void on_response_send_umts_msg(TcorePending *pending, int data_len, const
 	memset(&resp_umts, 0x00, sizeof(resp_umts));
 	resp_umts.result = SMS_DEVICE_FAILURE;
 
-	if (at_response->success > 0) { // success
+	if (at_response->success > 0) { /* SUCCESS */
 		dbg("Response OK");
 		if (at_response->lines) { // lines present in at_response
 			gslist_line = (char *)at_response->lines->data;
@@ -1253,6 +1253,10 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 								respGetCbConfig.cbConfig.msgIDs[0].net3gpp.selected = FALSE;
 								respGetCbConfig.result = SMS_SENDSMS_SUCCESS;
 							}
+						} else {
+							respGetCbConfig.cbConfig.msgIdRangeCount = 0;
+							respGetCbConfig.cbConfig.msgIDs[0].net3gpp.selected = FALSE;
+							respGetCbConfig.result = SMS_SENDSMS_SUCCESS;
 						}
 
 						for (i = 0; i < num_cb_tokens; i++) {
@@ -1786,18 +1790,18 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 								switch (*ptr_data) {
 									case 0x04:
 									case 0x06:
-										dbg("<IPC_RX> operation state -deactivated");
+										dbg("[RX] Operation State: DEACTIVATED");
 										ptr_data++;
 										break;
 
 									case 0x05:
 									case 0x07:
-										dbg("<IPC_RX> operation state -activated");
+										dbg("[RX] Operation State: ACTIVATED");
 										ptr_data++;
 										break;
 
 									default:
-										dbg("<IPC_RX> DEBUG! LIFE CYCLE STATUS =[0x%x]",*ptr_data);
+										dbg("[RX] DEBUG! LIFE CYCLE STATUS: [0x%x]",*ptr_data);
 										ptr_data++;
 										break;
 								}

@@ -110,7 +110,7 @@ char* util_hexStringToBytes(char *s)
 
 	sz = strlen(s);
 
-	ret = calloc((sz / 2) + 1, 1);
+	ret = g_try_malloc0((sz / 2) + 1);
 
 	dbg("Convert String to Binary!!");
 
@@ -185,9 +185,10 @@ char* util_removeQuotes(void *data)
 	if (data_len <= 0) {
 		return NULL;
 	}
-	tmp = calloc(1, data_len - 1);
+
+	tmp = g_try_malloc(data_len - 1);
 	memcpy(tmp, data + 1, data_len - 2);
-	dbg("tmp: %s", tmp);
+	dbg("tmp: [%s]", tmp);
 
 	return tmp;
 }

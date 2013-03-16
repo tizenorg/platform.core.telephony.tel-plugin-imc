@@ -59,7 +59,7 @@
 
 static void _ps_free(void *ptr)
 {
-	dbg("Entered");
+	dbg("Entry");
 	if (ptr) {
 		(void) free(ptr);
 		ptr = NULL;
@@ -70,11 +70,18 @@ static void _ps_free(void *ptr)
 static void _unable_to_get_pending(CoreObject *co_ps, CoreObject *ps_context)
 {
 	struct tnoti_ps_call_status data_resp = {0};
-	dbg("Entered");
+	dbg("Entry");
+
 	data_resp.context_id = tcore_context_get_id(ps_context);
-	data_resp.state = PS_DATA_CALL_NOT_CONNECTED; /*check value of state*/
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
-								   TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &data_resp);
+	data_resp.state = PS_DATA_CALL_NOT_CONNECTED;
+	dbg("Sending Call Status Notification - Context ID: [%d] Context State: [NOT CONNECTED]",
+					data_resp.context_id);
+
+	/* Send CALL Status Notification */
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)),
+				co_ps, TNOTI_PS_CALL_STATUS, sizeof(data_resp), &data_resp);
+
+	/* Set PS State to Deactivated */
 	(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATED);
 	dbg("Exit");
 }
@@ -85,26 +92,27 @@ static gboolean on_event_dun_call_notification(CoreObject *o, const void *data, 
 	const char *line = NULL;
 	int value = 0;
 	GSList *lines = NULL;
-	dbg("Entered");
+	dbg("Entry");
 
 	lines = (GSList *) data;
-	if (1 != g_slist_length(lines)) {
-		dbg("unsolicited msg but multiple line");
+	if (g_slist_length(lines) != 1) {
+		dbg("Unsolicited message BUT multiple lines");
 		goto OUT;
 	}
+
 	line = (char *) (lines->data);
 	tokens = tcore_at_tok_new(line);
 	value = atoi(g_slist_nth_data(tokens, 0));
 
 	/*
-	<status> may be
-	0: DUN activation in progress
-	1: DUN deactivation in progress
-	2: DUN activated
-	3: DUN deactivated
-	*/
+	 * <status> may be
+	 *	0: DUN Activation in progress
+	 *	1: DUN Deactivation in progress
+	 *	2: DUN Activated
+	 *	3: DUN Deactivated
+	 */
 	switch (value) {
-	case 0:    /*Fall Through*/
+	case 0:    /* FALL THROUGH */
 	case 1:
 	{
 		break;
@@ -112,26 +120,27 @@ static gboolean on_event_dun_call_notification(CoreObject *o, const void *data, 
 
 	case 2:
 	{
-		/*To Do:- Fill Data structure : data*/
+		/* TODO:- Fill Data structure: 'data' */
 		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
 									   TNOTI_PS_EXTERNAL_CALL, sizeof(struct tnoti_ps_external_call), &data);
 	}
 
 	case 3:
 	{
-		/*To Do:- Fill Data structure : data*/
+		/* TODO:- Fill Data structure: 'data' */
 		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
 									   TNOTI_PS_EXTERNAL_CALL, sizeof(struct tnoti_ps_external_call), &data);
 	}
 	break;
 
 	default:
-		goto OUT;
+		break;
 	}
+
 OUT:
-	if (NULL != tokens) {
-		tcore_at_tok_free(tokens);
-	}
+	/* Free tokens */
+	tcore_at_tok_free(tokens);
+
 	return TRUE;
 }
 static void on_response_undefine_context_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -139,7 +148,8 @@ static void on_response_undefine_context_cmd(TcorePending *p, int data_len, cons
 	CoreObject *co_ps = NULL;
 	const TcoreATResponse *resp = data;
 	CoreObject *ps_context = user_data;
-	dbg("Entered");
+	dbg("Entry");
+
 	co_ps = tcore_pending_ref_core_object(p);
 	if (resp->success) {
 		dbg("Response Ok");
@@ -157,7 +167,7 @@ static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	char cmd_str[MAX_AT_CMD_STR_LEN];
 	int cid = 0;
 
-	dbg("Entered");
+	dbg("Entry");
 	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
 	/* FIXME: Before MUX setup, use PHY HAL directly. */
@@ -167,6 +177,8 @@ static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	cid = tcore_context_get_id(ps_context);
 
 	(void) sprintf(cmd_str, "AT+CGDCONT=%d", cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_undefine_context_cmd, ps_context);
 	if (NULL == pending) {
@@ -184,24 +196,33 @@ error:
 	}
 }
 
-static void on_setup_pdp(CoreObject *co_ps, const char *netif_name,
-				void *user_data)
+static void on_setup_pdp(CoreObject *co_ps, int result,
+			const char *netif_name, void *user_data)
 {
 	CoreObject *ps_context = user_data;
 	struct tnoti_ps_call_status data_status = {0};
 	Server *server;
 
-	dbg("Enter");
+	dbg("Entry");
 
-	dbg("devname = [%s]", netif_name);
+	if (result < 0) {
+		/* Deactivate PDP context */
+		tcore_ps_deactivate_context(co_ps, ps_context, NULL);
+		return;
+	}
 
+	dbg("Device name: [%s]", netif_name);
+
+	/* Set Device name */
 	tcore_context_set_ipv4_devname(ps_context, netif_name);
 
-	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
-
+	/* Set State - CONNECTED */
 	data_status.context_id = tcore_context_get_id(ps_context);
 	data_status.state = PS_DATA_CALL_CONNECTED;
+	dbg("Sending Call Status Notification - Context ID: [%d] Context State: [CONNECTED]", data_status.context_id);
 
+	/* Send Notification */
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
 	tcore_server_send_notification(server, co_ps,
 					TNOTI_PS_CALL_STATUS,
 					sizeof(struct tnoti_ps_call_status),
@@ -225,7 +246,7 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 	int cid = tcore_context_get_id(ps_context);
 	TcoreHal *h = tcore_object_get_hal(co_ps);
 
-	dbg("Entered");
+	dbg("Entry");
 
 	if (resp->final_response) {
 		dbg("Response OK");
@@ -233,37 +254,46 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 			dbg("DNS data present in the Response");
 			pRespData = (GSList *) resp->lines;
 			no_pdp_active = g_slist_length(pRespData);
-			dbg("Total Number of Active PS Context :- %d", no_pdp_active);
+			dbg("Total Number of Active PS Context: [%d]", no_pdp_active);
 			if (0 == no_pdp_active) {
 				goto exit_fail;
 			}
+
 			while (pRespData) {
-				dbg("traversing the DNS data for each active context");
 				line = (const char *) pRespData->data;
-				dbg("Response->lines->data :%s", line);
+				dbg("Received Data: [%s]", line);
 				tokens = tcore_at_tok_new(line);
+
+				/* Check if Context ID is matching */
 				if (cid == atoi(g_slist_nth_data(tokens, 0))) {
-					dbg("Found the DNS details for the Current context");
-					dbg("Context Id of The Context : %d", atoi(g_slist_nth_data(tokens, 0)));
+					dbg("Found the DNS details for the Current Context - Context ID: [%d]", cid);
 					break;
 				}
+
+				/* Free tokens */
 				tcore_at_tok_free(tokens);
 				tokens = NULL;
+
+				/* Move to next line */
 				pRespData = pRespData->next;
 			}
-			{ /* Read primary DNS */
-				token_dns = g_slist_nth_data(tokens, 1);
-				/* Strip off starting " and ending " from this token to read actual PDP address */
-				dns_prim = util_removeQuotes((void *) token_dns);
-				dbg("Token_dns :%s", token_dns);
-				dbg("Primary DNS :- %s", dns_prim);
-			}
-			{ /* Read Secondary DNS */
-				token_dns = g_slist_nth_data(tokens, 2);
-				dns_sec = util_removeQuotes((void *) token_dns);
 
-				dbg("Token_dns :%s", token_dns);
-				dbg("Secondary DNS :- %s", dns_sec);
+			/* Read primary DNS */
+			{
+				token_dns = g_slist_nth_data(tokens, 1);
+
+				/* Strip off starting " and ending " from this token to read actual PDP address */
+				dns_prim = util_removeQuotes((void *)token_dns);
+				dbg("Primary DNS: [%s]", dns_prim);
+			}
+
+			/* Read Secondary DNS */
+			{
+				token_dns = g_slist_nth_data(tokens, 2);
+
+				/* Strip off starting " and ending " from this token to read actual PDP address */
+				dns_sec = util_removeQuotes((void *)token_dns);
+				dbg("Secondary DNS: [%s]", dns_sec);
 			}
 
 			if ((g_strcmp0("0.0.0.0", dns_prim) == 0)
@@ -279,6 +309,7 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 				goto exit_fail;
 			}
 
+			/* Set DNS Address */
 			tcore_context_set_ipv4_dns(ps_context, dns_prim, dns_sec);
 			_ps_free(dns_prim);
 			_ps_free(dns_sec);
@@ -291,23 +322,20 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 		}
 	}
 	dbg("Response NOK");
+
 exit_fail:
-	{
-		dbg("Adding default DNS");
+	dbg("Adding default DNS");
+	tcore_context_set_ipv4_dns(ps_context, "8.8.8.8", "8.8.4.4");
 
-		tcore_context_set_ipv4_dns(ps_context, "8.8.8.8", "8.8.4.4");
-	}
 exit_success:
-	{
-		/* mount network interface */
-		if (tcore_hal_setup_netif(h, co_ps, on_setup_pdp, ps_context, cid, TRUE)
-				!= TCORE_RETURN_SUCCESS) {
-			err("Setup network interface failed");
-			return;
-		}
-
-		dbg("EXIT : Without error");
+	/* Mount network interface */
+	if (tcore_hal_setup_netif(h, co_ps, on_setup_pdp, ps_context, cid, TRUE)
+			!= TCORE_RETURN_SUCCESS) {
+		err("Setup network interface failed");
+		return;
 	}
+
+	dbg("EXIT : Without error");
 }
 
 static TReturn send_get_dns_cmd(CoreObject *co_ps, CoreObject *ps_context)
@@ -318,10 +346,12 @@ static TReturn send_get_dns_cmd(CoreObject *co_ps, CoreObject *ps_context)
 
 	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
-	dbg("Entered");
+	dbg("Entry");
 	hal = tcore_object_get_hal(co_ps);
 
 	(void) sprintf(cmd_str, "AT+XDNS?");
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
 	pending = tcore_at_pending_new(co_ps, cmd_str, "+XDNS", TCORE_AT_MULTILINE,
 								   on_response_get_dns_cmnd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
@@ -339,32 +369,33 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 	GSList *tokens = NULL;
 	const char *line;
 	char *token_pdp_address;
-	char *real_pdp_address;
 	dbg("Enetered");
 	if (resp->final_response) {
 		dbg("RESPONSE OK");
 		if (resp->lines != NULL) {
-			dbg("resp->lines present ");
 			line = (const char *) resp->lines->data;
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) < 2) {
-				msg("invalid message");
+				msg("Invalid message");
 				goto error;
 			}
-			dbg("line:- %s", line);
+			dbg("Received Data: [%s]", line);
+
 			/* CID is already stored in ps_context, skip over & read PDP address */
 			token_pdp_address = g_slist_nth_data(tokens, 1);
-			real_pdp_address = tcore_at_tok_extract(token_pdp_address);
+			token_pdp_address = util_removeQuotes((void *)token_pdp_address);
+			dbg("IP Address: [%s]", token_pdp_address);
 
-			dbg("PDP address: %s", real_pdp_address);
 			/* Strip off starting " and ending " from this token to read actual PDP address */
-			(void) tcore_context_set_ipv4_addr(ps_context, (const char *)real_pdp_address);
-			g_free(real_pdp_address);
+			/* Set IP Address */
+			(void)tcore_context_set_ipv4_addr(ps_context, (const char *)token_pdp_address);
 		}
 
+		/* Get DNS Address */
 		(void) send_get_dns_cmd(co_ps, ps_context);
 	} else {
 		dbg("Response NOK");
+
 		/*without PDP address we will not be able to start packet service*/
 		tcore_ps_deactivate_context(co_ps, ps_context, NULL);
 	}
@@ -380,11 +411,13 @@ static TReturn send_get_pdp_address_cmd(CoreObject *co_ps, CoreObject *ps_contex
 	unsigned int cid = PS_INVALID_CID;
 	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
 
-	dbg("Entered");
+	dbg("Entry");
 	hal = tcore_object_get_hal(co_ps);
 
 	cid = tcore_context_get_id(ps_context);
 	(void) sprintf(cmd_str, "AT+CGPADDR=%d", cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
 	pending = tcore_at_pending_new(co_ps, cmd_str, "+CGPADDR", TCORE_AT_SINGLELINE,
 								   on_response_get_pdp_address, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
@@ -404,21 +437,22 @@ static void on_response_send_pdp_activate_cmd(TcorePending *p, int data_len, con
 	cid = tcore_context_get_id(ps_context);
 
 
-	dbg("Entered");
+	dbg("Entry");
 	if (!p) {
 		goto error;
 	}
 	co_ps = tcore_pending_ref_core_object(p);
 
 	if (resp->success) {
-		dbg("Response Ok");
-		/*getting the IP address and DNS from the modem*/
-		dbg("Getting the IP Address");
+		dbg("Response OK");
+
+		/* Getting the IP address and DNS from the modem */
+		dbg("Getting IP Address");
 		(void) send_get_pdp_address_cmd(co_ps, ps_context);
 		return;
 	} else {
-		dbg("Unable to actiavte PDP context for CID: %d ", cid);
-		dbg("Undefineing the PDP context");
+		dbg("Unable to activate PDP context - Context ID: [%d]", cid);
+		dbg("Undefining PDP context");
 		(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATED);
 		send_undefine_context_cmd(co_ps, ps_context);
 		return;
@@ -436,13 +470,15 @@ static TReturn send_pdp_activate_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	TcorePending *pending = NULL;
 	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
 	int cid = 0;
-	dbg("Entered");
+	dbg("Entry");
 	/* FIXME: Before MUX setup, use PHY HAL directly. */
 	hal = tcore_object_get_hal(co_ps);
 
 	/*Getting Context ID from Core Object*/
 	cid = tcore_context_get_id(ps_context);
 	(void) sprintf(cmd_str, "AT+CGACT=%d,%d", AT_PDP_ACTIVATE, cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_send_pdp_activate_cmd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
@@ -454,7 +490,7 @@ static TReturn send_pdp_activate_cmd(CoreObject *co_ps, CoreObject *ps_context)
 
 static TReturn activate_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
 {
-	dbg("Entered");
+	dbg("Entry");
 	return send_pdp_activate_cmd(co_ps, ps_context);
 }
 
@@ -465,18 +501,18 @@ static void on_response_xdns_enable_cmd(TcorePending *p, int data_len, const voi
 	CoreObject *ps_context = user_data;
 	struct tnoti_ps_call_status noti = {0};
 	int cid = -1;
-	
-	dbg("Entered");
+
+	dbg("Entry");
 
 	cid = tcore_context_get_id(ps_context);
-	
+
 	if (resp->success) {
 		dbg("Response OK");
-		dbg("DNS address getting is Enabled");		
+		dbg("DNS address getting is Enabled");
 		noti.context_id = cid;
 		noti.state = PS_DATA_CALL_CTX_DEFINED;
 	} else {
-		dbg("Response NOK");		
+		dbg("Response NOK");
 		noti.context_id = cid;
 		noti.state = PS_DATA_CALL_NOT_CONNECTED;
 		/*If response to enable the DNS NOK then we will use google DNS for the PDP context*/
@@ -494,13 +530,15 @@ static TReturn send_xdns_enable_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	int cid = -1;
 	char cmd_str[MAX_AT_CMD_STR_LEN];
 
-	dbg("Entered");
+	dbg("Entry");
 	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
 	hal = tcore_object_get_hal(co_ps);
 	cid = tcore_context_get_id(ps_context);
 
 	(void) sprintf(cmd_str, "AT+XDNS=%d,%d", cid, AT_XDNS_ENABLE);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_xdns_enable_cmd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
@@ -516,7 +554,7 @@ static void on_response_define_pdp_context(TcorePending *p, int data_len, const 
 	CoreObject *ps_context = (CoreObject *) user_data;
 	CoreObject *co_ps = tcore_pending_ref_core_object(p);
 
-	dbg("Entered");
+	dbg("Entry");
 	if (resp->success) {
 		dbg("Response OK");
 		send_xdns_enable_cmd(co_ps, ps_context);
@@ -540,7 +578,7 @@ static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void
 	enum co_context_d_comp d_comp;
 	enum co_context_h_comp h_comp;
 
-	dbg("Entered");
+	dbg("Entry");
 
 	cid = tcore_context_get_id(ps_context);
 	pdp_type = tcore_context_get_type(ps_context);
@@ -581,12 +619,13 @@ static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void
 	default:
 	{
 		/*PDP Type not supported supported*/
-		dbg("Unsupported PDP type :- %d returning ", pdp_type);
+		dbg("Unsupported PDP type: %d returning ", pdp_type);
 		return TCORE_RETURN_FAILURE;
 	}
 	}
-	dbg("Activating context for CID :- %d", cid);
+	dbg("Activating context for CID: %d", cid);
 	(void) sprintf(cmd_str, "AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d", cid, pdp_type_str, apn, d_comp, h_comp);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_define_pdp_context, ps_context);
@@ -609,7 +648,7 @@ gboolean s_ps_init(TcorePlugin *cp, CoreObject *co_ps)
 {
 	TcorePlugin *plugin = tcore_object_ref_plugin(co_ps);
 
-	dbg("Enter");
+	dbg("Entry");
 
 	tcore_ps_override_ops(co_ps, &ps_ops);
 
