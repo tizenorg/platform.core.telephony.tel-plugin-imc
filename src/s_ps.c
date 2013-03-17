@@ -326,6 +326,7 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 	GSList *tokens = NULL;
 	const char *line;
 	char *token_pdp_address;
+	char *real_pdp_address;
 	dbg("Enetered");
 	if (resp->final_response) {
 		dbg("RESPONSE OK");
@@ -340,10 +341,12 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 			dbg("line:- %s", line);
 			/* CID is already stored in ps_context, skip over & read PDP address */
 			token_pdp_address = g_slist_nth_data(tokens, 1);
+			real_pdp_address = tcore_at_tok_extract(token_pdp_address);
 
-			dbg("token_pdp_address :- %s", token_pdp_address);
+			dbg("PDP address: %s", real_pdp_address);
 			/* Strip off starting " and ending " from this token to read actual PDP address */
-			(void) tcore_context_set_ipv4_addr(ps_context, (const char *)token_pdp_address);
+			(void) tcore_context_set_ipv4_addr(ps_context, (const char *)real_pdp_address);
+			g_free(real_pdp_address);
 		}
 
 		(void) send_get_dns_cmd(co_ps, ps_context);
