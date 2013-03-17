@@ -1506,6 +1506,8 @@ static void on_confirmation_set_sound_path(TcorePending *p, int data_len, const 
 	} else {
 		dbg("Error in set sound path");
 	}
+
+	g_free(snd_path);
 }
 
 static void on_confirmation_call_set_source_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -3079,8 +3081,14 @@ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
 	}
 
 	if (g_str_has_prefix(cp_name, "mfld_blackbay") == TRUE) {
-		struct tnoti_call_sound_path tnoti_snd_path;
-		tnoti_snd_path.path = sound_path->path;
+		struct tnoti_call_sound_path *tnoti_snd_path;
+
+		tnoti_snd_path = g_try_new0(struct tnoti_call_sound_path, 1);
+		if (!tnoti_snd_path)
+			return TCORE_RETURN_ENOMEM;
+
+		tnoti_snd_path->path = sound_path->path;
+
 		/* Configure modem I2S1 to 8khz, mono, PCM if routing to bluetooth */
 		if (sound_path->path == CALL_SOUND_PATH_BLUETOOTH || sound_path->path == CALL_SOUND_PATH_STEREO_BLUETOOTH) {
 			call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,3,0,1,0,0,0,0,0,0,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
@@ -3109,7 +3117,7 @@ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
 		dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 		tcore_pending_set_request_data(pending, 0, req);
 		ur_dup = tcore_user_request_ref(ur);
-		ret = _call_request_message(pending, o, ur_dup, on_confirmation_set_sound_path, &tnoti_snd_path);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_set_sound_path, tnoti_snd_path);
 
 	} else {
 
