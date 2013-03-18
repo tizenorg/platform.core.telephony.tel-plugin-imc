@@ -266,6 +266,19 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 				dbg("Secondary DNS :- %s", dns_sec);
 			}
 
+			if ((g_strcmp0("0.0.0.0", dns_prim) == 0)
+					&& (g_strcmp0("0.0.0.0", dns_sec) == 0)) {
+				dbg("Invalid DNS");
+
+				_ps_free(dns_prim);
+				_ps_free(dns_sec);
+
+				tcore_at_tok_free(tokens);
+				tokens = NULL;
+
+				goto exit_fail;
+			}
+
 			tcore_context_set_ipv4_dns(ps_context, dns_prim, dns_sec);
 			_ps_free(dns_prim);
 			_ps_free(dns_sec);
