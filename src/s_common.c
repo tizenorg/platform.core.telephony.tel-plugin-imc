@@ -186,7 +186,7 @@ char* util_removeQuotes(void *data)
 		return NULL;
 	}
 
-	tmp = g_try_malloc(data_len - 1);
+	tmp = g_try_malloc0(data_len - 1);
 	memcpy(tmp, data + 1, data_len - 2);
 	dbg("tmp: [%s]", tmp);
 
