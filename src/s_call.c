@@ -1491,23 +1491,49 @@ static void on_confirmation_call_swap(TcorePending *p, int data_len, const void 
 	return;
 }
 
-static void on_confirmation_set_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
+static void on_confirmation_set_sound_path(TcorePending *p, int data_len,
+						const void *data,
+						void *user_data)
 {
 	const TcoreATResponse *resp = data;
 	struct tnoti_call_sound_path *snd_path = user_data;
+	struct tresp_call_sound_set_path resp_set_sound_path;
+	UserRequest *ur = tcore_pending_ref_user_request(p);
 	TcorePlugin *plugin = tcore_pending_ref_plugin(p);
+	CoreObject *co_call;
 
-	if (resp->success > 0) {
-		tcore_server_send_notification(tcore_plugin_ref_server(plugin),
-								tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL),
-								TNOTI_CALL_SOUND_PATH,
-								sizeof(struct tnoti_call_sound_path),
-								(void *)snd_path);
-	} else {
-		dbg("Error in set sound path");
+	if (ur == NULL) {
+		err("User Request is NULL");
+		g_free(user_data);
+		return;
 	}
 
-	g_free(snd_path);
+	if (resp->success <= 0) {
+
+		dbg("RESPONSE NOT OK");
+		resp_set_sound_path.err = TRUE;
+
+		goto out;
+	}
+
+	dbg("RESPONSE OK");
+	resp_set_sound_path.err = FALSE;
+
+	co_call = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
+
+	/* Notify control plugin about sound path */
+	tcore_server_send_notification(tcore_plugin_ref_server(plugin),
+					co_call, TNOTI_CALL_SOUND_PATH,
+					sizeof(struct tnoti_call_sound_path),
+					snd_path);
+
+out:
+	/* Answer TAPI request */
+	tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH,
+				sizeof(resp_set_sound_path),
+				&resp_set_sound_path);
+
+	g_free(user_data);
 }
 
 static void on_confirmation_call_set_source_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
