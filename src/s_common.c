@@ -116,7 +116,7 @@ char* util_hexStringToBytes(char *s)
 
 	for (i = 0; i < sz; i += 2) {
 		ret[i / 2] = (char) ((util_hexCharToInt(s[i]) << 4) | util_hexCharToInt(s[i + 1]));
-		dbg("[%02x]", ret[i / 2]);
+		msg("		[%02x]", ret[i / 2]);
 	}
 
 	return ret;

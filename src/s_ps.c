@@ -57,16 +57,6 @@
 #define AT_XDNS_DISABLE 0
 #define AT_SESSION_DOWN 0
 
-static void _ps_free(void *ptr)
-{
-	dbg("Entry");
-	if (ptr) {
-		(void) free(ptr);
-		ptr = NULL;
-	}
-	dbg("Exit");
-	return;
-}
 static void _unable_to_get_pending(CoreObject *co_ps, CoreObject *ps_context)
 {
 	struct tnoti_ps_call_status data_resp = {0};
@@ -300,8 +290,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 					&& (g_strcmp0("0.0.0.0", dns_sec) == 0)) {
 				dbg("Invalid DNS");
 
-				_ps_free(dns_prim);
-				_ps_free(dns_sec);
+				g_free(dns_prim);
+				g_free(dns_sec);
 
 				tcore_at_tok_free(tokens);
 				tokens = NULL;
@@ -311,8 +301,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 
 			/* Set DNS Address */
 			tcore_context_set_ipv4_dns(ps_context, dns_prim, dns_sec);
-			_ps_free(dns_prim);
-			_ps_free(dns_sec);
+			g_free(dns_prim);
+			g_free(dns_sec);
 
 			tcore_at_tok_free(tokens);
 			tokens = NULL;
@@ -389,6 +379,8 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 			/* Strip off starting " and ending " from this token to read actual PDP address */
 			/* Set IP Address */
 			(void)tcore_context_set_ipv4_addr(ps_context, (const char *)token_pdp_address);
+
+			g_free(token_pdp_address);
 		}
 
 		/* Get DNS Address */

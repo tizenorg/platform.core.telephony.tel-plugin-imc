@@ -319,7 +319,7 @@ static void _on_response_getindexlist(TcorePending *p, int data_len, const void 
 	memset(&resp_readrecord, 0x00, sizeof(struct tresp_phonebook_read_record));
 	resp_readrecord.result = PB_FAIL;
 	resp_readrecord.phonebook_type = *selected_pb;
-	
+
 	if(resp->success > 0)
 	{
 		CoreObject *o = NULL;
@@ -415,7 +415,7 @@ static void on_response_get_count(TcorePending *p, int data_len, const void *dat
 			__pbindex.total_count = res.total_count;
 		}
 		dbg("used count = %d,  total count= %d", res.used_count, res.total_count);
-		free(pbtype);
+		g_free(pbtype);
 		pbtype = NULL;
 	}
 	else{
@@ -532,7 +532,7 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 		member =  util_removeQuotes((void*)temp);
 		memcpy(res.number, member, strlen(member));
 		dbg("number %s - %d", res.number, strlen((const char*)res.number));
-		free(member);
+		g_free(member);
 		member = NULL;
 
 		/*Remove the quotes("") from the name string*/
@@ -540,7 +540,7 @@ static void on_response_read_record(TcorePending *p, int data_len, const void *d
 		member =  util_removeQuotes((void*)temp);
 		memcpy(res.name, member, strlen(member));
 		dbg("name %s - %d", res.name, strlen((const char*)res.name));
-		free(member);
+		g_free(member);
 		member = NULL;
 		res.dcs = PB_TEXT_ASCII;
 		res.name_len = strlen((const char*)res.name);
@@ -702,7 +702,7 @@ static void _response_get_support_list(TcorePending *p, int data_len, const void
 				dbg("SIM barred-dialling-number");
 			}
 			pbtype = strtok (NULL, "(,)");
-			free(temp);
+			g_free(temp);
 		}
 
 		noti_data.b_init = TRUE;

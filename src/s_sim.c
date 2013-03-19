@@ -905,7 +905,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 			tmp = util_removeQuotes(hexData);
 			recordData = util_hexStringToBytes(tmp);
 			util_hex_dump("   ", strlen(hexData) / 2, recordData);
-			free(tmp);
+			g_free(tmp);
 
 			ptr_data = (unsigned char *)recordData;
 			if (tcore_sim_get_type(co_sim) == SIM_TYPE_USIM) {
@@ -998,7 +998,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 					} else {
 						dbg("INVALID FCP received - DEbug!");
 						tcore_at_tok_free(tokens);
-						free(recordData);
+						g_free(recordData);
 						return;
 					}
 
@@ -1021,7 +1021,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 					} else {
 						dbg("INVALID FCP received - DEbug!");
 						tcore_at_tok_free(tokens);
-						free(recordData);
+						g_free(recordData);
 						return;
 					}
 
@@ -1103,7 +1103,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 					} else {
 						dbg("INVALID FCP received[0x%x] - DEbug!", *ptr_data);
 						tcore_at_tok_free(tokens);
-						free(recordData);
+						g_free(recordData);
 						return;
 					}
 
@@ -1125,7 +1125,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 					} else {
 						dbg("INVALID FCP received - DEbug!");
 						tcore_at_tok_free(tokens);
-						free(recordData);
+						g_free(recordData);
 						return;
 					}
 
@@ -1151,7 +1151,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 				} else {
 					dbg("INVALID FCP received - DEbug!");
 					tcore_at_tok_free(tokens);
-					free(recordData);
+					g_free(recordData);
 					return;
 				}
 			} else if (tcore_sim_get_type(co_sim) == SIM_TYPE_GSM) {
@@ -1248,7 +1248,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 			file_meta->rec_count = num_of_records;
 			file_meta->current_index = 0; // reset for new record type EF
 			rt = SIM_ACCESS_SUCCESS;
-			free(recordData);
+			g_free(recordData);
 		} else {
 			/*2. SIM access fail case*/
 			dbg("error to get ef[0x%x]", file_meta->file_id);
@@ -2838,8 +2838,8 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 			decoded_data = util_hexStringToBytes(tmp);
 
 			memcpy((char *)res.apdu_resp, decoded_data, res.apdu_resp_length);
-			free(tmp);
-			free(decoded_data);
+			g_free(tmp);
+			g_free(decoded_data);
 			res.result = SIM_ACCESS_SUCCESS;
 		}
 	} else {
@@ -2887,8 +2887,8 @@ static void on_response_get_atr(TcorePending *p, int data_len, const void *data,
 
 			res.atr_length = strlen(decoded_data);
 			memcpy((char *)res.atr, decoded_data, res.atr_length);
-			free(tmp);
-			free(decoded_data);
+			g_free(tmp);
+			g_free(decoded_data);
 			res.result = SIM_ACCESS_SUCCESS;
 		}
 	} else {

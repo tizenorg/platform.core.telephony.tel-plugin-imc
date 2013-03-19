@@ -597,9 +597,7 @@ OUT:
 		tcore_at_tok_free(tokens);
 	}
 
-	if (NULL != number) {
-		g_free(number);
-	}
+	g_free(number);
 	return TRUE;
 }
 

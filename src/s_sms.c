@@ -467,7 +467,7 @@ static gboolean on_event_sms_incom_msg(CoreObject *o, const void *event_info, vo
 	if(tokens)
 		tcore_at_tok_free(tokens);
 
-	free(bytePDU);
+	g_free(bytePDU);
 
 	return TRUE;
 }
@@ -559,7 +559,7 @@ static gboolean on_event_sms_cb_incom_msg(CoreObject *o, const void *event_info,
 
 				memcpy(cbMsgInfo.cbMsg.msgData, (char*)byte_pdu, cbMsgInfo.cbMsg.length);
 				rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SMS_CB_INCOM_MSG, sizeof(struct tnoti_sms_cellBroadcast_msg), &cbMsgInfo);
-				free(byte_pdu);
+				g_free(byte_pdu);
 			} else {
 				dbg("Invalid Message Length");
 			}
@@ -780,7 +780,7 @@ static void on_response_class2_read_msg(TcorePending *pending, int data_len, con
 
 	rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(tcore_pending_ref_core_object(pending))), tcore_pending_ref_core_object(pending), TNOTI_SMS_INCOM_MSG, sizeof(struct tnoti_sms_umts_msg), &gsmMsgInfo);
 
-	free(bytePDU);
+	g_free(bytePDU);
 
 	dbg("Exit");
 	return;
@@ -914,7 +914,7 @@ static void on_response_read_msg(TcorePending *pending, int data_len, const void
 						resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 					}
 				}
-				free(byte_pdu);
+				g_free(byte_pdu);
 			}else {
 				dbg("NULL PDU");
 			}
@@ -1238,6 +1238,8 @@ static void on_response_get_cb_config(TcorePending *p, int data_len, const void 
 						cb_mid_str = util_removeQuotes(pResp);
 						cb_tokens = tcore_at_tok_new((const char *) cb_mid_str);
 
+						g_free(cb_mid_str);
+
 						num_cb_tokens = g_slist_length(cb_tokens);
 						dbg("num_cb_tokens = %d", num_cb_tokens);
 
@@ -1503,8 +1505,8 @@ static void on_response_get_sms_params(TcorePending *pending, int data_len, cons
 				for (i = 0; i < (int) respGetParams.paramsInfo.tpSvcCntrAddr.dialNumLen; i++)
 					dbg("SCAddr = %d [%02x]", i, respGetParams.paramsInfo.tpSvcCntrAddr.diallingNum[i]);
 
-				free(recordData);
-				free(hexData);
+				g_free(recordData);
+				g_free(hexData);
 			} else {
 				dbg("No response");
 			}
@@ -1732,8 +1734,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 								}
 							} else {
 								dbg("INVALID FCP received - DEbug!");
-								free(hexData);
-								free(recordData);
+								g_free(hexData);
+								g_free(recordData);
 								tcore_at_tok_free(tokens);
 								return;
 							}
@@ -1750,8 +1752,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 								dbg("Getting FileID=[0x%x]", file_id);
 							} else {
 								dbg("INVALID FCP received - DEbug!");
-								free(hexData);
-								free(recordData);
+								g_free(hexData);
+								g_free(recordData);
 								tcore_at_tok_free(tokens);
 								return;
 							}
@@ -1830,8 +1832,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 								}
 							} else {
 								dbg("INVALID FCP received[0x%x] - DEbug!", *ptr_data);
-								free(hexData);
-								free(recordData);
+								g_free(hexData);
+								g_free(recordData);
 								tcore_at_tok_free(tokens);
 								return;
 							}
@@ -1853,8 +1855,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 								ptr_data = ptr_data + 2;
 							} else {
 								dbg("INVALID FCP received - DEbug!");
-								free(hexData);
-								free(recordData);
+								g_free(hexData);
+								g_free(recordData);
 								tcore_at_tok_free(tokens);
 								return;
 							}
@@ -1880,8 +1882,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 							}
 						} else {
 							dbg("INVALID FCP received - DEbug!");
-							free(hexData);
-							free(recordData);
+							g_free(hexData);
+							g_free(recordData);
 							tcore_at_tok_free(tokens);
 							return;
 						}
@@ -1980,8 +1982,8 @@ static void on_response_get_paramcnt(TcorePending *p, int data_len, const void *
 					smsp_record_len = tcore_plugin_ref_property(plugin, "SMSPRECORDLEN");
 					memcpy(smsp_record_len, &record_len, sizeof(int));
 
-					free(recordData);
-					free(hexData);
+					g_free(recordData);
+					g_free(hexData);
 				} else {
 					/*2. SIM access fail case*/
 					dbg("SIM access fail");
@@ -2102,7 +2104,7 @@ static void _response_get_efsms_data(TcorePending *p, int data_len, const void *
 
 				//free memory we own
 				g_free(cmd_str);
-				free(encoded_data);
+				g_free(encoded_data);
 				util_sms_free_memory(atreq);
 				util_sms_free_memory(pending);
 
@@ -2120,7 +2122,7 @@ static void _response_get_efsms_data(TcorePending *p, int data_len, const void *
 			tcore_hal_send_request(hal, pending);
 
 			g_free(cmd_str);
-			free(encoded_data);
+			g_free(encoded_data);
 		}
 	}
 

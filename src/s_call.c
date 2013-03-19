@@ -2367,10 +2367,7 @@ static int _callFromCLCCLine(char *line, struct clcc_call_t *p_call)
 ERROR:
 	err("Invalid CLCC line");
 
-	if (num) {
-		g_free(num);
-		num = NULL;
-	}
+	g_free(num);
 
 	// Free tokens
 	tcore_at_tok_free(tokens);

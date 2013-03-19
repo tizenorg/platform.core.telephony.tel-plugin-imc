@@ -78,24 +78,23 @@ static gboolean on_event_sat_proactive_command(CoreObject *o, const void *event_
 	line = (char *) lines->data;
 	tokens = tcore_at_tok_new(line);
 	if (g_slist_length(tokens) != 1) {
-		dbg("invalid message");
+		err("Invalid message");
 		tcore_at_tok_free(tokens);
 		return FALSE;
 	}
-	hexData = (char *) g_slist_nth_data(tokens, 0);
 
-	dbg("hexdata %s ", hexData);
-	dbg("hexdata length %d", strlen(hexData));
+	hexData = (char *)g_slist_nth_data(tokens, 0);
+	dbg("SAT data: [%s] SAT data length: [%d]", hexData, strlen(hexData));
 
 	tmp = util_removeQuotes(hexData);
 	recordData = util_hexStringToBytes(tmp);
 	dbg("recordData: %x", recordData);
-	free(tmp);
+	g_free(tmp);
 	util_hex_dump("    ", strlen(hexData) / 2, recordData);
 	len_proactive_cmd = strlen(recordData);
 	dbg("len_proactive_cmd = %d", len_proactive_cmd);
 	tcore_sat_decode_proactive_command((unsigned char *) recordData, (strlen(hexData) / 2) - 1, &decoded_data);
-	free(recordData);
+	g_free(recordData);
 
 	proactive_noti.cmd_number = decoded_data.cmd_num;
 	proactive_noti.cmd_type = decoded_data.cmd_type;

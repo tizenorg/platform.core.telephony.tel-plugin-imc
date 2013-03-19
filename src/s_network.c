@@ -457,13 +457,10 @@ OUT:
 		tcore_user_request_send_response(ur, TRESP_NETWORK_SEARCH, sizeof(struct tresp_network_search), &resp);
 	}
 
-	if (tokens)
-		tcore_at_tok_free(tokens);
+	/* Free tokens */
+	tcore_at_tok_free(tokens);
 
-	if (temp_plmn_info)
-		free(temp_plmn_info);
-
-	return;
+	g_free(temp_plmn_info);
 }
 
 static void on_response_set_umts_band(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -980,7 +977,7 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 							if (resp.list[i].plmn[5] == '#')
 								resp.list[i].plmn[5] = '\0';
 
-							// free(cp_plmn);
+							// g_free(cp_plmn);
 						}
 					}
 				}
@@ -1169,10 +1166,9 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				dbg("dbg.. noti.plmn  : %s", noti.plmn);
 			}
 		}
-		if (long_plmn_name)
-			free(long_plmn_name);
-		if (short_plmn_name)
-			free(short_plmn_name);
+
+		g_free(long_plmn_name);
+		g_free(short_plmn_name);
 	}
 	return;
 }
