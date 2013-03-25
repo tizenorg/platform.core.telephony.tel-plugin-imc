@@ -333,7 +333,7 @@ static int _sim_get_current_pin_facility(enum s_sim_sec_op_e op)
 		break;
 
 	default:
-		dbg("not handled current sec op[%d]", op)
+		dbg("not handled current sec op[%d]", op);
 		break;
 	}
 	return ret_type;
@@ -2797,7 +2797,7 @@ OUT:
 		break;
 
 	default:
-		dbg("Invalid File ID - %d", sp->file_id)
+		dbg("Invalid File ID - %d", sp->file_id);
 		break;
 	}
 	tcore_at_tok_free(tokens);

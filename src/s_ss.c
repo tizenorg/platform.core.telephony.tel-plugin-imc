@@ -256,7 +256,7 @@ static gboolean on_notification_ss_ussd(CoreObject *o, const void *data, void *u
 			if (str) {
 				memset(str, 0x00, strlen(ussd_string) - 1);
 			} else {
-				dbg("malloc failed")
+				dbg("malloc failed");
 				if (NULL != tokens) {
 					tcore_at_tok_free(tokens);
 				}
@@ -959,7 +959,7 @@ static void on_response_ss_barring_get(TcorePending *p, int data_len, const void
 		dbg("total records : %d", countRecords);
 	} else {
 		countRecords = 0;
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 	resp.record_num = countRecords;
 	resp.record = 0;
@@ -1073,7 +1073,7 @@ error:
 		resp.record_num = countValidRecords;
 		resp.err = SS_ERROR_NONE;
 	} else {
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 
 	if (response->success > 0) {
@@ -1139,7 +1139,7 @@ static void on_response_ss_forwarding_get(TcorePending *p, int data_len, const v
 		dbg("total records : %d", countRecords);
 	} else {
 		countRecords = 0;
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 	resp.record_num = countRecords;
 	resp.record = 0;
@@ -1243,7 +1243,7 @@ error:
 		resp.record_num = countValidRecords;
 		resp.err = SS_ERROR_NONE;
 	} else {
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 
 	if (response->success > 0) {
@@ -1292,7 +1292,7 @@ static void on_response_ss_waiting_get(TcorePending *p, int data_len, const void
 	char *classx_str, *status;
 	const TcoreATResponse *response;
 
-	dbg("function enter")
+	dbg("function enter");
 	response = data;
 	ur = tcore_pending_ref_user_request(p);
 	info = (struct ss_confirm_info *) user_data;
@@ -1303,7 +1303,7 @@ static void on_response_ss_waiting_get(TcorePending *p, int data_len, const void
 		dbg("total records : %d", countRecords);
 	} else {
 		countRecords = 0;
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 	resp.record_num = countRecords;
 	resp.record = 0;
@@ -1385,7 +1385,7 @@ error:
 		resp.record_num = countValidRecords;
 		resp.err = SS_ERROR_NONE;
 	} else {
-		dbg("no active status - return to user")
+		dbg("no active status - return to user");
 	}
 
 	if (response->success > 0) {
@@ -1434,7 +1434,7 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 	GSList *tokens = NULL;
 	const TcoreATResponse *response;
 
-	dbg("function enter")
+	dbg("function enter");
 	response = data;
 	ur = tcore_pending_ref_user_request(p);
 	p_type = (enum telephony_ss_cli_type *) (user_data);
@@ -1445,7 +1445,7 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 
 		if (*p_type == SS_CLI_TYPE_CLIR) {
 			// +CLIR: <n> <m>
-			dbg("CLI type is CLIR")
+			dbg("CLI type is CLIR");
 			// parse <n>
 			status = g_slist_nth_data(tokens, 0);
 
@@ -1690,7 +1690,7 @@ static TReturn _ss_barring_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -1806,7 +1806,7 @@ static TReturn _ss_barring_get(CoreObject *o,
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -1881,7 +1881,7 @@ static TReturn s_ss_barring_change_password(CoreObject *o, UserRequest *ur)
 	ret = _ss_request_message(pending, o, ur, on_response_ss_barring_change_pwd, user_data);
 	g_free(cmd_str);
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2079,7 +2079,7 @@ static TReturn _ss_forwarding_set(CoreObject *o, UserRequest *ur, enum telephony
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2194,7 +2194,7 @@ static TReturn _ss_forwarding_get(CoreObject *o,
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2323,7 +2323,7 @@ static TReturn _ss_waiting_set(CoreObject *o, UserRequest *ur, enum telephony_ss
 	ret = _ss_request_message(pending, o, ur, on_response_ss_waiting_set, user_data);
 	g_free(cmd_str);
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2345,7 +2345,7 @@ static TReturn _ss_waiting_get(CoreObject *o,
 	TcorePending *pending = NULL;
 	TcoreATRequest *req;
 
-	dbg("function  enter")
+	dbg("function  enter");
 	switch (class) {
 	case SS_CLASS_ALL_TELE:
 		classx = 7;
@@ -2392,7 +2392,7 @@ static TReturn _ss_waiting_get(CoreObject *o,
 	ret = _ss_request_message(pending, o, ur, on_response_ss_waiting_get, user_data);
 	g_free(cmd_str);
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2516,7 +2516,7 @@ static TReturn s_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 	ret = _ss_request_message(pending, o, ur, on_response_ss_cli_get, user_data);
 	g_free(cmd_str);
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2574,7 +2574,7 @@ static TReturn s_ss_send_ussd(CoreObject *o, UserRequest *ur)
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		if (user_data != NULL) {
 			g_free(user_data);
 		}
@@ -2635,7 +2635,7 @@ static TReturn s_ss_manage_call_send(CoreObject *o, UserRequest *ur, const char 
 
 	ret = _ss_request_message(pending, o, ur, (TcorePendingResponseCallback) cb, user_data);
 	if (!ret) {
-		dbg("AT request sent failed ")
+		dbg("AT request sent failed ");
 		return TCORE_RETURN_FAILURE;
 	}
 	return TCORE_RETURN_SUCCESS;

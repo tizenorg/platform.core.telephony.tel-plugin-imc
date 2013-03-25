@@ -844,7 +844,7 @@ static void on_confirmation_call_outgoing(TcorePending *p, int data_len, const v
 		err("User Request is NULL");
 	}
 
-	dbg("Exit")
+	dbg("Exit");
 	return;
 }
 
@@ -2481,7 +2481,7 @@ static void on_notification_call_incoming(CoreObject *o, const void *data, void 
 		return;
 	}
 
-	dbg("freeing  at token")
+	dbg("freeing  at token");
 	tcore_at_tok_free(tokens);
 
 	eflag = g_new0(gboolean, 1);
@@ -2631,7 +2631,7 @@ static TReturn s_call_outgoing(CoreObject *o, UserRequest *ur)
 
 	data = (struct treq_call_dial *) tcore_user_request_ref_data(ur, 0);
 	if (data->type == CALL_TYPE_VIDEO) {
-		dbg("invalid call type")
+		dbg("invalid call type");
 		return TCORE_RETURN_FAILURE;
 	}
 
@@ -3037,7 +3037,7 @@ static TReturn s_call_send_dtmf(CoreObject *o, UserRequest *ur)
 	g_free(cmd_str);
 
 	if (!ret) {
-		dbg("AT request sent failed")
+		dbg("AT request sent failed");
 		return TCORE_RETURN_FAILURE;
 	}
 

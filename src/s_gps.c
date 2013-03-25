@@ -646,7 +646,7 @@ static void _parse_ref_time_gps_elements(char *element_str, char *element_value,
 	int nelem;
 	static char *element[] = {"GPS_TOW_msec", "GPS_week", "sat_id", "tlm_word", "anti_sp", "alert", "tlm_res"};
 
-	dbg("Enter")
+	dbg("Enter");
 	if (count < 0 || count >= MAX_NUM_OF_GPS_REF_TIME_ELEMENT) {
 		dbg("invalid count");
 		return;
@@ -727,7 +727,7 @@ static void _parse_location_parameters(char *element_str, char *element_value, g
 
 	count = _gps_element_compare(element, element_str, nelem);
 
-	dbg("Enter")
+	dbg("Enter");
 
 	switch (count) {
 	case 0:
