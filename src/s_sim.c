@@ -1985,7 +1985,6 @@ static TReturn _get_retry_count(CoreObject *o, UserRequest *ur)
 	return TCORE_RETURN_SUCCESS;
 }
 
-
 static gboolean on_event_facility_lock_status(CoreObject *o, const void *event_info, void *user_data)
 {
 	struct s_sim_property *sp = NULL;
@@ -2017,27 +2016,56 @@ OUT:
 	return TRUE;
 }
 
+static void notify_sms_state(TcorePlugin *plugin, CoreObject *co_sim,
+				gboolean sms_ready)
+{
+	Server *server = tcore_plugin_ref_server(plugin);
+	struct tnoti_sms_ready_status sms_ready_noti;
+	CoreObject *co_sms;
+
+	dbg("Entry");
+
+	co_sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
+	if (co_sms == NULL) {
+		err("Can't find SMS core object");
+		return;
+	}
+
+	if (tcore_sms_get_ready_status(co_sms) == sms_ready)
+		return;
+
+	tcore_sms_set_ready_status(co_sms, sms_ready);
+
+	if (tcore_sim_get_status(co_sim) == SIM_STATUS_INIT_COMPLETED) {
+		sms_ready_noti.status = sms_ready;
+		tcore_server_send_notification(server, co_sms,
+						TNOTI_SMS_DEVICE_READY,
+						sizeof(sms_ready_noti),
+						&sms_ready_noti);
+	}
+
+	dbg("Exit");
+}
 
 static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void *user_data)
 {
-	struct s_sim_property *sp = NULL;
+	TcorePlugin *plugin = tcore_object_ref_plugin(o);
 	enum tel_sim_status sim_status = SIM_STATUS_INITIALIZING;
 	GSList *tokens = NULL;
-	GSList *lines = NULL;
-	const char *line = NULL;
+	GSList *lines;
+	const char *line;
 	int sim_state = 0;
 	int sms_state = 0;
 
 	dbg("Entry");
 
-	sp = tcore_sim_ref_userdata(o);
-
 	lines = (GSList *)event_info;
 	if (g_slist_length(lines) != 1) {
 		err("Unsolicited message BUT multiple lines");
-		goto OUT;
+		goto out;
 	}
-	line = (char *)(lines->data);
+
+	line = lines->data;
 
 	/* Create 'tokens' */
 	tokens = tcore_at_tok_new(line);
@@ -2046,180 +2074,101 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	if (g_slist_length(tokens) == 4) {
 		sim_state = atoi(g_slist_nth_data(tokens, 1));
 		sms_state = atoi(g_slist_nth_data(tokens, 3));
-	} else if (g_slist_length(tokens) == 1)
+		notify_sms_state(plugin, o, (sms_state > 0));
+	} else if (g_slist_length(tokens) == 1) {
 		sim_state = atoi(g_slist_nth_data(tokens, 0));
-	else {
+	} else {
 		err("Invalid message");
-
-		/* Free 'tokens' */
-		tcore_at_tok_free(tokens);
-		return TRUE;
+		goto out;
 	}
 
 	switch (sim_state) {
-	case 0:					/* SIM NOT PRESENT */
+	case 0:
 		sim_status = SIM_STATUS_CARD_NOT_PRESENT;
 		dbg("NO SIM");
-	break;
-
-	case 1:					/* PIN VERIFICATION NEEDED */
+		break;
+	case 1:
 		sim_status = SIM_STATUS_PIN_REQUIRED;
 		dbg("PIN REQUIRED");
-	break;
-
-	case 2:					/* PIN VERIFICATION NOT NEEDED \96 READY */
+		break;
+	case 2:
 		sim_status = SIM_STATUS_INITIALIZING;
 		dbg("PIN DISABLED AT BOOT UP");
-	break;
-
-	case 3:					/* PIN VERIFIED \96 READY */
+		break;
+	case 3:
 		sim_status = SIM_STATUS_INITIALIZING;
 		dbg("PIN VERIFIED");
-	break;
-
-	case 4:					/* PUK VERIFICATION NEEDED */
+		break;
+	case 4:
 		sim_status = SIM_STATUS_PUK_REQUIRED;
-		dbg("PUK REQUIED");
-	break;
-
-	case 5:					/* SIM PERMANENTLY BLOCKED */
+		dbg("PUK REQUIRED");
+		break;
+	case 5:
 		sim_status = SIM_STATUS_CARD_BLOCKED;
 		dbg("CARD PERMANENTLY BLOCKED");
-	break;
-
-	case 6:					/* SIM ERROR */
+		break;
+	case 6:
+		sim_status = SIM_STATUS_CARD_ERROR;
+		dbg("SIM CARD ERROR");
+		break;
+	case 7:
+		sim_status = SIM_STATUS_INIT_COMPLETED;
+		dbg("SIM INIT COMPLETED");
+		break;
+	case 8:
 		sim_status = SIM_STATUS_CARD_ERROR;
 		dbg("SIM CARD ERROR");
 		break;
 
-	case 7:					/* SIM READY FOR ATTACH (+COPS) */
-		sim_status = SIM_STATUS_INIT_COMPLETED;
-		dbg("SIM INIT COMPLETED");
-	break;
-
-	case 8:					/* SIM TECHNICAL PROBLEM */
-		sim_status = SIM_STATUS_CARD_ERROR;
-		dbg("SIM CARD ERROR");
-	break;
-
-	case 9:					/* SIM REMOVED */
+	case 9:
 		sim_status = SIM_STATUS_CARD_REMOVED;
 		dbg("SIM REMOVED");
-	break;
-
-	case 99:				/* SIM STATE UNKNOWN */
+		break;
+	case 12:
+		dbg("SIM SMS Ready");
+		notify_sms_state(plugin, o, TRUE);
+		goto out;
+	case 99:
 		sim_status = SIM_STATUS_UNKNOWN;
 		dbg("SIM STATE UNKNOWN");
-	break;
-
-	case 12:				/* SIM SMS CACHING COMPLETED */
-	{
-		struct tnoti_sms_ready_status sms_ready_noti = {0, };
-		CoreObject *sms;
-		TcorePlugin *plugin;
-
-		dbg("SIM State: [%d] - SMS Ready", sim_state);
-
-		sms_ready_noti.status = TRUE;
-		plugin = tcore_object_ref_plugin(o);
-		dbg("Plug-in name: [%s] SMS State: [%s]",
-			tcore_plugin_ref_plugin_name(plugin),
-			sms_ready_noti.status ? "TRUE" : "FALSE");
-
-		/* Set SMS State to Ready */
-		sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
-		tcore_sms_set_ready_status(sms, sms_ready_noti.status);
-
-		/* Send notification - SMS Ready */
-		tcore_server_send_notification(tcore_plugin_ref_server(plugin), sms,
-			TNOTI_SMS_DEVICE_READY, sizeof(sms_ready_noti), &sms_ready_noti);
-
-		goto OUT;
-	}
-
+		break;
 	default:
 		err("Unknown/Unsupported SIM state: [%d]", sim_state);
-	break;
+		break;
 	}
 
 	switch (sim_status) {
 	case SIM_STATUS_INIT_COMPLETED:
 		dbg("[SIM] SIM INIT COMPLETED");
 		if (tcore_sim_get_type(o) == SIM_TYPE_UNKNOWN) {
-			/* Get SIM Type */
 			_get_sim_type(o);
-
-			goto OUT;
+			goto out;
 		}
-	break;
 
-	case SIM_STATUS_INITIALIZING:
-		dbg("[SIM] SIM CARD INITIALIZING");
-	break;
-
-	case SIM_STATUS_PIN_REQUIRED:
-		dbg("[SIM] PIN REQUIRED");
-	break;
-
-	case SIM_STATUS_PUK_REQUIRED:
-		dbg("[SIM] PUK REQUIRED");
-	break;
-
-	case SIM_STATUS_CARD_BLOCKED:
-		dbg("[SIM] SIM CARD BLOCKED");
-	break;
-
-	case SIM_STATUS_NCK_REQUIRED:
-		dbg("[SIM] NCK REQUIRED");
-	break;
-
-	case SIM_STATUS_NSCK_REQUIRED:
-		dbg("[SIM] NSCK REQUIRED");
-	break;
-
-	case SIM_STATUS_SPCK_REQUIRED:
-		dbg("[SIM] SPCK REQUIRED");
-	break;
-
-	case SIM_STATUS_CCK_REQUIRED:
-		dbg("[SIM] CCK REQUIRED");
-	break;
-
-	case SIM_STATUS_LOCK_REQUIRED:
-		dbg("[SIM] PHONE-SIM LOCK REQUIRED");
-	break;
-
+		break;
 	case SIM_STATUS_CARD_REMOVED:
 		dbg("[SIM] SIM CARD REMOVED");
-
-		/* Update SIM Type - UNKNOWN */
 		tcore_sim_set_type(o, SIM_TYPE_UNKNOWN);
-	break;
+		break;
 
 	case SIM_STATUS_CARD_NOT_PRESENT:
 		dbg("[SIM] SIM CARD NOT PRESENT");
-
-		/* Update SIM Type - UNKNOWN */
 		tcore_sim_set_type(o, SIM_TYPE_UNKNOWN);
-	break;
+		break;
 
 	case SIM_STATUS_CARD_ERROR:
 		dbg("[SIM] SIM CARD ERROR");
-
-		/* Update SIM Type - UNKNOWN */
 		tcore_sim_set_type(o, SIM_TYPE_UNKNOWN);
-	break;
+		break;
 
 	default:
-		err("Not handled SIM State: [0x%02x]", sim_status);
-		goto OUT;
+		err("[SIM) Status: [0x%02x]", sim_status);
+		goto out;
 	}
 
-	/* Update SIM State */
 	_sim_status_update(o, sim_status);
 
-OUT:
-	/* Free tokens */
+out:
 	tcore_at_tok_free(tokens);
 
 	dbg("Exit");
