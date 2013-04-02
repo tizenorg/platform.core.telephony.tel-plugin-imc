@@ -733,10 +733,10 @@ static void on_response_ss_forwarding_set(TcorePending *p, int data_len, const v
 	CoreObject *o = 0;
 	UserRequest *ur = 0, *dup_ur = 0;
 	struct ss_confirm_info *info = 0;
-	struct tresp_ss_forwarding resp;
+	struct tresp_ss_forwarding resp = {0,};
 	GSList *tokens = NULL;
 	const char *line;
-	int err;
+	int error;
 	const TcoreATResponse *response;
 
 	dbg("function enter");
@@ -750,18 +750,19 @@ static void on_response_ss_forwarding_set(TcorePending *p, int data_len, const v
 	if (response->success > 0) {
 		dbg("RESPONSE OK");
 		resp.err = SS_ERROR_NONE;
-		resp.record = 0;
 	} else {
 		dbg("RESPONSE NOT OK");
-		resp.record = 0;
+
+		/* Extract Error */
 		line = (const char *) response->final_response;
 		tokens = tcore_at_tok_new(line);
 
 		if (g_slist_length(tokens) < 1) {
-			dbg("err cause not specified or string corrupted");
+			dbg("Error cause not specified or string corrupted");
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		} else {
-			err = atoi(g_slist_nth_data(tokens, 0));
+			error = atoi(g_slist_nth_data(tokens, 0));
+			err("Error: [%d]", error);
 			// / TODO: CMEE error mapping is required.
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		}
