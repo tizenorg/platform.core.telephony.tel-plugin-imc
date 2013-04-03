@@ -143,9 +143,11 @@ static void on_response_undefine_context_cmd(TcorePending *p, int data_len, cons
 	co_ps = tcore_pending_ref_core_object(p);
 	if (resp->success) {
 		dbg("Response Ok");
-		return;
+		goto exit;
 	}
 	dbg("Response NOk");
+
+exit:
 	_unable_to_get_pending(co_ps, ps_context);
 	return;
 }
