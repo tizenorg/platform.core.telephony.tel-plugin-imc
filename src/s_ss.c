@@ -339,12 +339,12 @@ static gboolean on_notification_ss_ussd(CoreObject *o, const void *data, void *u
 
 			_ss_ussd_response(ur, ussd_str, type, status);
 		}
-		
-CATCH:  
+
+CATCH:
 		if (NULL != tokens) {
 			tcore_at_tok_free(tokens);
 		}
-		
+
 		if (NULL != str) {
 			free(str);
 		}
@@ -803,7 +803,7 @@ static void on_response_ss_waiting_set(TcorePending *p, int data_len, const void
 	UserRequest *ur = 0;
 	UserRequest *ur_dup = 0;
 	struct ss_confirm_info *info = 0;
-	struct tresp_ss_waiting resp;
+	struct tresp_ss_waiting resp = {0,};
 	GSList *tokens = NULL;
 	const char *line;
 	int err;
@@ -814,40 +814,43 @@ static void on_response_ss_waiting_set(TcorePending *p, int data_len, const void
 	core_obj = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 
-	info = (struct ss_confirm_info *) user_data;
+	info = (struct ss_confirm_info *)user_data;
 
 	if (response->success > 0) {
 		dbg("RESPONSE OK");
 		resp.err = SS_ERROR_NONE;
-		resp.record = 0;
 	} else {
 		dbg("RESPONSE NOT OK");
-		resp.record = 0;
+
+		/* Extract Error */
 		line = (const char *) response->final_response;
 		tokens = tcore_at_tok_new(line);
 
 		if (g_slist_length(tokens) < 1) {
-			dbg("err cause not specified or string corrupted");
+			dbg("Error cause not specified or string corrupted");
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		} else {
 			err = atoi(g_slist_nth_data(tokens, 0));
-			// / TODO: CMEE error mapping is required.
+
+			/* TODO: CMEE error mapping is required. */
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		}
+
+		/* Free tokens */
 		tcore_at_tok_free(tokens);
 	}
 
-	dbg("on_response_ss_waiting_set - rsp.err : %d, ur : %x, class : %d", resp.err, ur, info->class);
-
+	dbg("Call Waiting - Error: [%d], UR: [0x%x] class: [0x%2x]", resp.err, ur, info->class);
 	if (resp.err == SS_ERROR_NONE) {
 		ur_dup = tcore_user_request_ref(ur);
-		dbg("Get waiting call status");
+
+		dbg("Get Call Waiting status");
 		_ss_waiting_get(core_obj, ur_dup, info->class, info->resp);
 	} else {
 		if (ur) {
 			tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_waiting), &resp);
 		} else {
-			dbg("[ error ] ur is 0");
+			err("User request is NULL");
 		}
 	}
 	g_free(user_data);
