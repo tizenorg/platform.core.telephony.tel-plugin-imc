@@ -5,7 +5,7 @@ PROJECT(imc-plugin C)
 
 SET(PREFIX ${CMAKE_INSTALL_PREFIX})
 SET(EXEC_PREFIX "\${prefix}")
-SET(LIBDIR "\${prefix}/lib")
+SET(LIBDIR ${LIB_INSTALL_DIR})
 SET(INCLUDEDIR "\${prefix}/include")
 
 # Set required packages
@@ -20,7 +20,7 @@ INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include
 					/usr/include/libxml2
 					)
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Werror -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wdeclaration-after-statement -Wmissing-declarations -Wredundant-decls -Wcast-align")
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wdeclaration-after-statement -Wmissing-declarations -Wredundant-decls -Wcast-align")
 
 ADD_DEFINITIONS("-DFEATURE_DLOG_DEBUG")
 ADD_DEFINITIONS("-DTCORE_LOG_TAG=\"IMC\"")
@@ -54,7 +54,7 @@ SET_TARGET_PROPERTIES(imc-plugin PROPERTIES PREFIX "" OUTPUT_NAME imc-plugin)
 
 # install
 INSTALL(TARGETS imc-plugin
-		LIBRARY DESTINATION lib/telephony/plugins/modems)
+	LIBRARY DESTINATION ${LIB_INSTALL_DIR}/telephony/plugins/modems)
 
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/res/wiki_mcc_mnc_oper_list.sql DESTINATION /tmp RENAME mcc_mnc_oper_list.sql)
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION /usr/share/license RENAME tel-plugin-imc)
