@@ -951,7 +951,7 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 				/* EF Index */
 				if ((pResp = tcore_at_tok_nth(tokens, 0))) {
 					dbg("Index : %s", pResp);
-					resp.list[i].ef_index = atoi(pResp);
+					resp.list[i].index = atoi(pResp);
 				}
 				/* Format */
 				if ((pResp = tcore_at_tok_nth(tokens, 1))) {
@@ -2066,7 +2066,7 @@ AT+CPOL=
 			req_data->plmn[5] = '\0';
 		}
 	}
-	cmd_str = g_strdup_printf("AT+CPOL=%d,%d,\"%s\",%d,%d,%d", req_data->ef_index + 1, format, req_data->plmn, gsm_act, gsm_compact_act, utran_act);
+	cmd_str = g_strdup_printf("AT+CPOL=%d,%d,\"%s\",%d,%d,%d", req_data->index + 1, format, req_data->plmn, gsm_act, gsm_compact_act, utran_act);
 
 	dbg("cmd_str - %s", cmd_str);
 	atreq = tcore_at_request_new(cmd_str, "+CPOL", TCORE_AT_NO_RESULT);
