@@ -369,6 +369,7 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 	GSList *network_token = NULL;
 	int AcT = 0;
 	char *temp_plmn_info = NULL;
+	char *alpha_name = NULL;
 	char *pResp = NULL;
 	int num_network_avail = 0;
 
@@ -404,30 +405,33 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 				resp.list[i].status = (enum telephony_network_plmn_status) atoi(pResp);
 			}
 
-			if ((pResp = tcore_at_tok_nth(network_token, 1))) {     /* Long Aplha name */
-				dbg("Long Aplha name : %s", pResp);
+			if ((pResp = tcore_at_tok_nth(network_token, 1))) {	/* Long Alpha name */
+				dbg("Long Alpha name : %s", pResp);
 
-				if (strlen(pResp) > 0)
-					/* Strip off starting quote & ending quote */
-					strncpy(resp.list[i].name, pResp + 1, strlen(pResp) - 2);
+				if (strlen(pResp) > 0) {
+					alpha_name = tcore_at_tok_extract((const char *)pResp);
+					strncpy(resp.list[i].name, alpha_name, 39);
+					resp.list[i].name[39] = '\0';
+				}
 			} else if ((pResp = tcore_at_tok_nth(network_token, 2))) {
-				dbg("Short Aplha name : %s", pResp);
-				/* Short Aplha name */
-				/* Strip off starting quote & ending quote */
-				if (strlen(pResp) > 0)
-					strncpy(resp.list[i].name, pResp + 1, strlen(pResp) - 2);
+				dbg("Short Alpha name : %s", pResp);
+				/* Short Alpha name */
+
+				if (strlen(pResp) > 0) {
+					alpha_name = tcore_at_tok_extract((const char *)pResp);
+					strncpy(resp.list[i].name, alpha_name, 39);
+					resp.list[i].name[39] = '\0';
+				}
 			}
 
 			/* PLMN ID */
 			pResp = tcore_at_tok_nth(network_token, 3);
 			if (pResp != NULL) {
 				dbg("PLMN ID : %s", pResp);
-				temp_plmn_info = util_removeQuotes(pResp);
+				temp_plmn_info = tcore_at_tok_extract((const char *)pResp);
+				strncpy(resp.list[i].plmn, temp_plmn_info, 6);
+				resp.list[i].plmn[6] = '\0';
 			}
-
-			memcpy(resp.list[i].plmn, temp_plmn_info, 6);
-			if (resp.list[i].plmn[5] == '#')
-				resp.list[i].plmn[5] = '\0';
 
 			/* Parse Access Technology */
 			if ((pResp = tcore_at_tok_nth(tokens, 4))) {
@@ -445,6 +449,8 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 			resp.list_count++;
 
 			tcore_at_tok_free(network_token);
+			g_free(alpha_name);
+			g_free(temp_plmn_info);
 		}
 	} else {
 		dbg("RESPONSE NOK");
@@ -459,8 +465,6 @@ OUT:
 
 	/* Free tokens */
 	tcore_at_tok_free(tokens);
-
-	g_free(temp_plmn_info);
 }
 
 static void on_response_set_umts_band(TcorePending *p, int data_len, const void *data, void *user_data)
@@ -929,7 +933,6 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 	char *line = NULL;
 	const TcoreATResponse *atResp = data;
 	GSList *tokens = NULL;
-	char temp_plmn_info[17] = {0};
 	char *pResp = NULL;
 	int plmn_format = 0;
 
@@ -937,7 +940,7 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 	int total_lines = 0;
 	int GSM_AcT2 = 0, GSM_Compact_AcT2 = 0, UTRAN_AcT2 = 0;
 
-	dbg("Entry on_response_get_preferred_plmn");
+	dbg("Entry");
 
 	if (atResp->success > 0) {
 		dbg("RESPONSE OK");
@@ -954,10 +957,9 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 				total_lines = MAX_NETWORKS_PREF_PLMN_SUPPORT;
 
 /*
-+COPL: <index1>,<format>,<oper1>[,<GSM_AcT1>,<GSM_Compact_AcT1>,<UTRAN_AcT1>,<E-UTRAN_AcT1>] [<CR><LF>
++CPOL: <index1>,<format>,<oper1>[,<GSM_AcT1>,<GSM_Compact_AcT1>,<UTRAN_AcT1>,<E-UTRAN_AcT1>] [<CR><LF>
 +CPOL: <index2>,<format>,<oper2>[,<GSM_AcT2>,<GSM_Compact_AcT2>,<UTRAN_AcT2>,<E-UTRAN_AcT2>]
 */
-
 			resp.result = TCORE_RETURN_SUCCESS;
 
 			for (i = 0; i < total_lines; i++) {
@@ -983,21 +985,18 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 					dbg("plmn ID : %s", pResp);
 
 					if (strlen(pResp) > 0) {
-						strncpy(temp_plmn_info, pResp + 1, (strlen(pResp)) - 2);
+						char *oper;
+
+						oper = tcore_at_tok_extract((const char *)pResp);
+						dbg("operator <%s>", oper);
 
 						// Get only PLMN ID
 						if (plmn_format == 2) {
-							// cp_plmn = util_hexStringToBytes(temp_plmn_info);
-
-							if (strncmp((char *) temp_plmn_info, "000000", 6) == 0)
-								continue;
-
-							memcpy(resp.list[i].plmn, temp_plmn_info, 6);
-							if (resp.list[i].plmn[5] == '#')
-								resp.list[i].plmn[5] = '\0';
-
-							// g_free(cp_plmn);
+							strncpy(resp.list[i].plmn, oper, 6);
+							resp.list[i].plmn[6] = '\0';
 						}
+
+						g_free (oper);
 					}
 				}
 
@@ -1028,7 +1027,12 @@ static void on_response_get_preferred_plmn(TcorePending *p, int data_len, const 
 				tcore_at_tok_free(tokens);
 			}
 		}
+	} else {
+		dbg("RESPONSE NOT OK");
+		// TODO: CMEE error mapping is required.
+		resp.result = TCORE_RETURN_FAILURE;
 	}
+
 OUT:
 	ur = tcore_pending_ref_user_request(p);
 	if (ur) {
@@ -1046,6 +1050,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 	char plmn[7] = {0};
 	char *long_plmn_name = NULL;
 	char *short_plmn_name = NULL;
+	char *plmn_id = NULL;
 	CoreObject *o;
 	GSList *tokens = NULL;
 	const char *line;
@@ -1097,7 +1102,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				if ((pResp = tcore_at_tok_nth(tokens, 2))) {
 					dbg("long PLMN  : %s", pResp);
 					if (strlen(pResp) > 0) {
-						long_plmn_name = util_removeQuotes(pResp);
+						long_plmn_name = tcore_at_tok_extract((const char *)pResp);
 
 						// set network name into po
 						tcore_network_set_network_name(o, TCORE_NETWORK_NAME_TYPE_FULL, long_plmn_name);
@@ -1109,7 +1114,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				if ((pResp = tcore_at_tok_nth(tokens, 2))) {
 					dbg("short PLMN  : %s", pResp);
 					if (strlen(pResp) > 0) {
-						short_plmn_name = util_removeQuotes(pResp);
+						short_plmn_name = tcore_at_tok_extract((const char *)pResp);
 
 						// set network name into po
 						tcore_network_set_network_name(o, TCORE_NETWORK_NAME_TYPE_SHORT, short_plmn_name);
@@ -1121,11 +1126,10 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				if ((pResp = tcore_at_tok_nth(tokens, 2))) {
 					dbg("numeric : %s", pResp);
 					if (strlen(pResp) > 0) {
-						memset(plmn, 0, 7);
+						plmn_id = tcore_at_tok_extract((const char *)pResp);
 
-						/* Strip off starting quotes & ending quotes */
-						strncpy(plmn, pResp + 1, strlen(pResp) - 2);
-						tcore_network_set_plmn(o, plmn);
+						// set plmn id into po
+						tcore_network_set_plmn(o, plmn_id);
 					}
 				}
 				break;
@@ -1164,7 +1168,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 			tcore_network_get_lac(o, &(network_change.gsm.lac));
 
 			tcore_server_send_notification(tcore_plugin_ref_server(tcore_pending_ref_plugin(p)), tcore_pending_ref_core_object(p),
-										   TNOTI_NETWORK_CHANGE, sizeof(struct tnoti_network_change), &network_change);
+										TNOTI_NETWORK_CHANGE, sizeof(struct tnoti_network_change), &network_change);
 			dbg("dbg.. network_change.plmn  : %s", network_change.plmn);
 			dbg("dbg.. network_change.act  : %d", network_change.act);
 			dbg("dbg.. network_change.gsm.lac  : %d", network_change.gsm.lac);
@@ -1174,12 +1178,14 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 				/*Network identity noti*/
 				memset(&noti, 0x0, sizeof(struct tnoti_network_change));
 				if (long_plmn_name)
-					memcpy(noti.full_name, long_plmn_name, MIN(33, strlen(long_plmn_name)));
+					memcpy(noti.full_name, long_plmn_name, MIN(32, strlen(long_plmn_name)));
 				if (short_plmn_name)
-					memcpy(noti.short_name, short_plmn_name, MIN(17, strlen(long_plmn_name)));
-				memcpy(noti.plmn, plmn, 7);
+					memcpy(noti.short_name, short_plmn_name, MIN(16, strlen(short_plmn_name)));
+				if (plmn_id)
+					memcpy(noti.plmn, plmn_id, strlen(plmn_id)); // plmn_id length is necessarily <= 6
+
 				tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),
-											   o, TNOTI_NETWORK_IDENTITY, sizeof(struct tnoti_network_identity), &noti);
+								o, TNOTI_NETWORK_IDENTITY, sizeof(struct tnoti_network_identity), &noti);
 				dbg("dbg.. noti.short_name  : %s", noti.short_name);
 				dbg("dbg.. noti.full_name  : %s", noti.full_name);
 				dbg("dbg.. noti.plmn  : %s", noti.plmn);
@@ -1188,6 +1194,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 
 		g_free(long_plmn_name);
 		g_free(short_plmn_name);
+		g_free(plmn_id);
 	}
 	return;
 }
@@ -2125,7 +2132,7 @@ static TReturn get_preferred_plmn(CoreObject *o, UserRequest *ur)
 
 	pending = tcore_pending_new(o, 0);
 
-	cmd_str = g_strdup_printf("AT+CPOL?");
+	cmd_str = g_strdup_printf("AT+CPOL=,2;+CPOL?");
 	atreq = tcore_at_request_new(cmd_str, "+CPOL", TCORE_AT_MULTILINE);
 
 	tcore_pending_set_request_data(pending, 0, atreq);
