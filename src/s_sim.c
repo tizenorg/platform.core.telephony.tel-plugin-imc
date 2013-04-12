@@ -2087,34 +2087,42 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		sim_status = SIM_STATUS_CARD_NOT_PRESENT;
 		dbg("NO SIM");
 		break;
+
 	case 1:
 		sim_status = SIM_STATUS_PIN_REQUIRED;
 		dbg("PIN REQUIRED");
 		break;
+
 	case 2:
 		sim_status = SIM_STATUS_INITIALIZING;
 		dbg("PIN DISABLED AT BOOT UP");
 		break;
+
 	case 3:
 		sim_status = SIM_STATUS_INITIALIZING;
 		dbg("PIN VERIFIED");
 		break;
+
 	case 4:
 		sim_status = SIM_STATUS_PUK_REQUIRED;
 		dbg("PUK REQUIRED");
 		break;
+
 	case 5:
 		sim_status = SIM_STATUS_CARD_BLOCKED;
 		dbg("CARD PERMANENTLY BLOCKED");
 		break;
+
 	case 6:
 		sim_status = SIM_STATUS_CARD_ERROR;
 		dbg("SIM CARD ERROR");
 		break;
+
 	case 7:
 		sim_status = SIM_STATUS_INIT_COMPLETED;
 		dbg("SIM INIT COMPLETED");
 		break;
+
 	case 8:
 		sim_status = SIM_STATUS_CARD_ERROR;
 		dbg("SIM CARD ERROR");
@@ -2124,17 +2132,20 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		sim_status = SIM_STATUS_CARD_REMOVED;
 		dbg("SIM REMOVED");
 		break;
+
 	case 12:
 		dbg("SIM SMS Ready");
 		notify_sms_state(plugin, o, TRUE);
 		goto out;
+
 	case 99:
 		sim_status = SIM_STATUS_UNKNOWN;
 		dbg("SIM STATE UNKNOWN");
 		break;
+
 	default:
 		err("Unknown/Unsupported SIM state: [%d]", sim_state);
-		break;
+		goto out;
 	}
 
 	switch (sim_status) {
@@ -2146,6 +2157,7 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		}
 
 		break;
+
 	case SIM_STATUS_CARD_REMOVED:
 		dbg("[SIM] SIM CARD REMOVED");
 		tcore_sim_set_type(o, SIM_TYPE_UNKNOWN);
@@ -2162,8 +2174,8 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		break;
 
 	default:
-		err("[SIM) Status: [0x%02x]", sim_status);
-		goto out;
+		dbg("SIM Status: [0x%02x]", sim_status);
+		break;
 	}
 
 	_sim_status_update(o, sim_status);
