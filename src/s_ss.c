@@ -619,7 +619,7 @@ static void on_response_ss_barring_set(TcorePending *p, int data_len, const void
 	enum telephony_ss_class class;
 	CoreObject *o = 0;
 	UserRequest *ur;
-	struct tresp_ss_barring resp;
+	struct tresp_ss_barring resp = {0, };
 	UserRequest *ur_dup = 0;
 	GSList *tokens = NULL;
 	const char *line;
@@ -631,17 +631,15 @@ static void on_response_ss_barring_set(TcorePending *p, int data_len, const void
 	o = tcore_pending_ref_core_object(p);
 	ur = tcore_pending_ref_user_request(p);
 
-	info = (struct ss_confirm_info *) user_data;
+	info = (struct ss_confirm_info *)user_data;
 	class = info->class;
 
 	if (response->success > 0) {
 		dbg("RESPONSE OK");
 		resp.err = SS_ERROR_NONE;
-		resp.record = 0;
 	} else {
 		dbg("RESPONSE NOT OK");
-		resp.record = 0;
-		line = (const char *) response->final_response;
+		line = (const char *)response->final_response;
 		tokens = tcore_at_tok_new(line);
 
 		if (g_slist_length(tokens) < 1) {
@@ -649,7 +647,7 @@ static void on_response_ss_barring_set(TcorePending *p, int data_len, const void
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		} else {
 			err = atoi(g_slist_nth_data(tokens, 0));
-			// TODO: CMEE error mapping is required.
+			/* TODO: CMEE error mapping is required. */
 			resp.err = SS_ERROR_SYSTEMFAILURE;
 		}
 		tcore_at_tok_free(tokens);
