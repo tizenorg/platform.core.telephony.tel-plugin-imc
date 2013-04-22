@@ -1103,6 +1103,7 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 	UserRequest *user_req = NULL;
 
 	GSList *tokens = NULL;
+	const char *sca_tok_addr;
 	char *gslist_line = NULL, *sca_addr = NULL, *sca_toa = NULL;
 
 	dbg("Entry");
@@ -1118,9 +1119,10 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 			gslist_line = (char *)at_response->lines->data;
 
 			tokens = tcore_at_tok_new(gslist_line);
-			sca_addr = g_slist_nth_data(tokens, 0);
+			sca_tok_addr = g_slist_nth_data(tokens, 0);
 			sca_toa = g_slist_nth_data(tokens, 1);
 
+			sca_addr = tcore_at_tok_extract(sca_tok_addr);
 			if ((NULL != sca_addr)
 				&& (NULL != sca_toa)) {
 				dbg("sca_addr: [%s]. sca_toa: [%s]", sca_addr, sca_toa);
@@ -1152,8 +1154,8 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 
 	tcore_user_request_send_response(user_req, TRESP_SMS_GET_SCA, sizeof(respGetSca), &respGetSca);
 
-	if(tokens)
-		tcore_at_tok_free(tokens);
+	tcore_at_tok_free(tokens);
+	g_free(sca_addr);
 
 	dbg("Exit");
 	return;
