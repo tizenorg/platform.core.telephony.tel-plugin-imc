@@ -69,6 +69,7 @@ static void on_response_last_bootup_subscription(TcorePending *p,
 							int data_len, const void *data, void *user_data)
 {
 	const TcoreATResponse *resp = data;
+	TcorePlugin *plugin = tcore_pending_ref_plugin(p);
 	gboolean ret;
 	dbg("Last Subscription - COMPLETED");
 
@@ -80,8 +81,14 @@ static void on_response_last_bootup_subscription(TcorePending *p,
 
 	dbg("Boot-up configration completed for IMC modem. %s",
 				"Bring CP to ONLINE state based on Flightmode status");
-	ret = modem_power_on(tcore_pending_ref_plugin(p));
+
+	/* Modem Power */
+	ret = modem_power_on(plugin);
 	dbg("Modem Power ON: [%s]", (ret == TRUE ? "SUCCESS" : "FAIL"));
+
+	/* NVM Registration */
+	dbg("Registering modem for NVM manager");
+	modem_register_nvm(tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_MODEM));
 }
 
 static void _modem_subscribe_events(TcorePlugin *plugin)

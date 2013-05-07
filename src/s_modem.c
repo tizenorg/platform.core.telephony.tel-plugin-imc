@@ -39,6 +39,7 @@
 
 #include "s_common.h"
 #include "s_modem.h"
+#include "nvm/nvm.h"
 
 
 #define ID_RESERVED_AT 0x0229
@@ -102,6 +103,15 @@ static void prepare_and_send_pending_request(CoreObject *co, const char *at_cmd,
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data);
 static void on_response_network_registration(TcorePending *p, int data_len, const void *data, void *user_data);
 static void on_response_enable_proactive_command(TcorePending *p, int data_len, const void *data, void *user_data);
+
+/* NVM */
+static gboolean on_event_nvm_update(CoreObject *o, const void *event_info, void *user_data);
+static void modem_send_nvm_update_ack(CoreObject *o);
+static void modem_send_nvm_update_request_ack(CoreObject *o);
+static void modem_unsuspend_nvm_updates(CoreObject *o);
+static void modem_send_nvm_update_ack(CoreObject *o);
+static void modem_send_nvm_update_request_ack(CoreObject *o);
+static void modem_send_flush_nvm_update(CoreObject *o);
 
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data)
 {
@@ -448,14 +458,14 @@ static enum tcore_hook_return on_hook_sim_status(Server *s,
 	return TCORE_HOOK_RETURN_CONTINUE;
 }
 
-gboolean modem_power_on(TcorePlugin *p)
+gboolean modem_power_on(TcorePlugin *plugin)
 {
 	CoreObject *co_modem = NULL;
 	struct treq_modem_set_flightmode flight_mode_set = {0};
 	struct tnoti_modem_power modem_power = {0};
 	Storage *strg = NULL;
 
-	co_modem = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_MODEM);
+	co_modem = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_MODEM);
 	if (co_modem == NULL) {
 		err("Modem Core object is NULL");
 		return FALSE;
@@ -465,7 +475,7 @@ gboolean modem_power_on(TcorePlugin *p)
 	tcore_modem_set_powered(co_modem, TRUE);
 
 	/* Get Flight mode from VCONFKEY */
-	strg = tcore_server_find_storage(tcore_plugin_ref_server(p), "vconf");
+	strg = tcore_server_find_storage(tcore_plugin_ref_server(plugin), "vconf");
 	flight_mode_set.enable = tcore_storage_get_bool(strg, STORAGE_KEY_FLIGHT_MODE_BOOL);
 
 	/* Set Flight mode as per AP settings */
@@ -495,7 +505,7 @@ gboolean modem_power_on(TcorePlugin *p)
 	modem_power.state = MODEM_STATE_ONLINE;
 
 	dbg("Sending notification - Modem Power state: [ONLINE]");
-	tcore_server_send_notification(tcore_plugin_ref_server(p),
+	tcore_server_send_notification(tcore_plugin_ref_server(plugin),
 		co_modem, TNOTI_MODEM_POWER, sizeof(modem_power), &modem_power);
 
 	return TRUE;
@@ -650,6 +660,8 @@ gboolean s_modem_init(TcorePlugin *cp, CoreObject *co_modem)
 
 	tcore_server_add_notification_hook(tcore_plugin_ref_server(cp),
 							TNOTI_SIM_STATUS, on_hook_sim_status, NULL);
+	dbg("Registering for +XDRVI event");
+	tcore_object_add_callback(co_modem, "+XDRVI", on_event_nvm_update, NULL);
 
 	dbg("Exit");
 	return TRUE;
@@ -672,4 +684,440 @@ void s_modem_exit(TcorePlugin *cp, CoreObject *co_modem)
 	g_free(sn_property);
 
 	dbg("Exit");
+}
+
+/*
+ * NV Manager - Support for Remote File System
+ */
+/* NVM Hook */
+static gboolean modem_rfs_hook(const char *data)
+{
+	if (data != NULL)
+		if (data[NVM_FUNCTION_ID_OFFSET] == XDRV_INDICATION)
+			return TRUE;
+
+	return FALSE;
+}
+
+/* NVM event Notification */
+static gboolean on_event_nvm_update(CoreObject *o, const void *event_info, void *user_data)
+{
+	GSList *tokens = NULL;
+	GSList *lines;
+	const char *line;
+	int function_id;
+
+	gboolean ret = TRUE;
+	dbg("Entered");
+
+	lines = (GSList *)event_info;
+	line = lines->data;
+	dbg("Line: [%s]", line);
+
+	function_id = nvm_sum_4_bytes(&line[NVM_FUNCTION_ID_OFFSET]);
+	dbg("Function ID: [%d]", function_id);
+	if (IUFP_UPDATE == function_id) {
+		dbg("Calling process nvm_update");
+
+		/*
+		 * Process NV Update indication
+		 *
+		 * +XDRVI: IUFP_GROUP, IUFP_UPDATE, <xdrv_result>, <data>
+		 */
+		if (NVM_NO_ERR == nvm_process_nv_update(line)) {
+			dbg("NV data processed successfully");
+
+			/* Acknowledge NV Update */
+			modem_send_nvm_update_ack(o);
+
+			return ret;
+		} else {
+			err("NV data processing failed");
+			ret = FALSE;
+		}
+	} else {
+		tokens = tcore_at_tok_new(line);
+		if (g_slist_length(tokens) < 3) {
+			err("XDRVI event with less number of tokens, Ignore!!!");
+			ret = FALSE;
+		}
+		else if (IUFP_GROUP_ID != atoi(g_slist_nth_data(tokens, 0))) {
+			err("Group ID mismatch, Ignore!!!");
+			ret = FALSE;
+		}
+		else {
+			switch (atoi(g_slist_nth_data(tokens, 1))) {
+				case IUFP_UPDATE_REQ:
+					dbg("NV Update Request");
+
+					/* Acknowledge the Update Request */
+					modem_send_nvm_update_request_ack(o);
+				break;
+
+				case IUFP_NO_PENDING_UPDATE:
+					dbg("NO pending NV Update(s)!!!");
+					/* Can send FLUSH request to get fresh updates */
+				break;
+
+				default:
+					err("Unspported Function ID [%d], Ignore", atoi(g_slist_nth_data(tokens, 1)));
+					ret = FALSE;
+			}
+		}
+
+		tcore_at_tok_free(tokens);
+	}
+
+	dbg("Exit");
+	return ret;
+}
+
+/* NVM Responses */
+static gboolean __modem_check_nvm_response(const void *data, int command)
+{
+	const TcoreATResponse *resp = data;
+	const char *line;
+	char *resp_str;
+	GSList *tokens = NULL;
+	gboolean ret = FALSE;
+	dbg("Entered");
+
+	/* +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>] */
+	if (NULL == resp) {
+		err("Input data is NULL");
+		return FALSE;
+	}
+
+	if (resp->success > 0) {
+		dbg("RESPONSE OK");
+		line = (const char *) (((GSList *) resp->lines)->data);
+		tokens = tcore_at_tok_new(line);
+
+		/* Group ID */
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (NULL == resp_str) {
+			err("Group ID is missing ");
+			goto OUT;
+		}
+		else if (IUFP_GROUP_ID != atoi(resp_str)) {
+			err("Group ID mismatch");
+			goto OUT;
+		}
+
+		/* Function ID */
+		resp_str =  g_slist_nth_data(tokens, 1);
+		if (NULL == resp_str) {
+			err("Function ID is missing ");
+			goto OUT;
+		}
+		else if (command != atoi(resp_str)) {
+			err("Function ID mismatch");
+			goto OUT;
+		}
+
+		/* XDRV Result */
+		resp_str =  g_slist_nth_data(tokens, 2);
+		if (NULL == resp_str) {
+			err("XDRV result is missing ");
+			goto OUT;
+		}
+		else if (XDRV_RESULT_OK != atoi(resp_str)) {
+			err("XDRV result[%d] ", atoi(resp_str));
+			goto OUT;
+		}
+
+		/* Result code */
+		resp_str =  g_slist_nth_data(tokens, 3);
+		if (NULL == resp_str) {
+			err("UTA result is missing ");
+			goto OUT;
+		}
+		else if (UTA_SUCCESS != atoi(resp_str)) {
+			err("uta result[%d] ", atoi(resp_str));
+			goto OUT;
+		}
+
+		ret = TRUE;
+	} else {
+		dbg("Response NOK");
+	}
+
+OUT:
+	tcore_at_tok_free(tokens);
+
+	dbg("Exit");
+	return ret;
+}
+
+static void _on_response_modem_unsuspend_nvm_updates(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE == __modem_check_nvm_response(data, IUFP_SUSPEND)) {
+		dbg("Priority level is set to get all updates since Boot-up");
+
+		/* Create NV data file */
+		if (nvm_create_nvm_data() == FALSE) {
+			err("Failed to Create NV data file");
+		}
+
+		return;
+	}
+
+	err("Response NOT OK");
+}
+
+static void _on_response_modem_send_nvm_update_ack(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE ==  __modem_check_nvm_response(data, IUFP_UPDATE_ACK)) {
+		dbg("[UPDATE ACK] OK");
+		return;
+	}
+
+	err("[UPDATE ACK] NOT OK");
+}
+
+static void _on_response_modem_send_nvm_update_request_ack(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE == __modem_check_nvm_response(data, IUFP_UPDATE_REQ_ACK)) {
+		dbg("[REQUEST ACK] OK");
+		return;
+	}
+
+	err("[REQUEST ACK] NOT OK");
+}
+
+static void _on_response_modem_send_flush_nvm_update(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE == __modem_check_nvm_response(data, IUFP_FLUSH)) {
+		dbg("Flushing of FLUSH data successful");
+		return;
+	}
+
+	err("Response NOT OK");
+}
+
+static void _on_response_modem_register_nvm(TcorePending *p,
+						int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE == __modem_check_nvm_response(data, IUFP_REGISTER)) {
+		dbg("Registering successful");
+
+		/* Send SUSPEND_UPDATE for all UPDATES */
+		modem_unsuspend_nvm_updates(tcore_pending_ref_core_object(p));
+
+		dbg("Exit");
+		return;
+	}
+
+	err("Response NOT OK");
+}
+
+static void _on_response_modem_deregister_nvm(TcorePending *p,
+							int data_len, const void *data, void *user_data)
+{
+	/* Check NVM response */
+	if (TRUE == __modem_check_nvm_response(data, IUFP_REGISTER)) {
+		dbg("Deregistering successful");
+		return;
+	}
+
+	err("Response NOT OK");
+}
+
+/* NVM Requests */
+static void modem_unsuspend_nvm_updates(CoreObject *o)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%d, %d, %d, %d",
+					IUFP_GROUP_ID, IUFP_SUSPEND,
+					0, UTA_FLASH_PLUGIN_PRIO_UNSUSPEND_ALL);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(o,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_unsuspend_nvm_updates,
+								NULL);
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(o), pending)
+			!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_SUSPEND - Unable to send AT-Command");
+	}
+	else {
+		dbg("IUFP_SUSPEND - Successfully sent AT-Command");
+	}
+
+	g_free(cmd_str);
+}
+
+static void modem_send_nvm_update_ack(CoreObject *o)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%s, %s", IUFP_GROUP, IUFP_UPDATE_ACK_STR);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(o,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_send_nvm_update_ack,
+								NULL);
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(o), pending)
+										!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_UPDATE_ACK - Unable to send AT-Command");
+	}
+	else {
+		dbg("IUFP_UPDATE_ACK - Successfully sent AT-Command");
+	}
+
+	g_free(cmd_str);
+}
+
+static void modem_send_nvm_update_request_ack(CoreObject *o)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%s, %s", IUFP_GROUP, IUFP_UPDATE_REQ_ACK_STR);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(o,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_send_nvm_update_request_ack,
+								NULL);
+
+
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(o), pending)
+									!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_UPDATE_REQ_ACK - Unable to send AT-Ccommand");
+	}
+	else {
+		dbg("IUFP_UPDATE_REQ_ACK - Successfully sent AT-Command");
+	}
+
+	g_free(cmd_str);
+}
+
+static void modem_send_flush_nvm_update(CoreObject *o)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%d, %d, %d", IUFP_GROUP_ID, IUFP_FLUSH, 0);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(o,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_send_flush_nvm_update,
+								NULL);
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(o), pending)
+									!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_FLUSH - Unable to send AT-Command");
+	}
+	else {
+		dbg("IUFP_FLUSH - Successfully sent AT-Command");
+	}
+
+	g_free(cmd_str);
+}
+
+void modem_register_nvm(CoreObject *co_modem)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%s, %s, %s",
+					IUFP_GROUP, IUFP_REGISTER_STR, XDRV_ENABLE);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(co_modem,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_register_nvm,
+								NULL);
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(co_modem), pending)
+									!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_REGISTER (Enable) -Unable to send AT-Command");
+	}
+	else {
+		dbg("IUFP_REGISTER (Enable) -Successfully sent AT-Command");
+
+		/* Add RFS hook */
+		tcore_at_add_hook(tcore_object_get_hal(co_modem), modem_rfs_hook);
+	}
+
+	g_free(cmd_str);
+}
+
+void modem_deregister_nvm(CoreObject *co_modem)
+{
+	TcorePending *pending = NULL;
+	char *cmd_str;
+	dbg("Entered");
+
+	/* Prepare AT-Command */
+	cmd_str = g_strdup_printf("AT+XDRV=%s, %s, %s",
+				IUFP_GROUP, IUFP_REGISTER_STR, XDRV_DISABLE);
+
+	/* Prepare pending request */
+	pending = tcore_at_pending_new(co_modem,
+								cmd_str,
+								"+XDRV:",
+								TCORE_AT_SINGLELINE,
+								_on_response_modem_deregister_nvm,
+								NULL);
+	if (pending == NULL) {
+		err("Failed to form pending request");
+	}
+	else if (tcore_hal_send_request(tcore_object_get_hal(co_modem), pending)
+										!= TCORE_RETURN_SUCCESS) {
+		err("IUFP_REGISTER (Disable) -Unable to send AT-Command");
+	}
+	else {
+		dbg("IUFP_REGISTER (Disable) -Successfully sent AT-Command");
+	}
+
+	g_free(cmd_str);
 }
