@@ -685,7 +685,7 @@ static void on_response_ss_barring_change_pwd(TcorePending *p, int data_len, con
 	const TcoreATResponse *response = data;
 	struct ss_confirm_info *info = 0;
 	UserRequest *ur;
-	struct tresp_ss_barring resp;
+	struct tresp_ss_general resp;
 	int err;
 	GSList *tokens = NULL;
 	const char *line;
@@ -716,7 +716,7 @@ static void on_response_ss_barring_change_pwd(TcorePending *p, int data_len, con
 
 	dbg("on_response_ss_barring_change_pwd: rsp.err : %d, usr : %x", resp.err, ur);
 	if (ur) {
-		tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_barring), &resp);
+		tcore_user_request_send_response(ur, info->resp, sizeof(struct tresp_ss_general), &resp);
 	} else {
 		dbg("[ error ] ur is 0");
 	}
