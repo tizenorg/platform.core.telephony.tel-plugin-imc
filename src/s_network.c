@@ -408,20 +408,17 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 			if ((pResp = tcore_at_tok_nth(network_token, 1))) {	/* Long Alpha name */
 				dbg("Long Alpha name : %s", pResp);
 
-				if (strlen(pResp) > 0) {
-					alpha_name = tcore_at_tok_extract((const char *)pResp);
-					strncpy(resp.list[i].name, alpha_name, 39);
-					resp.list[i].name[39] = '\0';
-				}
-			} else if ((pResp = tcore_at_tok_nth(network_token, 2))) {
-				dbg("Short Alpha name : %s", pResp);
-				/* Short Alpha name */
+				if (strlen(pResp) > 0)
+					/* Strip off starting quote & ending quote */
+					strncpy(resp.list[i].name, pResp + 1, strlen(pResp) - 2);
+			}
 
-				if (strlen(pResp) > 0) {
-					alpha_name = tcore_at_tok_extract((const char *)pResp);
-					strncpy(resp.list[i].name, alpha_name, 39);
-					resp.list[i].name[39] = '\0';
-				}
+			if ((pResp = tcore_at_tok_nth(network_token, 2))) {
+				dbg("Short Aplha name : %s", pResp);
+				/* Short Aplha name */
+				/* Strip off starting quote & ending quote */
+				if (strlen(pResp) > 0)
+					strncpy(resp.list[i].name, pResp + 1, strlen(pResp) - 2);
 			}
 
 			/* PLMN ID */
@@ -434,7 +431,7 @@ static void on_response_search_network(TcorePending *p, int data_len, const void
 			}
 
 			/* Parse Access Technology */
-			if ((pResp = tcore_at_tok_nth(tokens, 4))) {
+			if ((pResp = tcore_at_tok_nth(network_token, 4))) {
 				if (strlen(pResp) > 0) {
 					AcT = atoi(pResp);
 
