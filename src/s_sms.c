@@ -3134,15 +3134,15 @@ gboolean s_sms_init(TcorePlugin *cp, CoreObject *co_sms)
 	tcore_sms_override_ops(co_sms, &sms_ops);
 
 	/* Registering for SMS notifications */
-	tcore_object_override_callback(co_sms, "\e+CMTI", on_event_class2_sms_incom_msg, NULL);
-	tcore_object_override_callback(co_sms, "\e+CMT", on_event_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+CMTI:", on_event_class2_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CMT:", on_event_sms_incom_msg, NULL);
 
 	tcore_object_override_callback(co_sms, "\e+CDS", on_event_sms_incom_msg, NULL);
 	tcore_object_override_callback(co_sms, "+XSMSMMSTAT", on_event_sms_memory_status, NULL);
 	tcore_object_override_callback(co_sms, "+CMS", on_event_sms_memory_status, NULL);
 
-	tcore_object_override_callback(co_sms, "\e+CBMI", on_event_sms_cb_incom_msg, NULL);
-	tcore_object_override_callback(co_sms, "\e+CBM", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+CBMI:", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CBM:", on_event_sms_cb_incom_msg, NULL);
 
 	/* Storing SMSP record length */
 	smsp_record_len = g_new0(int, 1);
