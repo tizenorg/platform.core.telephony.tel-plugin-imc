@@ -2980,6 +2980,7 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	char *encoded_data = NULL;
 	unsigned char *temp_data = NULL;
 	int SMSPRecordLen = 0;
+	int *smsp_record_len;
 
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
@@ -3002,7 +3003,11 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	}
 
 	//EFsmsp file size is 28 +Y bytes (Y is alpha id size)
-	SMSPRecordLen = 28 + setSmsParams->params.alphaIdLen;
+	smsp_record_len = tcore_plugin_ref_property(tcore_object_ref_plugin(obj), "SMSPRECORDLEN");
+	SMSPRecordLen = *smsp_record_len;
+	if (SMSPRecordLen < nDefaultSMSPWithoutAlphaId)
+		return FALSE;
+
 	temp_data = calloc(SMSPRecordLen,1);
 	encoded_data = calloc(SMSPRecordLen*2 + 1,1);
 
