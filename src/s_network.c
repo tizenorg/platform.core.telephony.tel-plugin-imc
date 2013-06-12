@@ -842,6 +842,7 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 	int count = 0;
 	int net_name_type = 0;
 	char *pResp = NULL;
+	char *net_name = NULL;
 
 	dbg("Entry on_response_get_nitz_name (+XCOPS)");
 	o = tcore_pending_ref_core_object(p);
@@ -855,6 +856,8 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 				goto OUT;
 			}
 
+			memset(&noti, 0, sizeof(struct tnoti_network_identity));
+
 			for (count = 0; count < nol; count++) {
 				// parse each line
 				line = g_slist_nth_data(atResp->lines, count);
@@ -866,32 +869,48 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 					dbg("Net name type  : %d", net_name_type);
 
 					switch (net_name_type) {
-					case 0:     /* plmn_id (mcc, mnc) */
+					case 0: /* plmn_id (mcc, mnc) */
 						if ((pResp = tcore_at_tok_nth(tokens, 1))) {
-							strncpy(noti.plmn, pResp + 1, strlen(pResp) - 2); /* skip quotes (") while copying */
+							if (strlen(pResp) > 0) {
+								net_name = tcore_at_tok_extract((const char *)pResp);
+								strncpy(noti.plmn, net_name, 6);
+								noti.plmn[6] = '\0';
+							}
 						}
 						break;
 
-					case 5:      /* Short Nitz name*/
+					case 5: /* Short NITZ name*/
 						if ((pResp = tcore_at_tok_nth(tokens, 1))) {
-							strncpy(noti.short_name, pResp + 1, strlen(pResp) - 2); /* skip quotes (") while copying */
+							if (strlen(pResp) > 0) {
+								net_name = tcore_at_tok_extract((const char *)pResp);
+								strncpy(noti.short_name, net_name, 16);
+								noti.short_name[16] = '\0';
+							}
 						}
 						break;
 
-					case 6:     /* Full Nitz name */
+					case 6: /* Full NITZ name */
 						if ((pResp = tcore_at_tok_nth(tokens, 1))) {
-							strncpy(noti.full_name, pResp + 1, strlen(pResp) - 2); /* skip quotes (") while copying */
+							if (strlen(pResp) > 0) {
+								net_name = tcore_at_tok_extract((const char *)pResp);
+								strncpy(noti.full_name, net_name, 32);
+								noti.full_name[32] = '\0';
+							}
 						}
 						break;
 
 					default:
 						break;
 					}
+
+					g_free(net_name);
 				}
-				if (tokens != NULL)
-					tcore_at_tok_free(tokens);
+
+				tcore_at_tok_free(tokens);
 			}
 
+			dbg("plmn <%s> short NITZ name<%s> full NITZ name<%s>",
+				noti.plmn, noti.short_name, noti.full_name);
 			tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_NETWORK_IDENTITY,
 										   sizeof(struct tnoti_network_identity), &noti);
 		}
