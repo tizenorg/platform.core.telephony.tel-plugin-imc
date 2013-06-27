@@ -1311,7 +1311,7 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 
 		tmp = util_removeQuotes(res);
 		res = util_hexStringToBytes(tmp);
-		res_len = strlen((const char *)res);
+		res_len = strlen(tmp) / 2;
 		dbg("Response: [%s] Response length: [%d]", res, res_len);
 
 		if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91) {
@@ -2846,7 +2846,7 @@ static void on_response_get_atr(TcorePending *p, int data_len, const void *data,
 			tmp = util_removeQuotes(g_slist_nth_data(tokens, 0));
 			decoded_data = util_hexStringToBytes(tmp);
 
-			res.atr_length = strlen(decoded_data);
+			res.atr_length = strlen(tmp) / 2;
 			memcpy((char *)res.atr, decoded_data, res.atr_length);
 			g_free(tmp);
 			g_free(decoded_data);
