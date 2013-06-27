@@ -920,18 +920,6 @@ static void _on_response_modem_register_nvm(TcorePending *p,
 	err("Response NOT OK");
 }
 
-static void _on_response_modem_deregister_nvm(TcorePending *p,
-							int data_len, const void *data, void *user_data)
-{
-	/* Check NVM response */
-	if (TRUE == __modem_check_nvm_response(data, IUFP_REGISTER)) {
-		dbg("Deregistering successful");
-		return;
-	}
-
-	err("Response NOT OK");
-}
-
 /* NVM Requests */
 static void modem_unsuspend_nvm_updates(CoreObject *o)
 {
@@ -1086,37 +1074,6 @@ void modem_register_nvm(CoreObject *co_modem)
 
 		/* Add RFS hook */
 		tcore_at_add_hook(tcore_object_get_hal(co_modem), modem_rfs_hook);
-	}
-
-	g_free(cmd_str);
-}
-
-void modem_deregister_nvm(CoreObject *co_modem)
-{
-	TcorePending *pending = NULL;
-	char *cmd_str;
-	dbg("Entered");
-
-	/* Prepare AT-Command */
-	cmd_str = g_strdup_printf("AT+XDRV=%s, %s, %s",
-				IUFP_GROUP, IUFP_REGISTER_STR, XDRV_DISABLE);
-
-	/* Prepare pending request */
-	pending = tcore_at_pending_new(co_modem,
-								cmd_str,
-								"+XDRV:",
-								TCORE_AT_SINGLELINE,
-								_on_response_modem_deregister_nvm,
-								NULL);
-	if (pending == NULL) {
-		err("Failed to form pending request");
-	}
-	else if (tcore_hal_send_request(tcore_object_get_hal(co_modem), pending)
-										!= TCORE_RETURN_SUCCESS) {
-		err("IUFP_REGISTER (Disable) -Unable to send AT-Command");
-	}
-	else {
-		dbg("IUFP_REGISTER (Disable) -Successfully sent AT-Command");
 	}
 
 	g_free(cmd_str);
