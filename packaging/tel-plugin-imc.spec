@@ -6,6 +6,7 @@ Release:	1
 Group:		Development/Libraries
 License:	Apache
 Source0:	tel-plugin-imc-%{version}.tar.gz
+Source1001: 	tel-plugin-imc.manifest
 Requires(post):	/sbin/ldconfig
 Requires(postun):/sbin/ldconfig
 BuildRequires:	cmake
@@ -20,6 +21,7 @@ IMC plugin for telephony
 
 %prep
 %setup -q
+cp %{SOURCE1001} .
 
 %build
 %cmake .
@@ -53,6 +55,7 @@ rm -rf %{buildroot}
 mkdir -p %{buildroot}/usr/share/license
 
 %files
+%manifest %{name}.manifest
 
 %defattr(-,root,root,-)
 
