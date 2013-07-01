@@ -106,12 +106,9 @@ static void on_response_enable_proactive_command(TcorePending *p, int data_len, 
 
 /* NVM */
 static gboolean on_event_nvm_update(CoreObject *o, const void *event_info, void *user_data);
-static void modem_send_nvm_update_ack(CoreObject *o);
-static void modem_send_nvm_update_request_ack(CoreObject *o);
 static void modem_unsuspend_nvm_updates(CoreObject *o);
 static void modem_send_nvm_update_ack(CoreObject *o);
 static void modem_send_nvm_update_request_ack(CoreObject *o);
-static void modem_send_flush_nvm_update(CoreObject *o);
 
 static void on_confirmation_modem_message_send(TcorePending *p, gboolean result, void *user_data)
 {
@@ -891,18 +888,6 @@ static void _on_response_modem_send_nvm_update_request_ack(TcorePending *p,
 	err("[REQUEST ACK] NOT OK");
 }
 
-static void _on_response_modem_send_flush_nvm_update(TcorePending *p,
-							int data_len, const void *data, void *user_data)
-{
-	/* Check NVM response */
-	if (TRUE == __modem_check_nvm_response(data, IUFP_FLUSH)) {
-		dbg("Flushing of FLUSH data successful");
-		return;
-	}
-
-	err("Response NOT OK");
-}
-
 static void _on_response_modem_register_nvm(TcorePending *p,
 						int data_len, const void *data, void *user_data)
 {
@@ -1010,36 +995,6 @@ static void modem_send_nvm_update_request_ack(CoreObject *o)
 	}
 	else {
 		dbg("IUFP_UPDATE_REQ_ACK - Successfully sent AT-Command");
-	}
-
-	g_free(cmd_str);
-}
-
-static void modem_send_flush_nvm_update(CoreObject *o)
-{
-	TcorePending *pending = NULL;
-	char *cmd_str;
-	dbg("Entered");
-
-	/* Prepare AT-Command */
-	cmd_str = g_strdup_printf("AT+XDRV=%d, %d, %d", IUFP_GROUP_ID, IUFP_FLUSH, 0);
-
-	/* Prepare pending request */
-	pending = tcore_at_pending_new(o,
-								cmd_str,
-								"+XDRV:",
-								TCORE_AT_SINGLELINE,
-								_on_response_modem_send_flush_nvm_update,
-								NULL);
-	if (pending == NULL) {
-		err("Failed to form pending request");
-	}
-	else if (tcore_hal_send_request(tcore_object_get_hal(o), pending)
-									!= TCORE_RETURN_SUCCESS) {
-		err("IUFP_FLUSH - Unable to send AT-Command");
-	}
-	else {
-		dbg("IUFP_FLUSH - Successfully sent AT-Command");
 	}
 
 	g_free(cmd_str);
