@@ -881,6 +881,7 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 						break;
 
 					case 5: /* Short NITZ name*/
+					case 3: /* Short Network Name (CPHS) */
 						if ((pResp = tcore_at_tok_nth(tokens, 1))) {
 							if (strlen(pResp) > 0) {
 								net_name = tcore_at_tok_extract((const char *)pResp);
@@ -891,6 +892,7 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 						break;
 
 					case 6: /* Full NITZ name */
+					case 4: /* Long Network Name (CPHS) */
 						if ((pResp = tcore_at_tok_nth(tokens, 1))) {
 							if (strlen(pResp) > 0) {
 								net_name = tcore_at_tok_extract((const char *)pResp);
@@ -905,6 +907,7 @@ static void on_response_get_nitz_name(TcorePending *p, int data_len, const void 
 					}
 
 					g_free(net_name);
+					net_name = NULL;
 				}
 
 				tcore_at_tok_free(tokens);
