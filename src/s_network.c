@@ -1047,7 +1047,6 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 	const TcoreATResponse *resp = data;
 	UserRequest *ur;
 	struct tresp_network_get_serving_network Tresp = {0};
-	char plmn[7] = {0};
 	char *long_plmn_name = NULL;
 	char *short_plmn_name = NULL;
 	char *plmn_id = NULL;
@@ -1150,7 +1149,8 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 			tcore_at_tok_free(tokens);
 		}
 
-		memcpy(Tresp.plmn, plmn, 7);
+		if(plmn_id)
+			memcpy(Tresp.plmn, plmn_id, strlen(plmn_id));
 		tcore_network_get_access_technology(o, &(Tresp.act));
 		tcore_network_get_lac(o, &(Tresp.gsm.lac));
 
@@ -1163,7 +1163,8 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 			struct tnoti_network_change network_change;
 
 			memset(&network_change, 0, sizeof(struct tnoti_network_change));
-			memcpy(network_change.plmn, plmn, 7);
+			if(plmn_id)
+				memcpy(network_change.plmn, plmn_id, strlen(plmn_id));
 			tcore_network_get_access_technology(o, &(network_change.act));
 			tcore_network_get_lac(o, &(network_change.gsm.lac));
 
@@ -1176,7 +1177,7 @@ static void on_response_get_serving_network(TcorePending *p, int data_len, const
 			if ((AT_COPS_MODE_DEREGISTER != network_mode) &&
 				(AT_COPS_MODE_SET_ONLY != network_mode)) {
 				/*Network identity noti*/
-				memset(&noti, 0x0, sizeof(struct tnoti_network_change));
+				memset(&noti, 0x0, sizeof(struct tnoti_network_identity));
 				if (long_plmn_name)
 					memcpy(noti.full_name, long_plmn_name, MIN(32, strlen(long_plmn_name)));
 				if (short_plmn_name)
