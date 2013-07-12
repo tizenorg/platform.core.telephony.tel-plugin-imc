@@ -1266,23 +1266,32 @@ Note: <Act> is supporting from R7 and above Protocol Stack.
 			goto OUT;
 		} else {
 			stat = atoi(pResp);
-			if ((pResp = g_slist_nth_data(tokens, 1)))
-				lac = atoi(pResp);
+			if ((pResp = g_slist_nth_data(tokens, 1))) {
+				pResp = util_removeQuotes(pResp);
+				lac = strtol(pResp, NULL, 16);
+				g_free(pResp);
+			}
 
-			if ((pResp = g_slist_nth_data(tokens, 2)))
-				ci = atoi(pResp);
-			else
+			if ((pResp = g_slist_nth_data(tokens, 2))) {
+				pResp = util_removeQuotes(pResp);
+				ci = strtol(pResp, NULL, 16);
+				g_free(pResp);
+			} else {
 				dbg("No ci in +CGREG");
+			}
 
 			if ((pResp = g_slist_nth_data(tokens, 3)))
 				AcT = atoi(pResp);
 			else
 				dbg("No AcT in +CGREG");
 
-			if ((pResp = g_slist_nth_data(tokens, 4)))
-				rac = atoi(pResp);
-			else
+			if ((pResp = g_slist_nth_data(tokens, 4))) {
+				pResp = util_removeQuotes(pResp);
+				rac = strtol(pResp, NULL, 16);
+				g_free(pResp);
+			} else {
 				dbg("No rac in +CGREG");
+			}
 		}
 
 
@@ -1447,13 +1456,19 @@ Note: <Act> is supporting from R7 and above Protocol Stack.
 			goto OUT;
 		} else {
 			stat = atoi(pResp);
-			if ((pResp = g_slist_nth_data(tokens, 1)))
-				lac = atoi(pResp);
+			if ((pResp = g_slist_nth_data(tokens, 1))) {
+				pResp = util_removeQuotes(pResp);
+				lac = strtol(pResp, NULL, 16);
+				g_free(pResp);
+			}
 
-			if ((pResp = g_slist_nth_data(tokens, 2)))
-				ci = atoi(pResp);
-			else
+			if ((pResp = g_slist_nth_data(tokens, 2))) {
+				pResp = util_removeQuotes(pResp);
+				ci = strtol(pResp, NULL, 16);
+				g_free(pResp);
+			} else {
 				dbg("No ci in +CREG");
+			}
 
 			if ((pResp = g_slist_nth_data(tokens, 3)))
 				AcT = atoi(pResp);
