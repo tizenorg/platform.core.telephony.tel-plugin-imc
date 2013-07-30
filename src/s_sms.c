@@ -898,6 +898,9 @@ static void on_response_read_msg(TcorePending *pending, int data_len, const void
 						dbg("Invalid Message Length");
 						resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 					}
+				} else if (sca_length > SMS_ENCODED_SCA_LEN_MAX) {
+					dbg("Invalid Message Length");
+					resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 				} else {
 					if ((resp_read_msg.dataInfo.smsData.msgLength > 0)
 						&& (resp_read_msg.dataInfo.smsData.msgLength <= SMS_SMDATA_SIZE_MAX)) {
@@ -2237,7 +2240,7 @@ static TReturn read_msg(CoreObject *obj, UserRequest *ur)
 	}
 	dbg("index: [%d]", readMsg->index);
 
-	cmd_str = g_strdup_printf("AT+CMGR=%d", (readMsg->index + 1)); //IMC index is one ahead of TAPI
+	cmd_str = g_strdup_printf("AT+CMGR=%d", readMsg->index); //IMC index is one ahead of TAPI
 	atreq = tcore_at_request_new((const char *)cmd_str, "+CMGR", TCORE_AT_PDU);
 	pending = tcore_pending_new(obj, 0);
 
