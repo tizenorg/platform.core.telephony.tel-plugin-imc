@@ -747,7 +747,7 @@ static void on_response_class2_read_msg(TcorePending *pending, int data_len, con
 			dbg("Number of tokens: [%d]", g_slist_length(tokens));
 			g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
 
-			hex_pdu = g_slist_nth_data(tokens, 0); //Fetch SMS PDU
+			hex_pdu = g_strdup(g_slist_nth_data(tokens, 0)); //Fetch SMS PDU
 
 			//free the consumed token
 			tcore_at_tok_free(tokens);
@@ -780,6 +780,7 @@ static void on_response_class2_read_msg(TcorePending *pending, int data_len, con
 
 	rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(tcore_pending_ref_core_object(pending))), tcore_pending_ref_core_object(pending), TNOTI_SMS_INCOM_MSG, sizeof(struct tnoti_sms_umts_msg), &gsmMsgInfo);
 
+	g_free(hex_pdu);
 	g_free(bytePDU);
 
 	dbg("Exit");
