@@ -717,52 +717,65 @@ static void on_response_class2_read_msg(TcorePending *pending, int data_len, con
 	dbg("lines: [%p]", at_response->lines);
 	g_slist_foreach(at_response->lines, print_glib_list_elem, NULL); //for debug log
 
-	if (at_response->success > 0) {
-		dbg("Response OK");
-		if (at_response->lines) {
-			//fetch first line
-			gslist_line = (char *)at_response->lines->data;
-
-			dbg("gslist_line: [%s]", gslist_line);
-
-			tokens = tcore_at_tok_new(gslist_line);
-			dbg("Number of tokens: [%d]", g_slist_length(tokens));
-			g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
-
-			line_token = g_slist_nth_data(tokens, 2); //Third Token: Length
-			if (line_token != NULL) {
-				pdu_len = atoi(line_token);
-				dbg("Length: [%d]", pdu_len);
-			}
-
-			//fetch second line
-			gslist_line = (char *)at_response->lines->next->data;
-
-			dbg("gslist_line: [%s]", gslist_line);
-
-			//free the consumed token
-			tcore_at_tok_free(tokens);
-
-			tokens = tcore_at_tok_new(gslist_line);
-			dbg("Number of tokens: [%d]", g_slist_length(tokens));
-			g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
-
-			hex_pdu = g_slist_nth_data(tokens, 0); //Fetch SMS PDU
-
-			//free the consumed token
-			tcore_at_tok_free(tokens);
-		} else {
-			dbg("No lines");
-		}
-	} else {
+	if (at_response->success <= 0) {
 		err("Response NOK");
+		goto exit;
 	}
+
+	dbg("Response OK");
+	if (at_response->lines == NULL) {
+		dbg("No lines");
+		goto exit;
+	}
+
+	//fetch first line
+	gslist_line = (char *)at_response->lines->data;
+	if (gslist_line == NULL) {
+		err("Error response data");
+		goto exit;
+	}	
+
+	dbg("gslist_line: [%s]", gslist_line);
+
+	tokens = tcore_at_tok_new(gslist_line);
+	dbg("Number of tokens: [%d]", g_slist_length(tokens));
+	g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
+
+	line_token = g_slist_nth_data(tokens, 2); //Third Token: Length
+	if (line_token == NULL) {
+		err("Error response data");
+		tcore_at_tok_free(tokens);
+		goto exit;
+	}
+
+	pdu_len = atoi(line_token);
+	dbg("Length: [%d]", pdu_len);
+	tcore_at_tok_free(tokens);
+
+	//fetch second line
+	gslist_line = (char *)at_response->lines->next->data;
+	if (gslist_line == NULL) {
+		err("Error response data");
+		tcore_at_tok_free(tokens);
+		goto exit;
+	}
+
+	dbg("gslist_line: [%s]", gslist_line);
+
+	tokens = tcore_at_tok_new(gslist_line);
+	dbg("Number of tokens: [%d]", g_slist_length(tokens));
+	g_slist_foreach(tokens, print_glib_list_elem, NULL); //for debug log
+
+	hex_pdu = g_slist_nth_data(tokens, 0); //Fetch SMS PDU
 
 	/* Convert to Bytes */
 	bytePDU = (unsigned char *)util_hexStringToBytes(hex_pdu);
+	if (bytePDU == NULL) {
+		tcore_at_tok_free(tokens);
+		goto exit;
+	}
 
 	sca_length = bytePDU[0];
-
 	dbg("SCA length = %d", sca_length);
 
 	gsmMsgInfo.msgInfo.msgLength = pdu_len;
@@ -781,9 +794,10 @@ static void on_response_class2_read_msg(TcorePending *pending, int data_len, con
 	rtn = tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(tcore_pending_ref_core_object(pending))), tcore_pending_ref_core_object(pending), TNOTI_SMS_INCOM_MSG, sizeof(struct tnoti_sms_umts_msg), &gsmMsgInfo);
 
 	g_free(bytePDU);
+	tcore_at_tok_free(tokens);
 
-	dbg("Exit");
-	return;
+exit:
+	dbg("exit");
 }
 
 static void on_response_read_msg(TcorePending *pending, int data_len, const void *data, void *user_data)
