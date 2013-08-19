@@ -24,6 +24,7 @@
 gboolean s_modem_init(TcorePlugin *cp, CoreObject *co_modem);
 void s_modem_exit(TcorePlugin *cp, CoreObject *co_modem);
 
-gboolean modem_power_on(TcorePlugin *p);
+gboolean modem_power_on(TcorePlugin *plugin);
+void modem_register_nvm(CoreObject *co_modem);
 
 #endif

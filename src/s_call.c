@@ -29,6 +29,7 @@
 #include <core_object.h>
 #include <plugin.h>
 #include <queue.h>
+#include <storage.h>
 #include <co_call.h>
 #include <user_request.h>
 #include <server.h>
@@ -268,7 +269,7 @@ const call_end_cause_info call_end_cause_table[] =   // call end cause table to 
 
 static enum tcore_call_cli_mode _get_clir_status(char *num)
 {
-	enum tcore_call_cli_mode clir = CALL_CLI_MODE_DEFAULT;
+	enum tcore_call_cli_mode clir = TCORE_CALL_CLI_MODE_DEFAULT;
 
 	dbg("Entry");
 
@@ -282,7 +283,10 @@ static enum tcore_call_cli_mode _get_clir_status(char *num)
 		return TCORE_CALL_CLI_MODE_PRESENT;
 	}
 
-	err("Exit");
+	dbg("CLI mode default");
+
+	dbg("Exit");
+
 	return clir;
 }
 
@@ -2611,20 +2615,14 @@ static void on_notification_call_status(CoreObject *o, const void *data, void *u
 static TReturn s_call_outgoing(CoreObject *o, UserRequest *ur)
 {
 	struct treq_call_dial *data = 0;
-	char *raw_str = NULL;
-	char *cmd_str = NULL;
-	const char *cclir;
+	char *cmd_str;
+	const char *cclir, *num;
 	enum tcore_call_cli_mode clir = CALL_CLI_MODE_DEFAULT;
-	TcorePending *pending = NULL;
+	TcorePending *pending;
 	TcoreATRequest *req;
-	gboolean ret = FALSE;
+	gboolean ret;
 
-	dbg("function entrance");
-
-	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
-		dbg("cp not ready/n");
-		return TCORE_RETURN_ENOSYS;
-	}
+	dbg("Entry");
 
 	data = (struct treq_call_dial *) tcore_user_request_ref_data(ur, 0);
 	if (data->type == CALL_TYPE_VIDEO) {
@@ -2634,29 +2632,44 @@ static TReturn s_call_outgoing(CoreObject *o, UserRequest *ur)
 
 	clir = _get_clir_status(data->number);
 
-	// Compose ATD Cmd string
+	if (clir == TCORE_CALL_CLI_MODE_DEFAULT) {
+		TcorePlugin *plugin = tcore_object_ref_plugin(o);
+		Server *server = tcore_plugin_ref_server(plugin);
+		Storage *strg;
+
+		dbg("Reading VCONF key");
+
+		strg = tcore_server_find_storage(server, "vconf");
+		clir = tcore_storage_get_int(strg,
+				STORAGE_KEY_CISSAPPL_SHOW_MY_NUMBER_INT);
+
+		num = data->number;
+	} else
+		/* Need to remove CLIR code from dialing number */
+		num = data->number + 4;
+
+	/* Compose ATD Cmd string */
 	switch (clir) {
 	case TCORE_CALL_CLI_MODE_PRESENT:
 		dbg("CALL_CLI_MODE_PRESENT");
-		cclir = "I";
-		break;  // invocation
+		cclir = "i";
+		break;
 
 	case TCORE_CALL_CLI_MODE_RESTRICT:
 		dbg("CALL_CLI_MODE_RESTRICT");
-		cclir = "i";
-		break;  // suppression
+		cclir = "I";
+		break;
 
 	case TCORE_CALL_CLI_MODE_DEFAULT:
 	default:
 		cclir = "";
 		dbg("CALL_CLI_MODE_DEFAULT");
-		break;   // subscription default
+		break;
 	}
 
 	dbg("data->number = %s", data->number);
 
-	raw_str = g_strdup_printf("ATD%s%s;", data->number, cclir);
-	cmd_str = g_strdup_printf("%s", raw_str);
+	cmd_str = g_strdup_printf("ATD%s%s;", num, cclir);
 
 	dbg("request command : %s", cmd_str);
 
@@ -2667,15 +2680,16 @@ static TReturn s_call_outgoing(CoreObject *o, UserRequest *ur)
 	tcore_pending_set_request_data(pending, 0, req);
 	ret = _call_request_message(pending, o, ur, on_confirmation_call_outgoing, NULL);
 
-	g_free(raw_str);
 	g_free(cmd_str);
 
-	if (!ret) {
+	if (ret == FALSE) {
 		dbg("AT request(%s) sent failed", req->cmd);
 		return TCORE_RETURN_FAILURE;
 	}
 
 	dbg("AT request(%s) sent success", req->cmd);
+
+	dbg("Exit");
 
 	return TCORE_RETURN_SUCCESS;
 }

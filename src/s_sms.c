@@ -898,6 +898,9 @@ static void on_response_read_msg(TcorePending *pending, int data_len, const void
 						dbg("Invalid Message Length");
 						resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 					}
+				} else if (sca_length > SMS_ENCODED_SCA_LEN_MAX) {
+					dbg("Invalid Message Length");
+					resp_read_msg.result = SMS_INVALID_PARAMETER_FORMAT;
 				} else {
 					if ((resp_read_msg.dataInfo.smsData.msgLength > 0)
 						&& (resp_read_msg.dataInfo.smsData.msgLength <= SMS_SMDATA_SIZE_MAX)) {
@@ -1103,6 +1106,7 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 	UserRequest *user_req = NULL;
 
 	GSList *tokens = NULL;
+	const char *sca_tok_addr;
 	char *gslist_line = NULL, *sca_addr = NULL, *sca_toa = NULL;
 
 	dbg("Entry");
@@ -1118,9 +1122,10 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 			gslist_line = (char *)at_response->lines->data;
 
 			tokens = tcore_at_tok_new(gslist_line);
-			sca_addr = g_slist_nth_data(tokens, 0);
+			sca_tok_addr = g_slist_nth_data(tokens, 0);
 			sca_toa = g_slist_nth_data(tokens, 1);
 
+			sca_addr = tcore_at_tok_extract(sca_tok_addr);
 			if ((NULL != sca_addr)
 				&& (NULL != sca_toa)) {
 				dbg("sca_addr: [%s]. sca_toa: [%s]", sca_addr, sca_toa);
@@ -1152,8 +1157,8 @@ static void on_response_get_sca(TcorePending *pending, int data_len, const void 
 
 	tcore_user_request_send_response(user_req, TRESP_SMS_GET_SCA, sizeof(respGetSca), &respGetSca);
 
-	if(tokens)
-		tcore_at_tok_free(tokens);
+	tcore_at_tok_free(tokens);
+	g_free(sca_addr);
 
 	dbg("Exit");
 	return;
@@ -2235,7 +2240,7 @@ static TReturn read_msg(CoreObject *obj, UserRequest *ur)
 	}
 	dbg("index: [%d]", readMsg->index);
 
-	cmd_str = g_strdup_printf("AT+CMGR=%d", (readMsg->index + 1)); //IMC index is one ahead of TAPI
+	cmd_str = g_strdup_printf("AT+CMGR=%d", readMsg->index); //IMC index is one ahead of TAPI
 	atreq = tcore_at_request_new((const char *)cmd_str, "+CMGR", TCORE_AT_PDU);
 	pending = tcore_pending_new(obj, 0);
 
@@ -2978,6 +2983,7 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	char *encoded_data = NULL;
 	unsigned char *temp_data = NULL;
 	int SMSPRecordLen = 0;
+	int *smsp_record_len;
 
 	TcoreHal *hal = NULL;
 	TcoreATRequest *atreq = NULL;
@@ -3000,7 +3006,11 @@ static TReturn set_sms_params(CoreObject *obj, UserRequest *ur)
 	}
 
 	//EFsmsp file size is 28 +Y bytes (Y is alpha id size)
-	SMSPRecordLen = 28 + setSmsParams->params.alphaIdLen;
+	smsp_record_len = tcore_plugin_ref_property(tcore_object_ref_plugin(obj), "SMSPRECORDLEN");
+	SMSPRecordLen = *smsp_record_len;
+	if (SMSPRecordLen < nDefaultSMSPWithoutAlphaId)
+		return FALSE;
+
 	temp_data = calloc(SMSPRecordLen,1);
 	encoded_data = calloc(SMSPRecordLen*2 + 1,1);
 
@@ -3132,15 +3142,15 @@ gboolean s_sms_init(TcorePlugin *cp, CoreObject *co_sms)
 	tcore_sms_override_ops(co_sms, &sms_ops);
 
 	/* Registering for SMS notifications */
-	tcore_object_override_callback(co_sms, "\e+CMTI", on_event_class2_sms_incom_msg, NULL);
-	tcore_object_override_callback(co_sms, "\e+CMT", on_event_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+CMTI:", on_event_class2_sms_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CMT:", on_event_sms_incom_msg, NULL);
 
 	tcore_object_override_callback(co_sms, "\e+CDS", on_event_sms_incom_msg, NULL);
 	tcore_object_override_callback(co_sms, "+XSMSMMSTAT", on_event_sms_memory_status, NULL);
 	tcore_object_override_callback(co_sms, "+CMS", on_event_sms_memory_status, NULL);
 
-	tcore_object_override_callback(co_sms, "\e+CBMI", on_event_sms_cb_incom_msg, NULL);
-	tcore_object_override_callback(co_sms, "\e+CBM", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "+CBMI:", on_event_sms_cb_incom_msg, NULL);
+	tcore_object_override_callback(co_sms, "\e+CBM:", on_event_sms_cb_incom_msg, NULL);
 
 	/* Storing SMSP record length */
 	smsp_record_len = g_new0(int, 1);

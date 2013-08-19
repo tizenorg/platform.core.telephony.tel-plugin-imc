@@ -42,6 +42,7 @@ SET(SRCS
 		src/s_phonebook.c
 		src/s_sap.c
 		src/s_gps.c
+		src/nvm/nvm.c
 )
 
 
