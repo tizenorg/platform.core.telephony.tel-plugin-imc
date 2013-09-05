@@ -3117,7 +3117,7 @@ static TReturn s_call_set_sound_path(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_FAILURE;
 	}
 
-	if (g_str_has_prefix(cp_name, "mfld_blackbay") == TRUE) {
+	if (g_str_has_prefix(cp_name, "imcmodem") == FALSE) {
 		struct tnoti_call_sound_path *tnoti_snd_path;
 
 		tnoti_snd_path = g_try_new0(struct tnoti_call_sound_path, 1);
