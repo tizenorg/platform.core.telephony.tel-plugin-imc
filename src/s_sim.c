@@ -114,6 +114,8 @@ static gboolean _get_file_data(CoreObject *o, UserRequest *ur, const enum tel_si
 static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_sim_file_id ef, const int index, const int length);
 static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status);
 extern gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
+static void notify_sms_state(TcorePlugin *plugin, CoreObject *co_sim,
+				gboolean sms_ready);
 
 static void sim_prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback)
 {
@@ -777,6 +779,7 @@ static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_si
 static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status)
 {
 	struct tnoti_sim_status noti_data = {0, };
+	CoreObject *co_sms;
 
 	if (sim_status != tcore_sim_get_status(o)) {
 		dbg("Change in SIM State - Old State: [0x%02x] New State: [0x%02x]",
@@ -789,6 +792,19 @@ static void _sim_status_update(CoreObject *o, enum tel_sim_status sim_status)
 		/* Send notification */
 		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),
 				o, TNOTI_SIM_STATUS, sizeof(noti_data), &noti_data);
+
+		if (sim_status != SIM_STATUS_INIT_COMPLETED)
+			return;
+
+		/* make sure sms ready is notified */
+		co_sms = tcore_plugin_ref_core_object(tcore_object_ref_plugin(o),
+						CORE_OBJECT_TYPE_SMS);
+		if (co_sms == NULL)
+			return;
+
+		if (tcore_sms_get_ready_status(co_sms) == TRUE)
+			notify_sms_state(tcore_object_ref_plugin(o), o, TRUE);
+
 	}
 }
 
@@ -2031,9 +2047,6 @@ static void notify_sms_state(TcorePlugin *plugin, CoreObject *co_sim,
 		return;
 	}
 
-	if (tcore_sms_get_ready_status(co_sms) == sms_ready)
-		return;
-
 	tcore_sms_set_ready_status(co_sms, sms_ready);
 
 	if (tcore_sim_get_status(co_sim) == SIM_STATUS_INIT_COMPLETED) {
@@ -2071,15 +2084,22 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	tokens = tcore_at_tok_new(line);
 
 	/* SIM State */
-	if (g_slist_length(tokens) == 4) {
+	if (g_str_has_prefix(line, "+XSIMSTATE")) {
+		dbg("+XSIMSTATE response");
+		/* +XSIMSTATE: <mode>,<SIM state>,<PB Ready>,<SMS Ready> */
 		sim_state = atoi(g_slist_nth_data(tokens, 1));
 		sms_state = atoi(g_slist_nth_data(tokens, 3));
 		notify_sms_state(plugin, o, (sms_state > 0));
-	} else if (g_slist_length(tokens) == 1) {
-		sim_state = atoi(g_slist_nth_data(tokens, 0));
+
+		/*
+		 * Skip the status 'not present' as this state is maybe just
+		 * temporary. Rely on URC only
+		 */
+		if (sim_state == 0)
+			goto out;
 	} else {
-		err("Invalid message");
-		goto out;
+		dbg("+XSIM unsolicited response");
+		sim_state = atoi(g_slist_nth_data(tokens, 0));
 	}
 
 	switch (sim_state) {
@@ -2136,6 +2156,18 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 	case 12:
 		dbg("SIM SMS Ready");
 		notify_sms_state(plugin, o, TRUE);
+
+		sim_status = tcore_sim_get_status(o);
+
+		/*
+		 * Force SIM status to SIM_STATUS_INIT_COMPLETED if the
+		 * SIM card status has never been notified before.
+		 */
+		 if (sim_status != SIM_STATUS_INIT_COMPLETED &&
+				sim_status != SIM_STATUS_INITIALIZING) {
+			sim_status = SIM_STATUS_INIT_COMPLETED;
+			break;
+		}
 		goto out;
 
 	case 99:
@@ -2153,9 +2185,9 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		dbg("[SIM] SIM INIT COMPLETED");
 		if (tcore_sim_get_type(o) == SIM_TYPE_UNKNOWN) {
 			_get_sim_type(o);
-			goto out;
+			/* Ensure SIM status is set to SIM_STATUS_INITIALIZING */
+			sim_status = SIM_STATUS_INITIALIZING;
 		}
-
 		break;
 
 	case SIM_STATUS_CARD_REMOVED:
