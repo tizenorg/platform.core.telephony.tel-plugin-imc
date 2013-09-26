@@ -1217,6 +1217,8 @@ static gboolean on_event_ps_network_regist(CoreObject *o, const void *data, void
 	char *pResp;
 	char *line = NULL;
 	GSList *lines = NULL;
+	unsigned int nb_tokens;
+	int i = 0;
 
 	lines = (GSList *) data;
 	if (1 != g_slist_length(lines)) {
@@ -1224,10 +1226,10 @@ static gboolean on_event_ps_network_regist(CoreObject *o, const void *data, void
 		goto OUT;
 	}
 	line = (char *) (lines->data);
-	dbg("+CGREG NOTI RECEIVED");
 
 /*
-+CREG: <stat> [[,<lac>,<ci>[AcT]]
+CGREG query response: +CGREG: <n>,<stat>[,<lac>,<ci>[,<AcT>,<rac>]]
+or URC : +CGREG: <stat>[,<lac>,<ci>] [,<AcT>,<rac>]
 
 Possible values of <stat> can be
 0 Not registered, ME is not currently searching a new operator to register to
@@ -1256,44 +1258,60 @@ Note: <Act> is supporting from R7 and above Protocol Stack.
 */
 	if (line != NULL) {
 		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
+		nb_tokens= g_slist_length(tokens);
+
+		dbg("nb_tokens %d", nb_tokens);
+
+		if (nb_tokens < 1) {
 			msg("invalid message");
 			goto OUT;
 		}
 
-		if (!(pResp = g_slist_nth_data(tokens, 0))) {
-			dbg("No  STAT in +CGREG");
-			goto OUT;
+		if (nb_tokens == 1) {
+			dbg("+CGREG unsolicited response");
+		} else if (nb_tokens > 5) {
+			dbg("+CGREG response");
+			i = 1;
 		} else {
-			stat = atoi(pResp);
-			if ((pResp = g_slist_nth_data(tokens, 1))) {
-				pResp = util_removeQuotes(pResp);
-				lac = strtol(pResp, NULL, 16);
-				g_free(pResp);
-			}
-
-			if ((pResp = g_slist_nth_data(tokens, 2))) {
-				pResp = util_removeQuotes(pResp);
-				ci = strtol(pResp, NULL, 16);
-				g_free(pResp);
+			pResp = g_slist_nth_data(tokens, 1);
+			if (*pResp == '"') {
+				/* this field is <lac> */
+				dbg("+CGREG unsolicited response");
 			} else {
-				dbg("No ci in +CGREG");
-			}
-
-			if ((pResp = g_slist_nth_data(tokens, 3)))
-				AcT = atoi(pResp);
-			else
-				dbg("No AcT in +CGREG");
-
-			if ((pResp = g_slist_nth_data(tokens, 4))) {
-				pResp = util_removeQuotes(pResp);
-				rac = strtol(pResp, NULL, 16);
-				g_free(pResp);
-			} else {
-				dbg("No rac in +CGREG");
+				dbg("+CGREG response");
+				i = 1;
 			}
 		}
 
+		pResp = g_slist_nth_data(tokens, i++);
+		stat = atoi(pResp);
+
+		if ((pResp = g_slist_nth_data(tokens, i++))) {
+			pResp = util_removeQuotes(pResp);
+			lac = strtol(pResp, NULL, 16);
+			g_free(pResp);
+		}
+
+		if ((pResp = g_slist_nth_data(tokens, i++))) {
+			pResp = util_removeQuotes(pResp);
+			ci = strtol(pResp, NULL, 16);
+			g_free(pResp);
+		} else {
+			dbg("No ci in +CGREG");
+		}
+
+		if ((pResp = g_slist_nth_data(tokens, i++)))
+			AcT = atoi(pResp);
+		else
+			dbg("No AcT in +CGREG");
+
+		if ((pResp = g_slist_nth_data(tokens, i++))) {
+			pResp = util_removeQuotes(pResp);
+			rac = strtol(pResp, NULL, 16);
+			g_free(pResp);
+		} else {
+			dbg("No rac in +CGREG");
+		}
 
 		dbg("stat=%d, lac=0x%lx, ci=0x%lx, Act=%d, rac = 0x%x", stat, lac, ci, AcT, rac);
 
@@ -1408,6 +1426,9 @@ static gboolean on_event_cs_network_regist(CoreObject *o, const void *event_info
 	unsigned int lac = 0xffff, ci = 0xffff;
 	GSList *tokens = NULL;
 	char *pResp;
+	unsigned int nb_tokens;
+	int i = 0;
+
 
 	lines = (GSList *) event_info;
 	if (1 != g_slist_length(lines)) {
@@ -1416,10 +1437,9 @@ static gboolean on_event_cs_network_regist(CoreObject *o, const void *event_info
 	}
 	line = (char *) (lines->data);
 
-	dbg("+CREG NOTI RECEIVED");
-
 /*
-+CREG: <stat> [[,<lac>,<ci>[AcT]]
+CREG query response: +CGREG: <n>,<stat>[,<lac>,<ci>[,<AcT>,<rac>]]
+or URC : +CREG: <stat> [, <lac>,<ci>[,<AcT>]]
 
 Possible values of <stat> can be
 0 Not registered, ME is not currently searching a new operator to register to
@@ -1446,36 +1466,51 @@ Note: <Act> is supporting from R7 and above Protocol Stack.
 */
 	if (line != NULL) {
 		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
+		nb_tokens= g_slist_length(tokens);
+
+		dbg("nb_tokens %d", nb_tokens);
+
+		if (nb_tokens < 1) {
 			msg("invalid message");
 			goto OUT;
 		}
 
-		if (!(pResp = g_slist_nth_data(tokens, 0))) {
-			dbg("No  STAT in +CREG");
-			goto OUT;
+		if (nb_tokens == 1) {
+			dbg("+CREG unsolicited response");
+		} else if (nb_tokens > 4) {
+			dbg("+CREG response");
+			i = 1;
 		} else {
-			stat = atoi(pResp);
-			if ((pResp = g_slist_nth_data(tokens, 1))) {
-				pResp = util_removeQuotes(pResp);
-				lac = strtol(pResp, NULL, 16);
-				g_free(pResp);
-			}
-
-			if ((pResp = g_slist_nth_data(tokens, 2))) {
-				pResp = util_removeQuotes(pResp);
-				ci = strtol(pResp, NULL, 16);
-				g_free(pResp);
+			pResp = g_slist_nth_data(tokens, 1);
+			if (*pResp == '"') {
+				/* This field is <lac> */
+				dbg("+CREG unsolicited response");
 			} else {
-				dbg("No ci in +CREG");
+				dbg("+CREG response");
+				i = 1;
 			}
-
-			if ((pResp = g_slist_nth_data(tokens, 3)))
-				AcT = atoi(pResp);
-			else
-				dbg("No AcT in +CREG");
 		}
 
+		pResp = g_slist_nth_data(tokens, i++);
+		stat = atoi(pResp);
+		if ((pResp = g_slist_nth_data(tokens, i++))) {
+			pResp = util_removeQuotes(pResp);
+			lac = strtol(pResp, NULL, 16);
+			g_free(pResp);
+		}
+
+		if ((pResp = g_slist_nth_data(tokens, i++))) {
+			pResp = util_removeQuotes(pResp);
+			ci = strtol(pResp, NULL, 16);
+			g_free(pResp);
+		} else {
+			dbg("No ci in +CREG");
+		}
+
+		if ((pResp = g_slist_nth_data(tokens, i++)))
+			AcT = atoi(pResp);
+		else
+			dbg("No AcT in +CREG");
 
 		dbg("stat=%d, lac=0x%lx, ci=0x%lx, Act=%d", stat, lac, ci, AcT);
 
