@@ -2090,13 +2090,6 @@ static gboolean on_event_pin_status(CoreObject *o, const void *event_info, void 
 		sim_state = atoi(g_slist_nth_data(tokens, 1));
 		sms_state = atoi(g_slist_nth_data(tokens, 3));
 		notify_sms_state(plugin, o, (sms_state > 0));
-
-		/*
-		 * Skip the status 'not present' as this state is maybe just
-		 * temporary. Rely on URC only
-		 */
-		if (sim_state == 0)
-			goto out;
 	} else {
 		dbg("+XSIM unsolicited response");
 		sim_state = atoi(g_slist_nth_data(tokens, 0));
