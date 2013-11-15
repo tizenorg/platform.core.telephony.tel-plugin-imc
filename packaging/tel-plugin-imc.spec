@@ -4,7 +4,7 @@ Summary:	imc plugin for telephony
 Version:	0.1.42
 Release:	1
 Group:		Development/Libraries
-License:	Apache
+License:	Apache-2.0
 Source0:	tel-plugin-imc-%{version}.tar.gz
 Source1001: 	tel-plugin-imc.manifest
 Requires(post):	/sbin/ldconfig
@@ -53,6 +53,7 @@ fi
 rm -rf %{buildroot}
 %make_install
 mkdir -p %{buildroot}/usr/share/license
+cp LICENSE %{buildroot}/usr/share/license/%{name}
 
 %files
 %manifest %{name}.manifest
@@ -61,4 +62,4 @@ mkdir -p %{buildroot}/usr/share/license
 
 %{_libdir}/telephony/plugins/modems/*
 /tmp/mcc_mnc_oper_list.sql
-/usr/share/license/tel-plugin-imc
+/usr/share/license/%{name}
