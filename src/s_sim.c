@@ -2866,6 +2866,134 @@ OUT:
 	dbg("Exit");
 }
 
+static void on_response_req_authentication(TcorePending *p, int data_len,
+					const void *data, void *user_data)
+{
+	const TcoreATResponse *at_resp = data;
+	GSList *tokens = NULL;
+	struct tresp_sim_req_authentication resp_auth;
+	const struct treq_sim_req_authentication *req_data;
+	UserRequest *ur = tcore_pending_ref_user_request(p);
+
+	dbg("Entry");
+
+	memset(&resp_auth, 0, sizeof(struct tresp_sim_req_authentication));
+
+	if (at_resp == NULL) {
+		err("at_resp is NULL");
+		resp_auth.result = SIM_ACCESS_FAILED;
+		resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+		goto out;
+	}
+
+	req_data = tcore_user_request_ref_data(ur, NULL);
+	if (req_data == NULL) {
+		err("req_data is NULL");
+		resp_auth.result = SIM_ACCESS_FAILED;
+		resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+		goto out;
+	}
+	resp_auth.auth_type = req_data->auth_type;
+
+	if (at_resp->success == TRUE) {
+		const char *line;
+		int status;
+
+		dbg("RESPONSE OK");
+		if (at_resp->lines != NULL) {
+			line = at_resp->lines->data;
+			dbg("Received data: [%s]", line);
+		} else {
+			err("at_resp->lines is NULL");
+			resp_auth.result = SIM_ACCESS_FAILED;
+			resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+			goto out;
+		}
+
+		tokens = tcore_at_tok_new(line);
+		if (tokens == NULL) {
+			err("tokens is NULL");
+			resp_auth.result = SIM_ACCESS_FAILED;
+			resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+			goto out;
+		}
+
+		status = atoi(g_slist_nth_data(tokens, 0));
+		switch (status) {
+		case 0:
+			dbg("Authentications successful");
+			resp_auth.auth_result = SIM_AUTH_NO_ERROR;
+			break;
+		case 1:
+			err("Synchronize fail");
+			resp_auth.auth_result = SIM_AUTH_SYNCH_FAILURE;
+			goto out;
+		case 2:
+			err("MAC wrong");
+			resp_auth.auth_result = SIM_AUTH_MAK_CODE_FAILURE;
+			goto out;
+		case 3:
+			err("Does not support security context");
+			resp_auth.auth_result = SIM_AUTH_UNSUPPORTED_CONTEXT;
+			goto out;
+		default:
+			err("Other failure");
+			resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+			goto out;
+		}
+
+		if (resp_auth.auth_type == SIM_AUTH_TYPE_GSM) {
+			char *kc, *sres;
+			char *convert_kc, *convert_sres;
+
+			kc = g_slist_nth_data(tokens, 1);
+			if (kc != NULL) {
+				kc = tcore_at_tok_extract(kc);
+				dbg("Kc: [%s]", kc);
+				convert_kc = util_hexStringToBytes(kc);
+				if (convert_kc && strlen(convert_kc) <= SIM_AUTH_RESP_DATA_LEN_MAX) {
+					resp_auth.authentication_key_length = strlen(convert_kc);
+					memcpy(&resp_auth.authentication_key, convert_kc, strlen(convert_kc));
+				} else {
+					err("Invalid Kc");
+					resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+				}
+				g_free(kc);
+				g_free(convert_kc);
+			}
+
+			sres = g_slist_nth_data(tokens, 2);
+			if (sres != NULL) {
+				sres = tcore_at_tok_extract(sres);
+				dbg("SRES: [%s]", sres);
+				convert_sres = util_hexStringToBytes(sres);
+				if (convert_sres && strlen(sres) <= SIM_AUTH_RESP_DATA_LEN_MAX) {
+					resp_auth.resp_length = strlen(convert_sres);
+					memcpy(&resp_auth.resp_data, convert_sres, strlen(convert_sres));
+				} else {
+					err("Invalid SRES");
+					resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+				}
+				g_free(sres);
+				g_free(convert_sres);
+			}
+		} else if (resp_auth.auth_type == SIM_AUTH_TYPE_3G
+				|| resp_auth.auth_type == SIM_AUTH_TYPE_IMS) {
+			/* TODO */
+		}
+	} else {
+		err("RESPONSE NOK");
+		resp_auth.result = SIM_ACCESS_FAILED;
+		resp_auth.auth_result = SIM_AUTH_CANNOT_PERFORM;
+	}
+
+out:
+	tcore_user_request_send_response(ur, TRESP_SIM_REQ_AUTHENTICATION,
+			sizeof(struct tresp_sim_req_authentication), &resp_auth);
+
+	tcore_at_tok_free(tokens);
+}
+
 static TReturn s_verify_pins(CoreObject *o, UserRequest *ur)
 {
 	TcoreHal *hal = NULL;
@@ -3580,6 +3708,84 @@ static TReturn s_get_atr(CoreObject *o, UserRequest *ur)
 								NULL, NULL);
 }
 
+static TReturn s_req_authentication(CoreObject *co, UserRequest *ur)
+{
+	const struct treq_sim_req_authentication *req_data;
+	char *cmd_str = NULL;
+	enum tel_sim_type sim_type;
+	int session_id;
+	int context_type;
+	TReturn ret = TCORE_RETURN_FAILURE;
+	char *convert_rand = NULL;
+	char *convert_autn = NULL;
+
+	dbg("Entry");
+
+	req_data = tcore_user_request_ref_data(ur, NULL);
+	if (req_data == NULL) {
+		err("req_data is NULL");
+		return ret;
+	}
+
+	if (req_data->rand_data != NULL) {
+		convert_rand = util_hex_to_string(req_data->rand_data,
+						strlen(req_data->rand_data));
+		dbg("Convert RAND hex to string: [%s]", convert_rand);
+	} else {
+		err("rand_data is NULL");
+		return ret;
+	}
+
+	sim_type = tcore_sim_get_type(co);
+	switch (sim_type) {
+	case SIM_TYPE_GSM:
+	case SIM_TYPE_USIM:
+		session_id = 0;
+		break;
+	default:
+		err("Not supported");
+		ret = TCORE_RETURN_ENOSYS;
+		goto out;
+	}
+
+	switch (req_data->auth_type) {
+	case SIM_AUTH_TYPE_GSM:
+		context_type = 2;
+		cmd_str = g_strdup_printf("AT+XAUTH=%d,%d,\"%s\"", session_id,
+						context_type, convert_rand);
+		break;
+	case SIM_AUTH_TYPE_3G:
+		context_type = 1;
+		if (req_data->autn_data != NULL) {
+			convert_autn = util_hex_to_string(req_data->autn_data,
+						strlen(req_data->autn_data));
+			dbg("Convert AUTN hex to string: [%s]", convert_autn);
+		} else {
+			err("autn_data is NULL");
+			goto out;
+		}
+		cmd_str = g_strdup_printf("AT+XAUTH=%d,%d,\"%s\",\"%s\"",
+						session_id, context_type,
+						convert_rand, convert_autn);
+		break;
+	default:
+		err("Not supported");
+		ret = TCORE_RETURN_ENOSYS;
+		goto out;
+	}
+
+	ret = tcore_prepare_and_send_at_request(co, cmd_str, "+XAUTH",
+			TCORE_AT_SINGLELINE, ur,
+			on_response_req_authentication, NULL, NULL, NULL);
+
+out:
+	g_free(cmd_str);
+	g_free(convert_rand);
+	g_free(convert_autn);
+
+	return ret;
+}
+
 /* SIM Operations */
 static struct tcore_sim_operations sim_ops = {
 	.verify_pins = s_verify_pins,
@@ -3593,7 +3799,7 @@ static struct tcore_sim_operations sim_ops = {
 	.update_file = s_update_file,
 	.transmit_apdu = s_transmit_apdu,
 	.get_atr = s_get_atr,
-	.req_authentication = NULL,
+	.req_authentication = s_req_authentication,
 };
 
 gboolean s_sim_init(TcorePlugin *cp, CoreObject *co_sim)
