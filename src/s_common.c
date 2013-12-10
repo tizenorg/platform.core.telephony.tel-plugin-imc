@@ -99,6 +99,24 @@ unsigned char util_hexCharToInt(char c)
 	}
 }
 
+char *util_hex_to_string(const char *src, unsigned int src_len)
+{
+	char *dest;
+	int i;
+
+	if (src == NULL)
+		return NULL;
+
+	dest = g_malloc0(src_len * 2 + 1);
+	for (i = 0; i < src_len; i++) {
+		sprintf(dest + (i * 2), "%02x", (unsigned char)src[i]);
+	}
+
+	dest[src_len * 2] = '\0';
+
+	return dest;
+}
+
 char* util_hexStringToBytes(char *s)
 {
 	char *ret;
