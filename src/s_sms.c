@@ -628,7 +628,7 @@ static void on_response_sms_save_msg(TcorePending *p, int data_len, const void *
 			pResp = g_slist_nth_data(tokens, 0);
 			if (pResp) {
 				dbg("0: %s", pResp);
-		 		saveMsgInfo.index = (atoi(pResp) - 1); /* IMC index starts from 1 */
+		 		saveMsgInfo.index = atoi(pResp); 
 				saveMsgInfo.result = SMS_SENDSMS_SUCCESS;
 			} else {
 				dbg("No Tokens");
@@ -2114,7 +2114,7 @@ static void _response_get_efsms_data(TcorePending *p, int data_len, const void *
 			util_byte_to_hex((const char *)&msg_status, (char *)encoded_data, 1);
 
 			//Update EF-SMS with just status byte overwritten, rest 175 bytes are same as received in read information
-			cmd_str = g_strdup_printf("AT+CRSM=220,28476,%d, 4, %d, \"%s\"", (req_msg_status->index+1), PDU_LEN_MAX, encoded_data);
+			cmd_str = g_strdup_printf("AT+CRSM=220,28476,%d, 4, %d, \"%s\"", req_msg_status->index, PDU_LEN_MAX, encoded_data);
 			atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM", TCORE_AT_SINGLELINE);
 			pending = tcore_pending_new(tcore_pending_ref_core_object(pending), 0);
 			if (NULL == cmd_str || NULL == atreq || NULL == pending) {
@@ -2433,7 +2433,7 @@ static TReturn delete_msg(CoreObject *obj, UserRequest *ur)
 	if (delete_msg->index == -1) {
 		cmd_str = g_strdup_printf("AT+CMGD=0,4"); // Delete All Messages
 	} else {
-		cmd_str = g_strdup_printf("AT+CMGD=%d,0", delete_msg->index + 1); // Delete specified index
+		cmd_str = g_strdup_printf("AT+CMGD=%d,0", delete_msg->index); // Delete specified index
 	}
 
 	pending = tcore_pending_new(obj, 0);
@@ -2898,7 +2898,7 @@ static TReturn set_msg_status(CoreObject *obj, UserRequest *ur)
 	}
 	msg_status = tcore_user_request_ref_data(ur, NULL);
 
-	cmd_str = g_strdup_printf("AT+CRSM=178,28476,%d,4,%d", (msg_status->index+1), PDU_LEN_MAX);
+	cmd_str = g_strdup_printf("AT+CRSM=178,28476,%d,4,%d", msg_status->index, PDU_LEN_MAX);
 	atreq = tcore_at_request_new((const char *)cmd_str, "+CRSM", TCORE_AT_SINGLELINE);
 	pending = tcore_pending_new(obj, 0);
 	if (NULL == cmd_str || NULL == atreq || NULL == pending) {
