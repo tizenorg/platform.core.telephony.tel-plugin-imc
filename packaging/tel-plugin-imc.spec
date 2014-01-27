@@ -15,6 +15,7 @@ BuildRequires:	pkgconfig(dlog)
 BuildRequires:	pkgconfig(tcore)
 BuildRequires:	pkgconfig(db-util)
 BuildRequires:	pkgconfig(libxml-2.0)
+BuildRequires:  pkgconfig(libtzplatform-config)
 
 %description
 IMC plugin for telephony
@@ -29,22 +30,22 @@ make %{?jobs:-j%jobs}
 
 %post
 /sbin/ldconfig
-mkdir -p /opt/dbspace
+mkdir -p %{TZ_SYS_DB}
 
-if [ ! -f /opt/dbspace/.mcc_mnc_oper_list.db ]
+if [ ! -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db ]
 then
-	sqlite3 /opt/dbspace/.mcc_mnc_oper_list.db < /tmp/mcc_mnc_oper_list.sql
+	sqlite3 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db < /tmp/mcc_mnc_oper_list.sql
 fi
 
 rm -f /tmp/mcc_mnc_oper_list.sql
 
-if [ -f /opt/dbspace/.mcc_mnc_oper_list.db ]
+if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db ]
 then
-	chmod 600 /opt/dbspace/.mcc_mnc_oper_list.db
+	chmod 600 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db
 fi
-if [ -f /opt/dbspace/.mcc_mnc_oper_list.db-journal ]
+if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal ]
 then
-	chmod 644 /opt/dbspace/.mcc_mnc_oper_list.db-journal
+	chmod 644 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal
 fi
 
 %postun -p /sbin/ldconfig
