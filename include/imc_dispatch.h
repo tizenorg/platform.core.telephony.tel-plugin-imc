@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Harish Bishnoi <hbishnoi@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +16,11 @@
  * limitations under the License.
  */
 
+#ifndef __IMC_DISPATCH_H__
+#define __IMC_DISPATCH_H__
 
-#ifndef S_SAT_H_
-#define S_SAT_H_
+void do_factory(TcoreHal *h, const ipc_message_type *ipc);
+void do_notification_message(TcorePlugin *p, const ipc_message_type *ipc);
+void do_notification_sys_message(TcorePlugin *p, const void *data);
 
-gboolean s_sat_init(TcorePlugin *cp, CoreObject *co_sat);
-void s_sat_exit(TcorePlugin *cp, CoreObject *co_sat);
-
-#endif /* S_SAT_H_ */
+#endif	/* __IMC_DISPATCH_H__ */

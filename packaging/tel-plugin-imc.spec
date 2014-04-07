@@ -1,8 +1,12 @@
 #sbs-git:slp/pkgs/t/tel-plugin-imc
+%define major 3
+%define minor 0
+%define patchlevel 1
+
 Name:		tel-plugin-imc
 Summary:	imc plugin for telephony
-Version:	0.1.42
-Release:	1
+Version:        %{major}.%{minor}.%{patchlevel}
+Release:        1
 Group:		Development/Libraries
 License:	Apache-2.0
 Source0:	tel-plugin-imc-%{version}.tar.gz
@@ -16,6 +20,7 @@ BuildRequires:	pkgconfig(tcore)
 BuildRequires:	pkgconfig(db-util)
 BuildRequires:	pkgconfig(libxml-2.0)
 BuildRequires:  pkgconfig(libtzplatform-config)
+BuildRequires:	pkgconfig(vconf)
 
 %description
 IMC plugin for telephony

@@ -628,7 +628,7 @@ static void on_response_sms_save_msg(TcorePending *p, int data_len, const void *
 			pResp = g_slist_nth_data(tokens, 0);
 			if (pResp) {
 				dbg("0: %s", pResp);
-		 		saveMsgInfo.index = atoi(pResp); 
+				saveMsgInfo.index = atoi(pResp);
 				saveMsgInfo.result = SMS_SENDSMS_SUCCESS;
 			} else {
 				dbg("No Tokens");

@@ -40,12 +40,12 @@
 #include <libxml/xmlreader.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
-#include <tzplatform_config.h>
 
 #include "s_common.h"
 #include "s_gps.h"
 
 
+#define FILE_NAME   "/opt/home/root/sample.xml"
 #define POSITION_NODE   "pos"
 #define POSITION_NODE_ATTR_XSI  "xsi:noNamespaceSchemaLocation"
 #define POSITION_NODE_ATTR_VAL_XSI  "pos.xsd"
@@ -1676,7 +1676,6 @@ static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event
 	xmlTextReaderPtr reader;
 	gboolean _gps_assist_data = FALSE, gps_tow_assist = FALSE;
 	gboolean ephem_and_clock = FALSE, alm_elem = FALSE;
-	const char *path = NULL;
 
 	dbg("enter");
 
@@ -1737,10 +1736,8 @@ static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event
 		pos = (char *) xml_line;
 	}
 	line = g_strdup((char *) pos);
-
-	path = tzplatform_mkpath(TZ_SYS_ROOT, "sample.xml");
 	// open file.
-	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, S_IRWXU)) == -1) {
+	if ((fd = open(FILE_NAME, O_WRONLY | O_CREAT | O_TRUNC | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, S_IRWXU)) == -1) {
 		dbg("Cannot open file\n");
 		g_free(line);
 		return FALSE;
@@ -1756,9 +1753,9 @@ static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event
 	g_free(line);
 
 	dbg("read xml file");
-	reader = xmlReaderForFile(path, NULL, 0);
+	reader = xmlReaderForFile(FILE_NAME, NULL, 0);
 
-	while (xmlTextReaderRead(reader) == 1) {
+	while (xmlTextReaderRead(reader)) {
 		// Get the node type of the current node
 		switch (xmlTextReaderNodeType(reader)) {
 		case XML_READER_TYPE_ELEMENT:
@@ -1781,11 +1778,11 @@ static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event
 					xmlCleanupParser();
 					dbg("gps postion measurement notification ");
 					// GPS position measurement notification.
-					ret = on_notification_gps_measure_position_from_modem(o, path, user_data);
+					ret = on_notification_gps_measure_position_from_modem(o, FILE_NAME, user_data);
 					// remove file.
 					close(fd);
-					if (access(path, F_OK) == 0) {
-						if (remove(path))
+					if (access(FILE_NAME, F_OK) == 0) {
+						if (remove(FILE_NAME))
 							dbg("file removed");
 					}
 					return ret;
@@ -1900,8 +1897,8 @@ static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event
 
 	// remove xml file.
 	close(fd);
-	if (access(path, F_OK) == 0) {
-		if (remove(path))
+	if (access(FILE_NAME, F_OK) == 0) {
+		if (remove(FILE_NAME))
 			dbg("file removed");
 	}
 
@@ -1922,7 +1919,7 @@ static gboolean on_notification_gps_measure_position_from_modem(CoreObject *o, c
 	memset(&gps_measure_position_indi, 0x00, sizeof(gps_measure_position_indi));
 	reader = xmlReaderForFile(file_name, NULL, 0);
 
-	while (xmlTextReaderRead(reader) == 1) {
+	while (xmlTextReaderRead(reader)) {
 		switch (xmlTextReaderNodeType(reader)) {
 		case XML_READER_TYPE_ELEMENT:
 		{

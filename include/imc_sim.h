@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Harish Bishnoi <hbishnoi@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +16,12 @@
  * limitations under the License.
  */
 
-#ifndef __S_NETWORK_H__
-#define __S_NETWORK_H__
+#ifndef __IMC_SIM_H__
+#define __IMC_SIM_H__
 
-gboolean s_network_init(TcorePlugin *cp, CoreObject *co_network);
-void s_network_exit(TcorePlugin *cp, CoreObject *co_network);
+gboolean imc_sim_get_smsp_info(TcorePlugin *plugin, int *rec_count, int *rec_len);
 
-#endif
+gboolean imc_sim_init(TcorePlugin *p, CoreObject *co);
+void imc_sim_exit(TcorePlugin *p, CoreObject *co);
+
+#endif	/* __IMC_SIM_H__ */

@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Hayoon Ko <hayoon.ko@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +16,10 @@
  * limitations under the License.
  */
 
-#ifndef __S_COMMON_H__
-#define __S_COMMON_H__
+#ifndef __IMC_SAT_H__
+#define __IMC_SAT_H__
 
-#include <glib.h>
+gboolean imc_sat_init(TcorePlugin *p, CoreObject *co);
+void imc_sat_exit(TcorePlugin *p, CoreObject *co);
 
-void util_hex_dump(char *pad, int size, const void *data);
-unsigned char util_hexCharToInt(char c);
-char *util_hex_to_string(const char *src, unsigned int src_len);
-char* util_hexStringToBytes(char *s);
-char* util_removeQuotes(void *data);
-
-#endif
+#endif /* __IMC_SAT_H__ */
