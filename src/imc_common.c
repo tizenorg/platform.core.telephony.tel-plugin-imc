@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Ja-young Gu <jygu@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +17,44 @@
  */
 
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <glib.h>
+
 #include <log.h>
+#include <tcore.h>
 
+#include "imc_common.h"
 
-#include "s_common.h"
+void on_send_imc_request(TcorePending *p,
+	TelReturn send_status, void *user_data)
+{
+	dbg("Send - [%s]",
+		(send_status == TEL_RETURN_SUCCESS ? "OK" : "NOK"));
+}
 
+ImcRespCbData *imc_create_resp_cb_data(TcoreObjectResponseCallback cb,
+	void *cb_data, void *data, guint data_len)
+{
+	ImcRespCbData *resp_cb_data;
+
+	resp_cb_data = tcore_malloc0(sizeof(ImcRespCbData) + data_len);
+	resp_cb_data->cb = cb;
+	resp_cb_data->cb_data = cb_data;
+	if ((data != NULL) && (data_len > 0))
+		memcpy(resp_cb_data->data, data, data_len);
+
+	return resp_cb_data;
+}
+
+void imc_destroy_resp_cb_data(ImcRespCbData *resp_cb_data)
+{
+	if (resp_cb_data)
+		tcore_free(resp_cb_data);
+}
+
+#if 0
 #undef  MAX
 #define MAX(a, b)  (((a) > (b)) ? (a) : (b))
 
@@ -210,3 +237,4 @@ char* util_removeQuotes(void *data)
 
 	return tmp;
 }
+#endif

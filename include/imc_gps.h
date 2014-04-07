@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Arun Shukla <arun.shukla@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +16,10 @@
  * limitations under the License.
  */
 
-#ifndef __S_PS_H__
-#define __S_PS_H__
+#ifndef __IMC_GPS_H__
+#define __IMC_GPS_H__
 
-gboolean s_ps_init(TcorePlugin *cp, CoreObject *co_ps);
-void s_ps_exit(TcorePlugin *cp, CoreObject *co_ps);
+gboolean imc_gps_init(TcorePlugin *p, CoreObject *co);
+void imc_gps_exit(TcorePlugin *p, CoreObject *co);
 
-#endif /*__S_PS_H__*/
+#endif	/* __IMC_GPS_H__ */

@@ -1,9 +1,7 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
- *
- * Contact: Ja-young Gu <jygu@samsung.com>
+ * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +16,10 @@
  * limitations under the License.
  */
 
-#ifndef S_PHONEBOOK_H_
-#define S_PHONEBOOK_H_
+#ifndef __IMC_PHONEBOOK_H__
+#define __IMC_PHONEBOOK_H__
 
-gboolean s_phonebook_init(TcorePlugin *cp, CoreObject *co_phonebook);
-void s_phonebook_exit(TcorePlugin *cp, CoreObject *co_phonebook);
+gboolean imc_phonebook_init(TcorePlugin *p, CoreObject *co);
+void imc_phonebook_exit(TcorePlugin *p, CoreObject *co);
 
-#endif /* S_PHONEBOOK_H_ */
+#endif /* __IMC_PHONEBOOK_H__ */
