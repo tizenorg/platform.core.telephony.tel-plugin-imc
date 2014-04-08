@@ -847,9 +847,23 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 			resp_cb_data->cb(co, (gint)sim_result, &file_meta->files.data.iccid, resp_cb_data->cb_data);
 	break;
 
+	case TEL_SIM_EF_SPDI: {
+		guint i;
+		dbg("spdi count[%d]", file_meta->files.data.spdi.count);
+
+		if (resp_cb_data->cb)
+			resp_cb_data->cb(co, (gint)sim_result, &file_meta->files.data, resp_cb_data->cb_data);
+
+		/* Free resources */
+		for (i = 0; i < file_meta->files.data.spdi.count; i++)
+			tcore_free(file_meta->files.data.spdi.list[i].plmn);
+
+		tcore_free(file_meta->files.data.spdi.list);
+	}
+	break;
+
 	case TEL_SIM_EF_SST:
 	case TEL_SIM_EF_SPN:
-	case TEL_SIM_EF_SPDI:
 	case TEL_SIM_EF_OPLMN_ACT:
 	case TEL_SIM_EF_CPHS_CPHS_INFO:
 	case TEL_SIM_EF_CPHS_CALL_FORWARD_FLAGS:
