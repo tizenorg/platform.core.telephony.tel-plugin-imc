@@ -111,21 +111,21 @@ typedef struct {
 } ImcSimPrivateInfo;
 
 typedef struct {
-	gboolean b_valid;					/**< Valid or not */
-	guint rec_length;					/**< Length of one record in file */
-	guint rec_count;					/**< Number of records in file */
-	guint data_size;					/**< File size */
-	guint current_index;					/**< Current index to read */
-	ImcSimFileType file_type;				/**< File type and structure */
-	ImcSimCurrSecOp sec_op;					/**< Current index to read */
-	TelSimMailboxList mbi_list;				/**< Mailbox List */
-	TelSimMailBoxNumber mb_list[TEL_SIM_MSP_CNT_MAX*5];	/**< Mailbox number */
-	TelSimFileId file_id;					/**< Current file id */
-	TelSimResult file_result;				/**< File access result */
-	TelSimFileResult files;					/**< File read data */
-	TcoreCommand req_command;				/**< Request command Id */
-	TelSimImsiInfo imsi;					/**< Stored locally as of now,
-								          Need to store in secure storage*/
+	gboolean b_valid;						/**< Valid or not */
+	guint rec_length;						/**< Length of one record in file */
+	guint rec_count;						/**< Number of records in file */
+	guint data_size;						/**< File size */
+	guint current_index;						/**< Current index to read */
+	guint mb_count;							/**< Current mbdn read index */
+	int mb_index[TEL_SIM_MSP_CNT_MAX * TEL_SIM_MAILBOX_TYPE_MAX];	/**< List of mbdn index to read */
+	ImcSimFileType file_type;					/**< File type and structure */
+	ImcSimCurrSecOp sec_op;						/**< Current index to read */
+	TelSimFileId file_id;						/**< Current file id */
+	TelSimResult file_result;					/**< File access result */
+	TelSimFileResult files;						/**< File read data */
+	TcoreCommand req_command;					/**< Request command Id */
+	TelSimImsiInfo imsi;						/**< Stored locally as of now,
+								         	 Need to store in secure storage*/
 } ImcSimMetaInfo;
 
 /* Utility Function Declaration */
@@ -368,6 +368,7 @@ static void __on_response_imc_sim_get_sim_type_internal(CoreObject *co,
 
 			/* Start Caching SIM files */
 			ret = __imc_sim_start_to_cache(co);
+			dbg("ret:[%d]", ret);
 
 			/* Send SIM Type notification */
 			tcore_object_send_notification(co,
@@ -710,11 +711,13 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 				} else {
 					file_meta->file_id = TEL_SIM_EF_LP;
 					__imc_sim_get_response(co, resp_cb_data);
+					return;
 				}
 			} else if (TEL_SIM_CARD_TYPE_USIM) {
 				if (file_meta->file_id == TEL_SIM_EF_LP || file_meta->file_id == TEL_SIM_EF_USIM_LI) {
 					file_meta->file_id = TEL_SIM_EF_ELP;
 					__imc_sim_get_response(co, resp_cb_data);
+					return;
 				} else {
 					if (resp_cb_data->cb)
 						resp_cb_data->cb(co, (gint)sim_result, &file_meta->files.data, resp_cb_data->cb_data);
@@ -732,6 +735,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 			} else {
 				file_meta->current_index++;
 				__imc_sim_read_record(co, resp_cb_data);
+				return;
 			}
 		} else if (TEL_SIM_CARD_TYPE_GSM == card_type) {
 			if (resp_cb_data->cb)
@@ -742,15 +746,17 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 	break;
 
 	case TEL_SIM_EF_IMSI:
+		/* Update SIM INIT status - INIT COMPLETE */
+		__imc_sim_update_sim_status(co, TEL_SIM_STATUS_SIM_INIT_COMPLETED);
+
 		if (resp_cb_data->cb) {
 			resp_cb_data->cb(co, (gint)sim_result, &file_meta->imsi, resp_cb_data->cb_data);
 		} else {
 			file_meta->file_id = TEL_SIM_EF_CPHS_CPHS_INFO;
 			file_meta->file_result = TEL_SIM_RESULT_FAILURE;
 			__imc_sim_get_response(co, resp_cb_data);
+			return;
 		}
-		/* Update SIM INIT status - INIT COMPLETE */
-		__imc_sim_update_sim_status(co, TEL_SIM_STATUS_SIM_INIT_COMPLETED);
 	break;
 
 	case TEL_SIM_EF_MSISDN:
@@ -772,6 +778,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		} else {
 			file_meta->current_index++;
 			__imc_sim_read_record(co, resp_cb_data);
+			return;
 		}
 	break;
 
@@ -783,6 +790,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		} else {
 			file_meta->current_index++;
 			__imc_sim_read_record(co, resp_cb_data);
+			return;
 		}
 	break;
 
@@ -793,14 +801,42 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		} else {
 			file_meta->current_index++;
 			__imc_sim_read_record(co, resp_cb_data);
+			return;
+		}
+	break;
+
+	case TEL_SIM_EF_USIM_MBI:
+	if (file_meta->current_index == file_meta->rec_count) {
+		/* Init file_meta to read next EF file */
+		file_meta->rec_count = 0;
+		file_meta->current_index = 0;
+		file_meta->file_id = TEL_SIM_EF_MBDN;
+		/* Read MBDN record*/
+		dbg("Read MBDN record");
+		__imc_sim_get_response(co, resp_cb_data);
+		return;
+
+	} else {
+		file_meta->current_index++;
+		__imc_sim_read_record(co, resp_cb_data);
+		return;
+	}
+	break;
+
+	case TEL_SIM_EF_MBDN:
+	case TEL_SIM_EF_CPHS_MAILBOX_NUMBERS:
+		if (file_meta->mb_count == file_meta->files.data.mb.count) {
+			if (resp_cb_data->cb)
+				resp_cb_data->cb(co, (gint)sim_result, &file_meta->files.data, resp_cb_data->cb_data);
+		} else {
+			file_meta->current_index = file_meta->mb_index[file_meta->mb_count];
+			__imc_sim_read_record(co, resp_cb_data);
+			return;
 		}
 	break;
 
 	case TEL_SIM_EF_USIM_CFIS:
 	case TEL_SIM_EF_USIM_MWIS:
-	case TEL_SIM_EF_USIM_MBI:
-	case TEL_SIM_EF_MBDN:
-	case TEL_SIM_EF_CPHS_MAILBOX_NUMBERS:
 	case TEL_SIM_EF_CPHS_INFORMATION_NUMBERS:
 		if (file_meta->current_index == file_meta->rec_count) {
 			if (resp_cb_data->cb)
@@ -808,6 +844,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		} else {
 			file_meta->current_index++;
 			__imc_sim_read_record(co, resp_cb_data);
+			return;
 		}
 	break;
 
@@ -825,6 +862,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		file_meta_new->file_result = TEL_SIM_RESULT_FAILURE;
 
 		__imc_sim_get_response(co, resp_cb_data);
+		return;
 	}
 	break;
 
@@ -876,6 +914,9 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 		err("File id not handled [0x%x]", file_meta->file_id);
 	break;
 	}
+
+	/* free resp_cb_data */
+	imc_destroy_resp_cb_data(resp_cb_data);
 }
 
 static void __imc_sim_next_from_get_response(CoreObject *co, ImcRespCbData *resp_cb_data, TelSimResult sim_result)
@@ -886,7 +927,9 @@ static void __imc_sim_next_from_get_response(CoreObject *co, ImcRespCbData *resp
 	dbg("EF[0x%x] access Result[%d]", file_meta->file_id, sim_result);
 
 	file_meta->files.result = sim_result;
-	if (file_meta->file_id != TEL_SIM_EF_CPHS_OPERATOR_NAME_SHORT_FORM_STRING)
+	if (file_meta->file_id != TEL_SIM_EF_CPHS_OPERATOR_NAME_SHORT_FORM_STRING &&
+		file_meta->file_id != TEL_SIM_EF_USIM_MBI &&
+		file_meta->file_id != TEL_SIM_EF_MBDN)
 		memset(&file_meta->files.data, 0x00, sizeof(file_meta->files.data));
 
 	if ((file_meta->file_id != TEL_SIM_EF_ELP && file_meta->file_id != TEL_SIM_EF_LP &&
@@ -1020,12 +1063,20 @@ static void __imc_sim_next_from_get_response(CoreObject *co, ImcRespCbData *resp
 	case TEL_SIM_EF_MSISDN:
 		file_meta->files.data.msisdn_list.list =
 			tcore_malloc0(sizeof(TelSimSubscriberInfo) * file_meta->rec_count);
+		file_meta->current_index++;
+		__imc_sim_read_record(co, resp_cb_data);
+		break;
+
+	case TEL_SIM_EF_MBDN:
+		file_meta->mb_count = 0;
+		file_meta->current_index = file_meta->mb_index[file_meta->mb_count];
+		__imc_sim_read_record(co, resp_cb_data);
+		break;
 
 	case TEL_SIM_EF_OPL:
 	case TEL_SIM_EF_PNN:
 	case TEL_SIM_EF_USIM_MWIS:
 	case TEL_SIM_EF_USIM_MBI:
-	case TEL_SIM_EF_MBDN:
 	case TEL_SIM_EF_CPHS_MAILBOX_NUMBERS:
 	case TEL_SIM_EF_CPHS_INFORMATION_NUMBERS:
 		file_meta->current_index++;
@@ -1127,7 +1178,7 @@ static void __on_response_imc_sim_read_data(TcorePending *p, guint data_len,
 		if (resp->lines) {
 			line = (const char *)resp->lines->data;
 			tokens = tcore_at_tok_new(line);
-			if (g_slist_length(tokens) != 3) {
+			if (g_slist_length(tokens) < 2) {
 				err("Invalid message");
 				tcore_at_tok_free(tokens);
 				return;
@@ -1135,13 +1186,14 @@ static void __on_response_imc_sim_read_data(TcorePending *p, guint data_len,
 		}
 		sw1 = atoi(g_slist_nth_data(tokens, 0));
 		sw2 = atoi(g_slist_nth_data(tokens, 1));
-		res = g_slist_nth_data(tokens, 2);
-
-		tmp = tcore_at_tok_extract(res);
-		tcore_util_hexstring_to_bytes(tmp, &res, (guint *)&res_len);
-		dbg("Response: [%s] Response length: [%d]", res, res_len);
 
 		if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91) {
+			res = g_slist_nth_data(tokens, 2);
+
+			tmp = tcore_at_tok_extract(res);
+			tcore_util_hexstring_to_bytes(tmp, &res, (guint *)&res_len);
+			dbg("Response: [%s] Response length: [%d]", res, res_len);
+
 			sim_result = TEL_SIM_RESULT_SUCCESS;
 			file_meta->files.result = sim_result;
 
@@ -1322,29 +1374,63 @@ static void __on_response_imc_sim_read_data(TcorePending *p, guint data_len,
 			case TEL_SIM_EF_USIM_MBI:			/* linear type */
 			{
 				TelSimMbi *mbi = NULL;
+				guint count = 0;
 
 				mbi = g_try_new0(TelSimMbi, 1);
 				dr = tcore_sim_decode_mbi((unsigned char *)res, res_len, mbi);
-				if (dr == TRUE) {
-					memcpy(&file_meta->mbi_list.list[file_meta->mbi_list.count],
-										mbi, sizeof(TelSimMbi));
-					file_meta->mbi_list.count++;
 
-					dbg("mbi count[%d]", file_meta->mbi_list.count);
+				dbg("voice_index [0x%2x],fax_index[0x%2x], email_index[0x%2x]," \
+					"other_index[0x%2x], video_index [0x%2x]  ", mbi->voice_index,
+					mbi->fax_index, mbi->email_index, mbi->other_index, mbi->video_index);
+
+				if (dr == TRUE) {
+					count = file_meta->files.data.mb.count;
+
+					if(mbi->voice_index) {
+						file_meta->files.data.mb.list[count].mb_type = TEL_SIM_MAILBOX_VOICE;
+						file_meta->mb_index[count] = mbi->voice_index;
+						count++;
+					}
+					if(mbi->fax_index) {
+						file_meta->files.data.mb.list[count].mb_type = TEL_SIM_MAILBOX_FAX;
+						file_meta->mb_index[count] = mbi->fax_index;
+						count++;
+					}
+					if(mbi->email_index) {
+						file_meta->files.data.mb.list[count].mb_type = TEL_SIM_MAILBOX_EMAIL;
+						file_meta->mb_index[count] = mbi->email_index;
+						count++;
+					}
+					if(mbi->other_index) {
+						file_meta->files.data.mb.list[count].mb_type = TEL_SIM_MAILBOX_OTHER;
+						file_meta->mb_index[count] = mbi->other_index;
+						count++;
+					}
+					if(mbi->video_index) {
+						file_meta->files.data.mb.list[count].mb_type = TEL_SIM_MAILBOX_VIDEO;
+						file_meta->mb_index[count] = mbi->video_index;
+						count++;
+					}
+
+					file_meta->files.data.mb.count = count;
 				}
 
 				/* Free memory */
 				g_free(mbi);
+				dbg("index [%d] mb_type[%d]", count, file_meta->files.data.mb.list[count].mb_type);
 			}
 			break;
 
 			case TEL_SIM_EF_CPHS_MAILBOX_NUMBERS:		/* linear type */
 			case TEL_SIM_EF_MBDN:				/* linear type */
+			{
 				dr = tcore_sim_decode_xdn((unsigned char *)res, res_len,
-										file_meta->mb_list[file_meta->current_index-1].alpha_id,
-										file_meta->mb_list[file_meta->current_index-1].number);
-				file_meta->mb_list[file_meta->current_index-1].alpha_id_len = strlen(file_meta->mb_list[file_meta->current_index-1].alpha_id);
-				file_meta->mb_list[file_meta->current_index-1].profile_id = file_meta->current_index;
+							file_meta->files.data.mb.list[file_meta->mb_count].alpha_id,
+							&file_meta->files.data.mb.list[file_meta->mb_count].alpha_id_len,
+							file_meta->files.data.mb.list[file_meta->mb_count].number);
+				file_meta->files.data.mb.list[file_meta->mb_count].profile_id = file_meta->mb_count+1;
+				file_meta->mb_count++;
+			}
 			break;
 
 			case TEL_SIM_EF_CPHS_VOICE_MSG_WAITING:		/* transparent type */
@@ -3337,7 +3423,6 @@ static TelReturn imc_sim_get_mailbox_info (CoreObject *co,
 	dbg("Entry");
 
 	IMC_SIM_READ_FILE(co, cb, cb_data, TEL_SIM_EF_USIM_MBI, ret);
-
 	return ret;
 }
 
