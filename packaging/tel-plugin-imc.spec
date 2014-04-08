@@ -3,27 +3,27 @@
 %define minor 0
 %define patchlevel 1
 
-Name:		tel-plugin-imc
-Summary:	imc plugin for telephony
-Version:        %{major}.%{minor}.%{patchlevel}
-Release:        1
-Group:		Development/Libraries
-License:	Apache-2.0
-Source0:	tel-plugin-imc-%{version}.tar.gz
-Source1001: 	tel-plugin-imc.manifest
+Name: tel-plugin-imc
+Summary: Imc plugin for telephony
+Version: %{major}.%{minor}.%{patchlevel}
+Release: 1
+Group: Development/Libraries
+License: Apache-2.0
+Source0: tel-plugin-imc-%{version}.tar.gz
+Source1001: tel-plugin-imc.manifest
 Requires(post):	/sbin/ldconfig
 Requires(postun):/sbin/ldconfig
-BuildRequires:	cmake
-BuildRequires:	pkgconfig(glib-2.0)
-BuildRequires:	pkgconfig(dlog)
-BuildRequires:	pkgconfig(tcore)
-BuildRequires:	pkgconfig(db-util)
-BuildRequires:	pkgconfig(libxml-2.0)
-BuildRequires:  pkgconfig(libtzplatform-config)
-BuildRequires:	pkgconfig(vconf)
+BuildRequires: cmake
+BuildRequires: pkgconfig(glib-2.0)
+BuildRequires: pkgconfig(dlog)
+BuildRequires: pkgconfig(tcore)
+BuildRequires: pkgconfig(db-util)
+BuildRequires: pkgconfig(libxml-2.0)
+BuildRequires: pkgconfig(libtzplatform-config)
+BuildRequires: pkgconfig(vconf)
 
 %description
-IMC plugin for telephony
+IMC plugin for telephony.
 
 %prep
 %setup -q
