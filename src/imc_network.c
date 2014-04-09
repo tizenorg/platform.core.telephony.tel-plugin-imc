@@ -39,6 +39,21 @@
 
 #define IMC_NETWORK_BASE_16	16
 
+typedef enum {
+	IMC_NETWORK_SEARCH_STATE_NO_SEARCH,
+	IMC_NETWORK_SEARCH_STATE_IN_PROGRESS,
+	IMC_NETWORK_SEARCH_STATE_CANCELLED
+} ImcNetworkSearchState;
+
+typedef struct {
+	ImcNetworkSearchState search_state;
+} CustomData;
+
+typedef struct {
+	CoreObject *co;
+	TelNetworkResult result;
+} ImcNetworkCancelSearch;
+
 static TelNetworkAct __imc_network_map_act(guint act)
 {
 	/*
@@ -340,7 +355,7 @@ static TcoreHookReturn on_hook_imc_set_flight_mode(CoreObject *co,
 	 * Disable Flight mode - Hook response (if success Register to Network)
 	 * Enable Flight mode - return
 	 */
-	if(*flight_mode != TRUE) {
+	if (*flight_mode != TRUE) {
 		/* Add response hook */
 		tcore_object_add_response_hook(co, command, request,
 			__on_response_imc_hook_set_flight_mode, NULL);
@@ -914,8 +929,8 @@ static void on_response_imc_network_search(TcorePending *p,
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
-	TelNetworkPlmnList plmn_list = {0,};
-	guint num_network_avail;
+	TelNetworkPlmnList plmn_list = {0, };
+	guint num_network_avail = 0;
 	guint count;
 	GSList *tokens = NULL;
 
@@ -924,10 +939,33 @@ static void on_response_imc_network_search(TcorePending *p,
 	tcore_check_return_assert(resp_cb_data != NULL);
 
 	if (at_resp && at_resp->success) {
+		CustomData *custom_data;
 		const gchar *line;
 		GSList *net_token = NULL;
 		gchar *resp;
 		gint act;
+
+		/* If Request is Cancelled then return back SUCCESS/SEARCH_CANCELLED */
+		custom_data = tcore_object_ref_user_data(co);
+		if (custom_data->search_state
+			== IMC_NETWORK_SEARCH_STATE_CANCELLED) {
+			dbg("Network Search has been Cancelled!!!");
+
+			/*
+			 * TODO:
+			 *
+			 * Need to introduce new Result -
+			 *	TEL_NETWORK_RESULT_SEARCH_ABORTED/CANCELLED
+			 *
+			 * Presently sending TEL_NETWORK_RESULT_FAILURE
+			 */
+			result = TEL_NETWORK_RESULT_FAILURE;
+
+			/* Update Search state */
+			custom_data->search_state = IMC_NETWORK_SEARCH_STATE_NO_SEARCH;
+
+			goto END;
+		}
 
 		if (!at_resp->lines) {
 			err("invalid response received");
@@ -1010,10 +1048,11 @@ END:
 			(result == TEL_NETWORK_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
 
 	/* Invoke callback */
-	if(resp_cb_data->cb)
+	if (resp_cb_data->cb)
 		resp_cb_data->cb(co, (gint)result, &plmn_list, resp_cb_data->cb_data);
 
 	imc_destroy_resp_cb_data(resp_cb_data);
+
 	/* Free resources*/
 	for (count = 0; count < num_network_avail; count++) {
 		g_free(plmn_list.network_list[count].network_identity.long_name);
@@ -1023,6 +1062,23 @@ END:
 
 	tcore_free(plmn_list.network_list);
 	tcore_at_tok_free(tokens);
+}
+
+static gboolean on_response_imc_network_cancel_search(gpointer data)
+{
+	ImcRespCbData *resp_cb_data = data;
+	ImcNetworkCancelSearch *cancel_search =
+		(ImcNetworkCancelSearch *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+
+	/* Invoke callback */
+	if (resp_cb_data->cb)
+		resp_cb_data->cb(cancel_search->co, (gint)cancel_search->result,
+			NULL, resp_cb_data->cb_data);
+
+	imc_destroy_resp_cb_data(resp_cb_data);
+
+	/* To stop the cycle, need to return FALSE */
+	return FALSE;
 }
 
 static void on_response_imc_network_get_selection_mode(TcorePending *p,
@@ -1058,7 +1114,7 @@ static void on_response_imc_network_get_selection_mode(TcorePending *p,
 		dbg("RESPONSE OK");
 
 		mode = atoi(tcore_at_tok_nth(tokens, 0));
-		if(mode == 0)
+		if (mode == 0)
 			selection_mode = TEL_NETWORK_SELECTION_MODE_AUTOMATIC;
 		else if (mode == 1)
 			selection_mode = TEL_NETWORK_SELECTION_MODE_MANUAL;
@@ -1105,7 +1161,7 @@ static void on_response_imc_network_default(TcorePending *p,
 	}
 
 	/* Invoke callback */
-	if(resp_cb_data->cb)
+	if (resp_cb_data->cb)
 		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
 
 	imc_destroy_resp_cb_data(resp_cb_data);
@@ -1357,45 +1413,89 @@ static TelReturn imc_network_search(CoreObject *co,
 	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	ImcRespCbData *resp_cb_data;
+	CustomData *custom_data;
 	TelReturn ret = TEL_RETURN_INVALID_PARAMETER;
+
+	custom_data = tcore_object_ref_user_data(co);
+	if (custom_data->search_state
+			== IMC_NETWORK_SEARCH_STATE_IN_PROGRESS) {
+		warn("Network Search: [ALREADY IN PROGRESS]");
+		return TEL_RETURN_FAILURE;
+	}
 
 	/* Response callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
+	ret = tcore_at_prepare_and_send_request_ex(co,
 		"AT+COPS=?", "+COPS",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
 		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_search, resp_cb_data,
 		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		0, NULL, NULL,
+		FALSE, TRUE);
+	if (ret != TEL_RETURN_SUCCESS) {
+		err("Failed to process request - [%s]", "Network Search");
+		imc_destroy_resp_cb_data(resp_cb_data);
+	}
+	else {
+		custom_data->search_state = IMC_NETWORK_SEARCH_STATE_IN_PROGRESS;
+		dbg("Search State: [IN PROGRESS]");
+	}
 
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Network Search");
 	return ret;
 }
 
 static TelReturn imc_network_cancel_search(CoreObject *co,
 	TcoreObjectResponseCallback cb, void *cb_data)
 {
-	ImcRespCbData *resp_cb_data;
 	TelReturn ret = TEL_RETURN_INVALID_PARAMETER;
+	ImcRespCbData *resp_cb_data;
+	CustomData *custom_data;
+	ImcNetworkCancelSearch cancel_search = {0, };
+
+	custom_data = tcore_object_ref_user_data(co);
+	if (custom_data->search_state
+			== IMC_NETWORK_SEARCH_STATE_IN_PROGRESS) {
+		dbg("Search in Progress...");
+
+		/* Send Request to modem */
+		ret = tcore_at_prepare_and_send_request_ex(co,
+			"\e", NULL,
+			TCORE_AT_COMMAND_TYPE_NO_RESULT,
+			TCORE_PENDING_PRIORITY_IMMEDIATELY,
+			NULL,
+			NULL, NULL,
+			on_send_imc_request, NULL,
+			0, NULL, NULL,
+			TRUE, FALSE);
+		if (ret != TEL_RETURN_SUCCESS) {
+			err("Failed to process request - [%s]", "Cancel network search");
+			goto out;
+		}
+		else {
+			custom_data->search_state = IMC_NETWORK_SEARCH_STATE_CANCELLED;
+			dbg("Search State: [CANCELLED]");
+		}
+	}
+	else {
+		dbg("No Search in Progress...");
+		ret = TEL_RETURN_SUCCESS;
+	}
+
+	cancel_search.co = co;
+	cancel_search.result = TEL_NETWORK_RESULT_SUCCESS;
 
 	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
+		&cancel_search, sizeof(ImcNetworkCancelSearch));
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"\e", NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_IMMEDIATELY,
-		NULL,
-		on_response_imc_network_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+	/* Send response */
+	g_idle_add(on_response_imc_network_cancel_search, (gpointer)resp_cb_data);
 
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Cancel network search");
+out:
 	return ret;
 }
 
@@ -1824,10 +1924,18 @@ static TcoreNetworkOps imc_network_ops = {
 
 gboolean imc_network_init(TcorePlugin *p, CoreObject *co)
 {
+	CustomData *custom_data;
 	dbg("Enter");
 
 	/* Set operations */
 	tcore_network_set_ops(co, &imc_network_ops);
+
+	/* Custom data */
+	custom_data = tcore_malloc0(sizeof(CustomData));
+	custom_data->search_state = IMC_NETWORK_SEARCH_STATE_NO_SEARCH;
+
+	/* Link Custom data */
+	tcore_object_link_user_data(co, custom_data);
 
 	/* Add Callbacks */
 	tcore_object_add_callback(co, "+CREG", on_notification_imc_cs_network_info, NULL);
@@ -1853,5 +1961,11 @@ gboolean imc_network_init(TcorePlugin *p, CoreObject *co)
 
 void imc_network_exit(TcorePlugin *p, CoreObject *co)
 {
+	CustomData *custom_data;
+
+	custom_data = tcore_object_ref_user_data(co);
+	if (custom_data != NULL)
+		tcore_free(custom_data);
+
 	dbg("Exit");
 }
