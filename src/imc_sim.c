@@ -1888,16 +1888,19 @@ static void __on_response_imc_sim_get_response(TcorePending *p,
 	dbg("Exit");
 }
 
-static TelReturn __imc_sim_update_file(CoreObject *co, ImcRespCbData *resp_cb_data, int cmd, TelSimFileId ef,
-					int p1, int p2, int p3, char *encoded_data)
+static TelReturn __imc_sim_update_file(CoreObject *co,
+	ImcRespCbData *resp_cb_data, int cmd, TelSimFileId ef,
+	int p1, int p2, int p3, char *encoded_data)
 {
 	char *cmd_str = NULL;
 	TelReturn ret = TEL_RETURN_FAILURE;
-	ImcSimMetaInfo *file_meta = (ImcSimMetaInfo *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+	ImcSimMetaInfo *file_meta =
+		(ImcSimMetaInfo *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
 
 	dbg("Entry File-id:[0x%02x]", file_meta->file_id);
 
-	cmd_str = g_strdup_printf("AT+CRSM=%d,%d,%d,%d,%d,\"%s\"", cmd, ef, p1, p2, p3, encoded_data);
+	cmd_str = g_strdup_printf("AT+CRSM=%d,%d,%d,%d,%d,\"%s\"",
+		cmd, ef, p1, p2, p3, encoded_data);
 
 	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CRSM:",
 						TCORE_AT_COMMAND_TYPE_SINGLELINE,
@@ -3233,34 +3236,41 @@ static TelReturn imc_sim_set_language (CoreObject *co,
 
 	if (TEL_SIM_CARD_TYPE_GSM == card_type) {
 		dbg("2G");
-		tcore_sim_encode_lp(language, &tmp, &tmp_len);
+
+		tcore_sim_encode_lp(language, &encoded_data, &encoded_data_len);
 	} else if (TEL_SIM_CARD_TYPE_USIM == card_type) {
+		gchar *tmp;
 		dbg("3G");
-		tcore_sim_encode_li(language, &tmp, &tmp_len);
+
+		if (tcore_sim_encode_li(language, &tmp, &encoded_data_len)) {
+			encoded_data = g_strdup_printf("%02x%02x", tmp[0], tmp[1]);
+			g_free(tmp);
+		}
+		else {
+			err("Failed to encode Language [%d]", language);
+			return TEL_RETURN_FAILURE;
+		}
 	} else {
 		err("Invalid card_type:[%d]", card_type);
 		return TEL_RETURN_OPERATION_NOT_SUPPORTED;
 	}
-	if (!tmp_len) {
+
+	if (!encoded_data_len) {
 		err("Failed to encode Language [%d]", language);
 		return TEL_RETURN_FAILURE;
 	}
-	dbg("Encoded Language [%s]", tmp);
-
-	encoded_data_len = 2 * tmp_len;
-	encoded_data = (char *)tcore_malloc0(encoded_data_len + 1);
-	tcore_util_byte_to_hex(tmp, encoded_data, tmp_len);
-	tcore_free(tmp);
+	dbg("Encoded Language [%s] len[%d]", encoded_data, encoded_data_len);
 
 	p1 = 0;
 	p2 = 0;
 	p3 = encoded_data_len;
-	dbg("encoded_data - [%s], encoded_data_len - %d", encoded_data, encoded_data_len);
 
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, &file_meta, sizeof(ImcSimMetaInfo));
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
+		&file_meta, sizeof(ImcSimMetaInfo));
 
-	return __imc_sim_update_file(co, resp_cb_data, IMC_SIM_ACCESS_UPDATE_BINARY,
-					TEL_SIM_EF_LP, p1, p2, p3, encoded_data);
+	return __imc_sim_update_file(co, resp_cb_data,
+		IMC_SIM_ACCESS_UPDATE_BINARY, TEL_SIM_EF_LP,
+		p1, p2, p3, encoded_data);
 }
 
 static TelReturn imc_sim_get_callforwarding_info (CoreObject *co,
