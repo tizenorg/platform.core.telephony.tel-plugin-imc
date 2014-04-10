@@ -460,11 +460,9 @@ gboolean __imc_sim_get_sim_type(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XUICC?", "+XUICC:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_sim_get_sim_type, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SIM Type");
 
 	return ret;
@@ -668,11 +666,9 @@ static gboolean __imc_sim_get_sim_status(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XSIMSTATE?", "+XSIMSTATE:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_sim_get_sim_status, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SIM Status");
 
 	return TRUE;
@@ -1902,12 +1898,12 @@ static TelReturn __imc_sim_update_file(CoreObject *co,
 	cmd_str = g_strdup_printf("AT+CRSM=%d,%d,%d,%d,%d,\"%s\"",
 		cmd, ef, p1, p2, p3, encoded_data);
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CRSM:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						__on_response_imc_sim_update_file, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+CRSM:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		__on_response_imc_sim_update_file, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Update SIM File");
 
 	tcore_free(encoded_data);
@@ -1943,12 +1939,12 @@ static void __imc_sim_read_record(CoreObject *co, ImcRespCbData *resp_cb_data)
 	at_cmd = g_strdup_printf("AT+CRSM=%d, %d, %d, %d, %d",
 				IMC_SIM_ACCESS_READ_RECORD, file_meta->file_id, p1, p2, p3);
 
-	ret = tcore_at_prepare_and_send_request(co, at_cmd, "+CRSM:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						__on_response_imc_sim_read_data, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		at_cmd, "+CRSM:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		__on_response_imc_sim_read_data, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get File Record");
 
 	dbg("ret:[%d]", ret);
@@ -1985,12 +1981,12 @@ static void __imc_sim_read_binary(CoreObject *co, ImcRespCbData *resp_cb_data)
 	at_cmd = g_strdup_printf("AT+CRSM=%d, %d, %d, %d, %d",
 				IMC_SIM_ACCESS_READ_BINARY, file_meta->file_id, p1, p2, p3);
 
-	ret = tcore_at_prepare_and_send_request(co, at_cmd, "+CRSM:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						__on_response_imc_sim_read_data, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		at_cmd, "+CRSM:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		__on_response_imc_sim_read_data, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get File Data");
 
 	dbg("ret:[%d]", ret);
@@ -2012,12 +2008,11 @@ static TelReturn __imc_sim_get_response(CoreObject *co, ImcRespCbData *resp_cb_d
 		IMC_SIM_ACCESS_GET_RESPONSE, file_meta->file_id);
 
 	ret = tcore_at_prepare_and_send_request(co,
-				at_cmd, "+CRSM:",
-				TCORE_AT_COMMAND_TYPE_SINGLELINE,
-				TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-				__on_response_imc_sim_get_response, resp_cb_data,
-				on_send_imc_request, NULL,
-				0, NULL, NULL);
+		at_cmd, "+CRSM:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		__on_response_imc_sim_get_response, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get File Info");
 
 	g_free(at_cmd);
@@ -2238,16 +2233,14 @@ static TelReturn __imc_sim_get_retry_count(CoreObject *co,
 		}
 	cmd_str = g_strdup_printf("AT+XPINCNT=%d", lock_type);
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, NULL,
-					TCORE_AT_COMMAND_TYPE_SINGLELINE,
-					TCORE_PENDING_PRIORITY_DEFAULT,
-					NULL,
-					__on_response_imc_sim_get_retry_count,
-					resp_cb_data,
-					on_send_imc_request,
-					NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, NULL,
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		__on_response_imc_sim_get_retry_count, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Retry Count");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3497,13 +3490,14 @@ static TelReturn imc_sim_req_authentication (CoreObject *co,
 
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, (void *)&request->auth_type, sizeof(TelSimAuthenticationType));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+XAUTH:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						on_response_imc_sim_req_authentication, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+XAUTH:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_req_authentication, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim request authentication");
+
 EXIT:
 	g_free(cmd_str);
 	tcore_free(convert_rand);
@@ -3558,16 +3552,14 @@ static TelReturn imc_sim_verify_pins(CoreObject *co, const TelSimSecPinPw *reque
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 			&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, NULL,
-						TCORE_AT_COMMAND_TYPE_NO_RESULT,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_verify_pins,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_sim_verify_pins, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Verify Pins");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3598,16 +3590,14 @@ static TelReturn imc_sim_verify_puks(CoreObject *co, const TelSimSecPukPw *reque
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 			&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, NULL,
-						TCORE_AT_COMMAND_TYPE_NO_RESULT,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_verify_puks,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_sim_verify_puks, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Verify Puks");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3661,16 +3651,14 @@ static TelReturn imc_sim_change_pins(CoreObject *co, const TelSimSecChangePinPw 
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 			&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, NULL,
-						TCORE_AT_COMMAND_TYPE_NO_RESULT,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_change_pins,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_sim_change_pins, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Change Pins");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3726,16 +3714,14 @@ static TelReturn imc_sim_disable_facility(CoreObject *co, const TelSimFacilityPw
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 			&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CLCK:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_disable_facility,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+CLCK:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_disable_facility, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Disable Facility");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3763,16 +3749,14 @@ static TelReturn imc_sim_enable_facility(CoreObject *co, const TelSimFacilityPw 
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 			&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CLCK:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_enable_facility,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+CLCK:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_enable_facility, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Disable Facility");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3799,16 +3783,14 @@ static TelReturn imc_sim_get_facility(CoreObject *co, TelSimLockType lock_type,
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 				&sec_op, sizeof(sec_op));
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CLCK:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_get_facility,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+CLCK:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_get_facility, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Get Facility");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3860,16 +3842,14 @@ static TelReturn imc_sim_get_lock_info(CoreObject *co, TelSimLockType lock_type,
 
 	cmd_str = g_strdup_printf("AT+XPINCNT=%d", lockType);
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+XPINCNT:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT,
-						NULL,
-						on_response_imc_sim_get_lock_info,
-						resp_cb_data,
-						on_send_imc_request,
-						NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+XPINCNT:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_get_lock_info, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Get Lock Info");
+
 	g_free(cmd_str);
 	return ret;
 }
@@ -3890,12 +3870,12 @@ static TelReturn imc_sim_req_apdu (CoreObject *co, const TelSimApdu *request, Tc
 
 	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", strlen((const char *)apdu), apdu);
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+CSIM:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						on_response_imc_sim_req_apdu, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+CSIM:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_req_apdu, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Request APDU");
 
 	g_free(cmd_str);
@@ -3917,12 +3897,12 @@ static TelReturn imc_sim_req_atr (CoreObject *co, TcoreObjectResponseCallback cb
 
 	cmd_str = g_strdup_printf("AT+XGATR");
 
-	ret = tcore_at_prepare_and_send_request(co, cmd_str, "+XGATR:",
-						TCORE_AT_COMMAND_TYPE_SINGLELINE,
-						TCORE_PENDING_PRIORITY_DEFAULT, NULL,
-						on_response_imc_sim_req_atr, resp_cb_data,
-						on_send_imc_request, NULL, 0, NULL, NULL);
-
+	ret = tcore_at_prepare_and_send_request(co,
+		cmd_str, "+XGATR:",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sim_req_atr, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Sim Request ATR");
 
 	g_free(cmd_str);

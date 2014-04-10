@@ -518,12 +518,9 @@ static TelReturn __send_call_request(CoreObject *co, TcoreObjectResponseCallback
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_call_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, func_name);
 
 	/* Free resources */
@@ -563,11 +560,9 @@ static TelReturn __call_list_get(CoreObject *co, gboolean flag)
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+CLCC","+CLCC",
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_call_list_get, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get current call list");
 
 	return ret;
@@ -985,12 +980,9 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 			ret = tcore_at_prepare_and_send_request(co,
 					at_cmd, "+XDRV",
 					TCORE_AT_COMMAND_TYPE_SINGLELINE,
-					TCORE_PENDING_PRIORITY_DEFAULT,
 					NULL,
 					on_response_imc_call_set_volume_info, resp_cb_data,
-					on_send_imc_request, NULL,
-					(guint)0, NULL, NULL);
-
+					on_send_imc_request, NULL);
 			IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_volume_info");
 			g_free(at_cmd);
 
@@ -1062,12 +1054,9 @@ static void on_response_imc_call_set_sound_path(TcorePending *p,
 					ret = tcore_at_prepare_and_send_request(co,
 							at_cmd, "+XDRV",
 							TCORE_AT_COMMAND_TYPE_SINGLELINE,
-							TCORE_PENDING_PRIORITY_DEFAULT,
 							NULL,
 							on_response_imc_call_set_sound_path, resp_cb_data,
-							on_send_imc_request, NULL,
-							(guint)0, NULL, NULL);
-
+							on_send_imc_request, NULL);
 					IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_sound_path");
 					g_free(at_cmd);
 
@@ -1627,12 +1616,9 @@ static TelReturn imc_call_set_volume_info(CoreObject *co, const TelCallVolumeInf
 	ret = tcore_at_prepare_and_send_request(co,
 			at_cmd, "+XDRV",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_imc_call_set_volume_info, resp_cb_data,
-			on_send_imc_request, NULL,
-			(guint)0, NULL, NULL);
-
+			on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_volume_info");
 
 	g_free(at_cmd);
@@ -1718,12 +1704,9 @@ static TelReturn imc_call_set_sound_path(CoreObject *co, const TelCallSoundPathI
 	ret = tcore_at_prepare_and_send_request(co,
 			at_cmd, "+XDRV",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_imc_call_set_sound_path, resp_cb_data,
-			on_send_imc_request, NULL,
-			(guint)0, NULL, NULL);
-
+			on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
 	g_free(at_cmd);
 
@@ -1771,12 +1754,9 @@ static TelReturn imc_call_set_mute(CoreObject *co, gboolean mute, TcoreObjectRes
 	ret = tcore_at_prepare_and_send_request(co,
 			at_cmd, "+XDRV",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_imc_call_set_mute, resp_cb_data,
-			on_send_imc_request, NULL,
-			(guint)0, NULL, NULL);
-
+			on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_mute");
 
 	g_free(at_cmd);

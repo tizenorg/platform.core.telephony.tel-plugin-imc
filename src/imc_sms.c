@@ -446,11 +446,9 @@ static gboolean on_notification_imc_sms_class2_incoming_msg(CoreObject *co, cons
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CMGR:",
 		TCORE_AT_COMMAND_TYPE_PDU,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_class2_sms_incom_msg, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS) {
 		err("Failed to Read Class2 Incomming Message");
 	}
@@ -911,11 +909,9 @@ static void on_response_imc_sms_get_sms_count(TcorePending *p,
 				ret = tcore_at_prepare_and_send_request(co,
 					at_cmd, "+CMGL",
 					TCORE_AT_COMMAND_TYPE_MULTILINE,
-					TCORE_PENDING_PRIORITY_DEFAULT,
 					NULL,
 					on_response_imc_sms_get_msg_indices, getcnt_resp_cb_data,
-					on_send_imc_request, NULL,
-					0, NULL, NULL);
+					on_send_imc_request, NULL);
 
 				/* free the consumed token */
 				tcore_at_tok_free(tokens);
@@ -1357,11 +1353,9 @@ static void _response_get_efsms_data(TcorePending *p,
 			ret = tcore_at_prepare_and_send_request(co,
 				at_cmd, "+CRSM:",
 				TCORE_AT_COMMAND_TYPE_SINGLELINE,
-				TCORE_PENDING_PRIORITY_DEFAULT,
 				NULL,
 				on_response_imc_sms_set_message_status, resp_cb_data,
-				on_send_imc_request, NULL,
-				0, NULL, NULL);
+				on_send_imc_request, NULL);
 			IMC_CHECK_REQUEST_RET(ret, resp_cb_data,
 				"Set Message Status-Updating status in Record");
 
@@ -1594,11 +1588,9 @@ static TelReturn imc_sms_send_sms(CoreObject *co,
 		ret = tcore_at_prepare_and_send_request(co,
 			"AT+CMMS=1", "+CMMS:",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_imc_sms_send_more_msg, NULL,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
+			on_send_imc_request, NULL);
 		IMC_CHECK_REQUEST_RET(ret, NULL, "More Msgs to Send");
 	}
 
@@ -1609,11 +1601,9 @@ static TelReturn imc_sms_send_sms(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CMGS:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_send_sms, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Send SMS");
 
 	/* Free resources */
@@ -1699,11 +1689,9 @@ static TelReturn imc_sms_write_sms_in_sim(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CMGW:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_write_sms_in_sim, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Write SMS in SIM");
 
 	/* Free resources */
@@ -1746,11 +1734,9 @@ static TelReturn imc_sms_read_sms_in_sim(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CMGR:",
 		TCORE_AT_COMMAND_TYPE_PDU,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_read_sms_in_sim, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Read SMS in SIM");
 
 	/* Free resources */
@@ -1799,11 +1785,9 @@ static TelReturn imc_sms_delete_sms_in_sim(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CMGD:",
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_delete_sms_in_sim, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Delete SMS in SIM");
 
 	/* Free resources */
@@ -1849,11 +1833,9 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CPMS",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_get_sms_count, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SMS Count");
 
 	/* Free resources */
@@ -1900,11 +1882,9 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_set_sca, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set SCA");
 
 	/* Free resources */
@@ -1945,13 +1925,11 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+CSCA",
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_sms_get_sca, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
+		at_cmd, "+CSCA",
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_sms_get_sca, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SCA");
 
 	/* Free resources */
@@ -2031,11 +2009,9 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_set_cb_config, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Cb Config");
 
 	/* Free resources */
@@ -2076,11 +2052,9 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_get_cb_config, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Cb Config");
 
 	/* Free resources */
@@ -2153,11 +2127,9 @@ static TelReturn imc_sms_set_memory_status(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_set_memory_status, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Memory Status");
 
 	/* Free resources */
@@ -2202,11 +2174,9 @@ static TelReturn imc_sms_set_message_status(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CRSM:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		_response_get_efsms_data, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Message Status");
 
 	/* Free resources */
@@ -2276,14 +2246,11 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
 
 		/* Send Request to modem */
 		ret = tcore_at_prepare_and_send_request(co,
-				at_cmd, "+CRSM",
-				TCORE_AT_COMMAND_TYPE_SINGLELINE,
-				TCORE_PENDING_PRIORITY_DEFAULT,
-				NULL,
-				on_response_imc_sms_get_sms_params, resp_cb_data,
-				on_send_imc_request, NULL,
-				0, NULL, NULL);
-
+			at_cmd, "+CRSM",
+			TCORE_AT_COMMAND_TYPE_SINGLELINE,
+			NULL,
+			on_response_imc_sms_get_sms_params, resp_cb_data,
+			on_send_imc_request, NULL);
 		IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SMS Parameters");
 
 		/* Free resources */
@@ -2358,11 +2325,9 @@ static TelReturn imc_sms_set_sms_params(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CRSM",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sms_set_sms_params, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set SMS Parameters");
 
 	/* Free resources */

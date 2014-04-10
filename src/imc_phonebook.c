@@ -279,11 +279,9 @@ static void __imc_phonebook_get_used_index(CoreObject *co, TelPbType pb_type, gu
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CPBR",
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_get_used_index, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Used Index");
 
 	/* Free resources */
@@ -386,11 +384,9 @@ static void __imc_phonebook_get_support_list(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+CPBS=?", "+CPBS",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_get_support_list, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, NULL, "Get Support List");
 }
 
@@ -828,11 +824,9 @@ static TelReturn imc_phonebook_get_info(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CPB",
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_get_info, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Info");
 
 	/* Free resources */
@@ -905,11 +899,9 @@ static TelReturn imc_phonebook_read_record(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+CPBR",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_read_record, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Read Record");
 
 	/* Free resources */
@@ -973,11 +965,9 @@ static TelReturn imc_phonebook_update_record(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_update_record, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Update Record");
 
 	/* Free resources */
@@ -1030,11 +1020,9 @@ static TelReturn imc_phonebook_delete_record(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_phonebook_delete_record, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Delete Record");
 
 	/* Free resources */

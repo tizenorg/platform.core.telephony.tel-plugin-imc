@@ -1127,14 +1127,11 @@ static TelReturn imc_ss_set_barring(CoreObject *co, const TelSsBarringInfo *barr
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_set_barring, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_set_barring, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Barring");
 
 	g_free(at_cmd);
@@ -1170,18 +1167,14 @@ static TelReturn imc_ss_get_barring_status(CoreObject *co, const TelSsBarringGet
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+CLCK",
-			TCORE_AT_COMMAND_TYPE_MULTILINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_get_barring_status, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, "+CLCK",
+		TCORE_AT_COMMAND_TYPE_MULTILINE,
+		NULL,
+		on_response_imc_ss_get_barring_status, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Barring Status");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1227,18 +1220,14 @@ static TelReturn imc_ss_change_barring_password(CoreObject *co, const TelSsBarri
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_change_barring_password, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_change_barring_password, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Change Barring Password");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1338,14 +1327,11 @@ static TelReturn imc_ss_set_forwarding(CoreObject *co, const TelSsForwardInfo *f
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_set_forwarding, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_set_forwarding, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Forwarding");
 
 	g_free(tmp_cmd);
@@ -1379,18 +1365,14 @@ static TelReturn imc_ss_get_forwarding_status(CoreObject *co, const TelSsForward
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+CCFC",
-			TCORE_AT_COMMAND_TYPE_MULTILINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_get_forwarding_status, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, "+CCFC",
+		TCORE_AT_COMMAND_TYPE_MULTILINE,
+		NULL,
+		on_response_imc_ss_get_forwarding_status, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Forwarding Status");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1449,18 +1431,14 @@ static TelReturn imc_ss_set_waiting(CoreObject *co, const TelSsWaitingInfo *wait
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_set_waiting, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_set_waiting, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Waiting");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1482,18 +1460,14 @@ static TelReturn imc_ss_get_waiting_status(CoreObject *co, TelSsClass ss_class,
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+CCWA",
-			TCORE_AT_COMMAND_TYPE_MULTILINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_get_waiting_status, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, "+CCWA",
+		TCORE_AT_COMMAND_TYPE_MULTILINE,
+		NULL,
+		on_response_imc_ss_get_waiting_status, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Waiting Status");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1556,18 +1530,14 @@ static TelReturn imc_ss_set_cli(CoreObject *co, const TelSsCliInfo *cli_info,
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_set_cli, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_set_cli, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Cli");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1612,18 +1582,14 @@ static TelReturn imc_ss_get_cli_status(CoreObject *co, TelSsCliType cli_type,
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, cmd_prefix,
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_get_cli_status, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, cmd_prefix,
+		TCORE_AT_COMMAND_TYPE_SINGLELINE,
+		NULL,
+		on_response_imc_ss_get_cli_status, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get Cli Status");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
@@ -1676,18 +1642,14 @@ static TelReturn imc_ss_send_ussd_request(CoreObject *co, const TelSsUssdInfo *u
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
-			NULL,
-			on_response_imc_ss_send_ussd_request, resp_cb_data,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
-
+		at_cmd, NULL,
+		TCORE_AT_COMMAND_TYPE_NO_RESULT,
+		NULL,
+		on_response_imc_ss_send_ussd_request, resp_cb_data,
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Send Ussd Request");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 

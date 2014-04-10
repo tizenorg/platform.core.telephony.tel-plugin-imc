@@ -135,11 +135,9 @@ static void __imc_network_register_to_network(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+COPS=0", NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_network_registration, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	dbg("Sending Network Registration request: [%s]",
 		(ret == TEL_RETURN_SUCCESS ? "SUCCESS" : "FAIL"));
 }
@@ -332,11 +330,9 @@ static TelReturn __imc_network_fetch_nw_name(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XCOPS=0;+XCOPS=5;+XCOPS=6", "+XCOPS",
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_network_fetch_nw_name, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Fetch Network name");
 
 	return ret;
@@ -1533,13 +1529,11 @@ static TelReturn imc_network_select_automatic(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+COPS=0", NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Automatic network selection");
+
 	return ret;
 }
 
@@ -1607,13 +1601,11 @@ static TelReturn imc_network_select_manual(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Manual network selection");
+
 	/* Free resources*/
 	g_free(at_cmd);
 	return ret;
@@ -1653,13 +1645,11 @@ static TelReturn imc_network_get_selection_mode(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+COPS?", "+COPS",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_get_selection_mode, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get selection mode");
+
 	return ret;
 }
 
@@ -1731,13 +1721,11 @@ static TelReturn imc_network_set_preferred_plmn(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set preferred plmn");
+
 	g_free(at_cmd);
 	return ret;
 }
@@ -1769,13 +1757,11 @@ static TelReturn imc_network_get_preferred_plmn(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+CPOL=,2;+CPOL?", "+CPOL", //to make sure <oper> is numeric type in reponse.
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_get_preferred_plmn, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get preferred plmn");
+
 	return ret;
 }
 
@@ -1840,12 +1826,11 @@ static TelReturn imc_network_set_mode(CoreObject *co, TelNetworkMode mode,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL ,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_default, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set network mode");
+
 	g_free(at_cmd);
 	return ret;
 }
@@ -1889,13 +1874,11 @@ static TelReturn imc_network_get_mode(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XRAT?", "+XRAT",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_network_get_mode, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get network mode");
+
 	return ret;
 }
 

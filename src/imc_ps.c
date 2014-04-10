@@ -312,13 +312,10 @@ static void __imc_ps_send_get_dns_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		"AT+XDNS?", "+XDNS",
 		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_ps_send_get_dns_cmd,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS){
 		TcorePsCallState curr_call_status;
 		err("Failed to prepare and send AT request");
@@ -410,13 +407,10 @@ static void __imc_ps_get_pdp_address(CoreObject *co_ps, CoreObject *ps_context)
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_ps_get_pdp_address,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS){
 		err("Failed to prepare and send AT request");
 		/* Deactivate PDP context */
@@ -481,13 +475,10 @@ static TelReturn __imc_ps_send_xdns_enable_cmd(CoreObject *co_ps, CoreObject *ps
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_imc_ps_send_xdns_enable_cmd,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS){
 		TcorePsCallState curr_call_status;
 
@@ -640,13 +631,10 @@ static TelReturn imc_ps_activate_context(CoreObject *co_ps, CoreObject *ps_conte
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_ps_activate_context,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS){
 		TcorePsCallState curr_call_status;
 		curr_call_status = private_info->ps_call_status;
@@ -700,13 +688,10 @@ static TelReturn imc_ps_deactivate_context(CoreObject *co_ps, CoreObject *ps_con
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_ps_deactivate_context,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS){
 		TcorePsCallState curr_call_status;
 		curr_call_status = private_info->ps_call_status;
@@ -826,12 +811,10 @@ static TelReturn imc_ps_define_context(CoreObject *co_ps, CoreObject *ps_context
 	ret = tcore_at_prepare_and_send_request(co_ps,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_ps_define_context,
 		ps_context,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 
 	tcore_free(pdp_type_str);
 	tcore_free(at_cmd);

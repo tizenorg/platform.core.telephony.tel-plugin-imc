@@ -440,13 +440,11 @@ static TelReturn imc_sap_req_connect(CoreObject *co, unsigned int max_msg_size,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XBCON=0,0,0", NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_req_connect, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_connect");
+
 	return ret;
 }
 
@@ -476,13 +474,11 @@ static TelReturn imc_sap_req_disconnect(CoreObject *co, TcoreObjectResponseCallb
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XBDISC", NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_req_disconnect, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_disconnect");
+
 	return ret;
 }
 
@@ -524,13 +520,11 @@ static TelReturn imc_sap_get_atr(CoreObject *co, TcoreObjectResponseCallback cb,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XBATR", "+XBATR:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_get_atr, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_get_atr");
+
 	return ret;
 }
 
@@ -578,13 +572,11 @@ static TelReturn imc_sap_req_transfer_apdu(CoreObject *co, const TelSapApdu *apd
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+XBAPDU:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_req_transfer_apdu, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_transfer_apdu");
+
 	g_free(at_cmd);
 	return ret;
 }
@@ -653,13 +645,11 @@ static TelReturn imc_sap_req_power_operation(CoreObject *co, TelSapPowerMode pow
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, "+XBPWR:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_req_power_operation, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_power_operation");
+
 	g_free(at_cmd);
 	return ret;
 }
@@ -709,13 +699,11 @@ static TelReturn imc_sap_get_cardreader_status(CoreObject *co, TcoreObjectRespon
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+XBCRDSTAT", "+XBCRDSTAT:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sap_get_cardreader_status, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_get_cardreader_status");
+
 	return ret;
 }
 

@@ -150,12 +150,9 @@ static void __imc_modem_unsuspend_nvm_updates(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		cmd_str, "+XDRV:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_modem_unsuspend_nvm_updates, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, NULL, "Unsuspend Nvm Updates");
 
 	g_free(cmd_str);
@@ -185,12 +182,9 @@ static void __imc_modem_send_nvm_update_ack(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		cmd_str, "+XDRV:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_modem_send_nvm_update_ack, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, NULL, "Nvm Update Ack");
 
 	g_free(cmd_str);
@@ -220,12 +214,9 @@ static void __imc_modem_send_nvm_update_request_ack(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		cmd_str, "+XDRV:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_modem_send_nvm_update_request_ack, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
-
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, NULL, "Nvm Update Request Ack");
 
 	g_free(cmd_str);
@@ -596,11 +587,9 @@ static TelReturn imc_modem_set_power_status(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_modem_set_power_status, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Power Status");
 
 	/* Free resources */
@@ -656,11 +645,9 @@ static TelReturn imc_modem_set_flight_mode(CoreObject *co, gboolean enable,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_modem_set_flight_mode, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Flight mode");
 
 	/* Free resources */
@@ -714,7 +701,7 @@ static TelReturn imc_modem_get_version(CoreObject *co,
 {
 	dbg("entry");
 
-/* Current modem does not support this operation */
+	/* Current modem does not support this operation */
 #if 0
 	ImcRespCbData *resp_cb_data;
 	TelReturn ret;
@@ -770,11 +757,9 @@ static TelReturn imc_modem_get_imei(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		"AT+CGSN", NULL,
 		TCORE_AT_COMMAND_TYPE_NUMERIC,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_modem_get_imei, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get IMEI");
 
 	return ret;
@@ -909,11 +894,9 @@ void imc_modem_register_nvm(CoreObject *co)
 	ret = tcore_at_prepare_and_send_request(co,
 		cmd_str, "+XDRV:",
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		__on_response_modem_register_nvm, NULL,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	if (ret != TEL_RETURN_SUCCESS) {
 		err("Failed to process request - [Register NVM]");
 	}

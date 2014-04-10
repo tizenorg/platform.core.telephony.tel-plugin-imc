@@ -2035,12 +2035,9 @@ static TelReturn imc_gps_confirm_measure_pos (CoreObject *co, const TelGpsDataIn
 	ret = tcore_at_prepare_and_send_request(co,
 			cmd_str, NULL,
 			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_imc_gps_confirm_measure_pos, resp_cb_data,
-			on_send_imc_request, NULL,
-			(guint)0, NULL, NULL);
-
+			on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Confirm Measure Position");
 
 	g_free(cmd_str);

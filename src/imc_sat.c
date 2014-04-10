@@ -72,11 +72,9 @@ static TcoreHookReturn on_hook_imc_sim_status(TcorePlugin *plugin,
 		tcore_at_prepare_and_send_request(co,
 			"AT+CFUN=6", NULL,
 			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			TCORE_PENDING_PRIORITY_DEFAULT,
 			NULL,
 			on_response_enable_sat, NULL,
-			on_send_imc_request, NULL,
-			0, NULL, NULL);
+			on_send_imc_request, NULL);
 	}
 
 	return TCORE_HOOK_RETURN_CONTINUE;
@@ -509,11 +507,9 @@ static TelReturn imc_sat_send_envelope(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sat_send_envelop_cmd, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Send Envelop Command");
 
 	/* Free resources */
@@ -590,11 +586,9 @@ static TelReturn imc_sat_send_terminal_response(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sat_send_terminal_response, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Send Terminal Response");
 
 	/* Free resources */
@@ -638,11 +632,9 @@ static TelReturn imc_sat_send_user_confirmation(CoreObject *co,
 	ret = tcore_at_prepare_and_send_request(co,
 		at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		on_response_imc_sat_send_user_confirmation, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Send User Confirmation");
 
 	/* Free resources */

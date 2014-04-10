@@ -78,11 +78,9 @@ static void __send_request(CoreObject *co, const gchar *at_cmd,
 {
 	(void)tcore_at_prepare_and_send_request(co, at_cmd, NULL,
 		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		TCORE_PENDING_PRIORITY_DEFAULT,
 		NULL,
 		resp_cb, resp_cb_data,
-		on_send_imc_request, NULL,
-		0, NULL, NULL);
+		on_send_imc_request, NULL);
 }
 
 static void __on_response_subscribe_bootup_notification(TcorePending *p,
