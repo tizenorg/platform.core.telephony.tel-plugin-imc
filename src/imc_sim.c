@@ -926,6 +926,7 @@ static void __imc_sim_next_from_get_response(CoreObject *co, ImcRespCbData *resp
 		break;
 
 	case TEL_SIM_EF_LP:
+	case TEL_SIM_EF_USIM_LI:
 		if (sim_result == TEL_SIM_RESULT_SUCCESS) {
 			dbg("[SIM DATA] exist EFLP/LI(0x6F05)");
 			__imc_sim_read_binary(co, resp_cb_data);
@@ -3199,7 +3200,6 @@ static TelReturn imc_sim_get_language (CoreObject *co,
 	dbg("Entry");
 
 	IMC_SIM_READ_FILE(co, cb, cb_data, TEL_SIM_EF_LP, ret);
-
 	return ret;
 }
 
@@ -3210,8 +3210,6 @@ static TelReturn imc_sim_set_language (CoreObject *co,
 	ImcSimMetaInfo file_meta = {0, };
 	TelSimCardType card_type = TEL_SIM_CARD_TYPE_UNKNOWN;
 	ImcRespCbData *resp_cb_data = NULL;
-	char *tmp = NULL;
-	int tmp_len = 0;
 	char *encoded_data = NULL;
 	int encoded_data_len = 0;
 	int p1 = 0;
