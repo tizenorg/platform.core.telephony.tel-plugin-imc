@@ -69,7 +69,6 @@ static void on_response_imc_call_default(TcorePending *p,
 
 static TelReturn __call_list_get(CoreObject *co, gboolean flag);
 
-
 static TelCallType __call_type(int type)
 {
 	dbg("Entry");
@@ -82,7 +81,7 @@ static TelCallType __call_type(int type)
 		return TEL_CALL_TYPE_VIDEO;
 
 	default:
-		err("invalid call type, returing default call type as voice");
+		err("invalid call type, returning default call type as voice");
 		return TEL_CALL_TYPE_VOICE;
 	}
 }
@@ -113,7 +112,8 @@ static TelCallState __call_state(int state)
 	}
 }
 
-static void __call_branch_by_status(CoreObject *co, CallObject *call_obj, TelCallState call_state)
+static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
+	TelCallState call_state)
 {
 	unsigned int call_id;
 	TelCallType call_type;
@@ -176,7 +176,8 @@ static void __call_branch_by_status(CoreObject *co, CallObject *call_obj, TelCal
 			tcore_call_object_get_active_line(call_obj, &incoming.active_line);
 
 			/* Send notification */
-			tcore_object_send_notification(co, command, sizeof(TelCallIncomingInfo), &incoming);
+			tcore_object_send_notification(co, command,
+				sizeof(TelCallIncomingInfo), &incoming);
 			return;
 		}
 
@@ -320,7 +321,7 @@ static void __handle_call_list_get(CoreObject *co, gboolean flag, void *data)
 		if (NULL == resp) {
 			err("Number is NULL");
 		} else {
-			// Strike off double quotes
+			/* Strike off double quotes */
 			num = tcore_at_tok_extract(resp);
 			dbg("Number: [%s]", num);
 
@@ -385,7 +386,6 @@ static void __on_notification_imc_call_incoming(CoreObject *co, unsigned int cal
 		g_slist_free(list);
 		return;
 	}
-	g_slist_free(list);
 
 	call_obj = tcore_call_object_find_by_id(co, call_id);
 	if (call_obj != NULL) {
@@ -480,7 +480,6 @@ static void __on_response_imc_call_list_get(TcorePending *p, guint data_len, con
 	tcore_check_return_assert(resp_cb_data != NULL);
 
 	if (at_resp && at_resp->success) {
-		result = TEL_CALL_RESULT_SUCCESS;
 		if (NULL == at_resp->lines) {
 			err("invalid response received");
 			return;
@@ -488,12 +487,12 @@ static void __on_response_imc_call_list_get(TcorePending *p, guint data_len, con
 
 		lines = (GSList *) at_resp->lines;
 		count = g_slist_length(lines);
-		dbg("Total records : %d", g_slist_length(lines));
+		dbg("Total records : %d", count);
 		if (0 == count) {
 			err("Call count is zero");
 			return;
 		}
-
+		result = TEL_CALL_RESULT_SUCCESS;
 		dbg("RESPONSE OK");
 
 		/* parse +CLCC notification parameter */
@@ -512,7 +511,8 @@ static TelReturn __send_call_request(CoreObject *co, TcoreObjectResponseCallback
 	TelReturn ret;
 
 	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, func_name, strlen(func_name) + 1);
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, func_name,
+			strlen(func_name) + 1);
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
@@ -537,7 +537,7 @@ static TelReturn __send_call_request(CoreObject *co, TcoreObjectResponseCallback
  * Response -
  * Success:
  *[+CLCC: <id1>, <dir>, <stat>, <mode>,<mpty>[,<number>,<type>[,<alpha>[,<priority>]]]
- *[<CR><LF> +CLCC: <id2>,<dir>,<stat>,<mode>,<mpty>[,<number>,<type>[,<alpha>[,<priority>]]][…]]]
+ *
  * OK
  * Failure:
  * +CME ERROR: <error>
@@ -545,7 +545,7 @@ static TelReturn __send_call_request(CoreObject *co, TcoreObjectResponseCallback
 static TelReturn __call_list_get(CoreObject *co, gboolean flag)
 {
 	ImcRespCbData *resp_cb_data;
-	TelReturn ret =TEL_RETURN_FAILURE;
+	TelReturn ret = TEL_RETURN_FAILURE;
 	dbg("Entry");
 
 	if (NULL == co) {
@@ -585,8 +585,8 @@ static TelReturn __call_list_get(CoreObject *co, gboolean flag)
 * 4 ringing (MT call)
 * 5 waiting (MT call)
 * 6 disconnected
-* 7 connected (indicates the completion of a call setup first time for MT and MO calls – this is reported in
-addition to state active)
+* 7 connected (indicates the completion of a call setup first time for MT and MO calls
+*   this is reported in addition to state active)
 */
 static gboolean on_notification_imc_call_status(CoreObject *co, const void *data,
 	void *user_data)
@@ -609,17 +609,17 @@ static gboolean on_notification_imc_call_status(CoreObject *co, const void *data
 
 	call_handle = g_slist_nth_data(tokens, 0);
 	if (NULL == call_handle) {
-		err("call_id missing from %XCALLSTAT indiaction");
+		err("call id missing from %XCALLSTAT indication");
 		goto OUT;
 	}
 	call_id = atoi(call_handle);
 	state = g_slist_nth_data(tokens, 1);
 	if (NULL == state) {
-		err("State is missing from %XCALLSTAT indication");
+		err("call state is missing from %XCALLSTAT indication");
 		goto OUT;
 	}
 	status = atoi(state);
-	dbg("call_id[%d], status[%d]", call_id, status);
+	dbg("call id[%d], status[%d]", call_id, status);
 
 	switch (status) {
 	case STATUS_INCOMING:
@@ -678,7 +678,7 @@ static gboolean on_notification_imc_call_ss_cssu_info(CoreObject *co, const void
 	char *cmd = 0;
 	int index = 0;
 	int code2 = -1;
-	char number[TEL_CALL_CALLING_NUMBER_LEN_MAX + 1] = {'\0',};
+	char *number = NULL;
 
 	dbg("entry");
 
@@ -695,7 +695,7 @@ static gboolean on_notification_imc_call_ss_cssu_info(CoreObject *co, const void
 	/* parse <code2> */
 	resp = g_slist_nth_data(tokens, 0);
 	if (NULL == resp) {
-		err("Code2 is missing from %CSSU indiaction");
+		err("Code2 is missing from +CSSU indication");
 		tcore_at_tok_free(tokens);
 		return TRUE;
 	}
@@ -708,9 +708,7 @@ static gboolean on_notification_imc_call_ss_cssu_info(CoreObject *co, const void
 
 	if ((resp = g_slist_nth_data(tokens, 2))) {
 		/* Strike off double quotes */
-		int len = strlen(resp) - 2;
-		memcpy(number, resp + 1, len);
-		number[len] = '\0';;
+		number = tcore_at_tok_extract(resp);
 	}
 
 	dbg("+CSSU: <code2> = %d <index> = %d <number> = %s ", code2, index, number);
@@ -744,6 +742,7 @@ static gboolean on_notification_imc_call_ss_cssu_info(CoreObject *co, const void
 	if (command != TCORE_NOTIFICATION_UNKNOWN)
 		tcore_object_send_notification(co, command, 0, NULL);
 	tcore_at_tok_free(tokens);
+	g_free(number);
 
 	return TRUE;
 }
@@ -790,7 +789,7 @@ static gboolean on_notification_imc_call_ss_cssi_info(CoreObject *co, const void
 	/* parse <code1> */
 	resp = g_slist_nth_data(tokens, 0);
 	if (NULL == resp) {
-		err("<code1> is missing from %CSSI indiaction");
+		err("<code1> is missing from %CSSI indication");
 		tcore_at_tok_free(tokens);
 		return TRUE;
 	}
@@ -854,7 +853,7 @@ static void on_response_imc_call_default(TcorePending *p,
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 
-	TelCallResult result;
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	dbg("entry");
 
 	tcore_check_return_assert(co != NULL);
@@ -863,9 +862,12 @@ static void on_response_imc_call_default(TcorePending *p,
 	if (at_resp && at_resp->success) {
 		result = TEL_CALL_RESULT_SUCCESS;
 	} else {
-		err("ERROR[%s]",at_resp->final_response);
-		result = TEL_CALL_RESULT_FAILURE;
-		/*TODO - need to map CME error and final response error to TelCallResult */
+		err("ERROR[%s] CME error[%s]",at_resp->final_response,
+			at_resp->lines->data);
+		/*
+		 * TODO - need to map CME error and final
+		 * response error to TelCallResult
+		 */
 	}
 
 	dbg("%s: [%s]", IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data),
@@ -890,7 +892,8 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 	char *resp_str = NULL;
 	gboolean error;
 
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;  // TODO: XDRV error mapping is required
+	/* TODO: XDRV error mapping required */
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -901,12 +904,12 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 		tokens = tcore_at_tok_new(line->data);
 
 		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id is missing");
+			err("group_id  missing");
 			goto OUT;
 		}
 
 		if (!g_slist_nth_data(tokens, 1)) {
-			err(" function_id is missing");
+			err(" function_id  missing");
 			goto OUT;
 		}
 
@@ -926,8 +929,9 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 				goto OUT;
 			}
 
-			/* Fetch from resp_cb_data */
-			volume_info = (struct imc_set_volume_info *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+			/* Fetch volume_info from resp_cb_data */
+			volume_info = (struct imc_set_volume_info *)
+					IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
 			dbg("volume info index[%d]", volume_info->next_index);
 
 			if (xdrv_set_volume[volume_info->next_index] == NULL) {
@@ -973,7 +977,7 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 			at_cmd = g_strdup_printf("%s%s",
 					xdrv_set_volume[volume_info->next_index], vol);
 
-			/* Increament index to point to next command */
+			/* Increment index to point to next xdrv command */
 			volume_info->next_index += 1;
 
 			/* Send Request to modem */
@@ -981,8 +985,8 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 					at_cmd, "+XDRV",
 					TCORE_AT_COMMAND_TYPE_SINGLELINE,
 					NULL,
-					on_response_imc_call_set_volume_info, resp_cb_data,
-					on_send_imc_request, NULL);
+					on_response_imc_call_set_volume_info,
+					resp_cb_data, on_send_imc_request, NULL);
 			IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_volume_info");
 			g_free(at_cmd);
 
@@ -1024,48 +1028,48 @@ static void on_response_imc_call_set_sound_path(TcorePending *p,
 		line = at_resp->lines;
 		tokens = tcore_at_tok_new(line->data);
 		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id is missing");
+			err("group_id  missing");
 			goto OUT;
 		}
 
 		if (!(resp_str = g_slist_nth_data(tokens, 1))) {
-			err(" function_id is missing");
+			err("function_id  missing");
+			goto OUT;
+		}
+		xdrv_func_id = atoi(resp_str);
+
+		if (!(resp_str = g_slist_nth_data(tokens, 2))) {
+			err("RESPONSE NOK");
+			goto OUT;
+		}
+		error = atoi(resp_str);
+		if (error) {
+			err("RESPONSE NOK");
 			goto OUT;
 		}
 
-		xdrv_func_id = atoi(resp_str);
+		if (xdrv_func_id == 4) {
+			/* Send next command to configure destination device type */
+			gchar *at_cmd;
+			TelReturn ret;
+			gint *device_type = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
 
-		resp_str = g_slist_nth_data(tokens, 2);
-		if (resp_str) {
-			error = atoi(resp_str);
-			if (error) {
-				err("RESPONSE NOK");
-				goto OUT;
-			} else {
-				if (xdrv_func_id == 4) {
-					/* Send next command to configure destination device type */
-					gchar *at_cmd;
-					TelReturn ret;
-					gint *device_type = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+			at_cmd = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",
+						*device_type);
 
-					at_cmd = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",
-								*device_type);
+			ret = tcore_at_prepare_and_send_request(co,
+					at_cmd, "+XDRV",
+					TCORE_AT_COMMAND_TYPE_SINGLELINE,
+					NULL,
+					on_response_imc_call_set_sound_path, resp_cb_data,
+					on_send_imc_request, NULL);
+			IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_sound_path");
+			g_free(at_cmd);
 
-					ret = tcore_at_prepare_and_send_request(co,
-							at_cmd, "+XDRV",
-							TCORE_AT_COMMAND_TYPE_SINGLELINE,
-							NULL,
-							on_response_imc_call_set_sound_path, resp_cb_data,
-							on_send_imc_request, NULL);
-					IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_sound_path");
-					g_free(at_cmd);
-
-					return;
-				}
-				dbg("RESPONSE OK");
-				result = TEL_CALL_RESULT_SUCCESS;
-			}
+			return;
 		}
+		dbg("RESPONSE OK");
+		result = TEL_CALL_RESULT_SUCCESS;
 	}
 
 OUT :
@@ -1116,33 +1120,31 @@ static void on_response_imc_call_set_mute(TcorePending *p, guint data_len,
 	tcore_check_return_assert(resp_cb_data != NULL);
 
 	if (at_resp && at_resp->success) {
-		result = TEL_CALL_RESULT_SUCCESS;
 		line = (((GSList *)at_resp->lines)->data);
 		tokens = tcore_at_tok_new(line);
 
 		resp_str = g_slist_nth_data(tokens, 0);
 		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id is missing");
-			result = TEL_CALL_RESULT_FAILURE;
+			err("group_id  missing");
 			goto OUT;
 		}
 
 		if (!g_slist_nth_data(tokens, 1)) {
-			err(" function_id is missing");
-			result = TEL_CALL_RESULT_FAILURE;
+			err("function_id  missing");
 			goto OUT;
 		}
 
 		resp_str = g_slist_nth_data(tokens, 2);
-		if (resp_str) {
-			error = atoi(resp_str);
-			if (error) {
-				result = TEL_CALL_RESULT_FAILURE;
-				goto OUT;
-			} else {
-				result = TEL_CALL_RESULT_SUCCESS;
-			}
+		if (!(resp_str = g_slist_nth_data(tokens, 1))) {
+			err("xdrv_result missing");
+			goto OUT;
 		}
+		error = atoi(resp_str);
+		if (!error) {
+			err(" RESPONSE NOK [%d]", error);
+			goto OUT;
+		}
+		result = TEL_CALL_RESULT_SUCCESS;
 	}
 
 OUT :
@@ -1210,7 +1212,7 @@ static TelReturn imc_call_dial(CoreObject *co, const TelCallDial *dial_info,
 		 * instead of his own vconfkey. (0 : By network, 1 : Show, 2 : Hide)
 		 */
 		vconf_get_int("db/ciss/show_my_number", &cli);
-		if(cli == 2){
+		if (cli == 2){
 			dbg("clir invocation from setting application");
 			clir = "I";
 		} else {
@@ -1284,12 +1286,14 @@ static TelReturn imc_call_answer(CoreObject *co, TelCallAnswerType ans_type,
 }
 
 /*
- * Operation - release all calls/release specific call/release all active call/release all held calls.
+ * Operation - release all calls/release specific call/release all active
+ * call/release all held calls.
  *
  * Request -
  * 1. AT-Command: AT+CHLD=[<n>]
  * <n>
- * 0  - (defualt)release all held calls or set User Determined User Busy for a waiting/incoming.
+ * 0  - (defualt)release all held calls or set User Determined User -
+ *       Busy for a waiting/incoming.
  * call; if both exists then only the waiting call will be rejected.
  * 1  - release all active calls and accepts the other (held or waiting).
  * 1x - release a specific call (x specific call number as indicated by call id).
@@ -1356,7 +1360,9 @@ static TelReturn imc_call_send_dtmf(CoreObject *co, const char *dtmf_str,
 	dbg("entry");
 
 	//(void) _set_dtmf_tone_duration(o, dup);
-	tmp_dtmf = tcore_malloc0((strlen(dtmf_str) * 2) + 1); // DTMF digits + comma for each dtmf digit.
+
+	/* DTMF digits + comma for each dtmf digit */
+	tmp_dtmf = tcore_malloc0((strlen(dtmf_str) * 2) + 1);
 	tcore_check_return_value_assert(tmp_dtmf != NULL, TEL_RETURN_FAILURE);
 	/* Save initial pointer */
 	dtmf = tmp_dtmf;
@@ -1369,10 +1375,10 @@ static TelReturn imc_call_send_dtmf(CoreObject *co, const char *dtmf_str,
 		tmp_dtmf++;
 	}
 
-	// last digit is having COMMA , overwrite it with '\0' .
+	/* last digit is having COMMA , overwrite it with '\0'*/
 	*(--tmp_dtmf) = '\0';
 
-	// AT+VTS = <d1>,<d2>,<d3>,<d4>,<d5>,<d6>, ..... <d32>
+	/* (AT+VTS = <d1>,<d2>,<d3>,<d4>,<d5>,<d6>, ..... <d32> */
 	at_cmd = g_strdup_printf("AT+VTS=%s", dtmf);
 	dbg("at command : %s", at_cmd);
 
@@ -1545,7 +1551,7 @@ static TelReturn imc_call_transfer(CoreObject *co, TcoreObjectResponseCallback c
 }
 
 /*
- * Operation - call transfer.
+ * Operation - call deflect.
  *
  * Request -
  * 1. AT-Command: AT+CTFR= <number>[,<type>]

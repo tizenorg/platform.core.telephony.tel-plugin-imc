@@ -49,7 +49,8 @@
  * <dcs>
  * Decoding format
  */
-static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_data, void *user_data)
+static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_data,
+	void *user_data)
 {
 	gchar *cmd = 0;
 	gchar *resp_str = NULL;
@@ -74,7 +75,7 @@ static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_da
 	/* Parse USSD status */
 	resp_str = g_slist_nth_data(tokens, 0);
 	if (NULL == resp_str) {
-		err("status is missing from %CUSD Notification");
+		err("status missing from +CUSD Notification");
 		tcore_at_tok_free(tokens);
 		return TRUE;
 	} else {
@@ -88,7 +89,10 @@ static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_da
 			return TRUE;
 		}
 
-		/* When network terminated the USSD session, no need to send notification to application */
+		/*
+	 	 * When network terminated the USSD session, no need to
+		 * send notification to application
+		 */
 		if (ussd_status == TEL_SS_USSD_STATUS_TERMINATED_BY_NETWORK) {
 			/* destroy USSD session if any */
 			UssdSession *ussd_session;
@@ -109,7 +113,7 @@ static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_da
 			len = strlen((gchar *)resp_str);
 			dbg("USSD String: [%s], len: [%d]", resp_str, len);
 		} else {
-			dbg("Ussd strings is missing from %CUSD Notification");
+			dbg("Ussd string  missing from +CUSD Notification");
 			tcore_at_tok_free(tokens);
 			return TRUE;
 		}
@@ -123,11 +127,13 @@ static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_da
 		warn("No dcs string. Using default dcs value");
 	}
 
-	ussd_noti.str = tcore_malloc0(len+1);
+	ussd_noti.str = tcore_malloc0(len + 1);
 
 	if ((tcore_util_convert_str_to_utf8(ussd_noti.str, &len, dcs,
-		(const guchar *)resp_str, len+1)) == FALSE) {
-		/* In case of Unhandled dcs type(Reserved), ussd string to ussd_noti.str */
+		(const guchar *)resp_str, len + 1)) == FALSE) {
+		/* In case of unhandled dcs type(Reserved),
+		 * copy ussd string to ussd_noti.str
+		 */
 		memcpy(ussd_noti.str, resp_str, len);
 	}
 
@@ -152,40 +158,31 @@ static gboolean __imc_ss_convert_modem_class_to_class(gint classx, TelSsClass *c
 	{
 	case 7:
 		*class = TEL_SS_CLASS_ALL_TELE;
-		break;
-
+	break;
 	case 1:
 		*class = TEL_SS_CLASS_VOICE;
-		break;
-
+	break;
 	case 2:
 		*class = TEL_SS_CLASS_ALL_DATA_TELE;
-		break;
-
+	break;
 	case 4:
 		*class = TEL_SS_CLASS_FAX;
-		break;
-
+	break;
 	case 8:
 		*class = TEL_SS_CLASS_SMS;
-		break;
-
+	break;
 	case 16:
 		*class = TEL_SS_CLASS_ALL_CS_SYNC;
-		break;
-
+	break;
 	case 32:
 		*class = TEL_SS_CLASS_ALL_CS_ASYNC;
-		break;
-
+	break;
 	case 64:
 		*class = TEL_SS_CLASS_ALL_DEDI_PS;
-		break;
-
+	break;
 	case 128:
 		*class = TEL_SS_CLASS_ALL_DEDI_PAD;
-		break;
-
+	break;
 	default:
 		err("Invalid modem class: [%d]", classx);
 		return FALSE;
@@ -231,46 +228,38 @@ static guint __imc_ss_convert_class_to_imc_class(TelSsClass class)
 	}
 }
 
-static gboolean __imc_ss_convert_barring_type_to_facility(TelSsBarringType type, gchar **facility)
+static gboolean __imc_ss_convert_barring_type_to_facility(TelSsBarringType type,
+	gchar **facility)
 {
 	switch(type)
 	{
 	case TEL_SS_CB_TYPE_BAOC:
 		*facility = "AO";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_BOIC:
 		*facility = "OI";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_BOIC_NOT_HC:
 		*facility = "OX";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_BAIC:
 		*facility = "AI";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_BIC_ROAM:
 		*facility = "IR";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_AB:
 		*facility = "AB";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_AOB:
 		*facility = "AG";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_AIB:
 		*facility = "AC";
-		break;
-
+	break;
 	case TEL_SS_CB_TYPE_NS:
 		*facility = "NS";
-		break;
-
+	break;
 	default:
 		err("Unspported type: [%d]", type);
 		return FALSE;
@@ -278,26 +267,23 @@ static gboolean __imc_ss_convert_barring_type_to_facility(TelSsBarringType type,
 	return TRUE;
 }
 
-static gboolean __imc_ss_convert_forwarding_mode_to_modem_mode(TelSsForwardMode mode, guint *modex)
+static gboolean __imc_ss_convert_forwarding_mode_to_modem_mode(TelSsForwardMode mode,
+	guint *modex)
 {
 	switch(mode)
 	{
 	case TEL_SS_CF_MODE_DISABLE:
 		*modex = 0;
-		break;
-
+	break;
 	case TEL_SS_CF_MODE_ENABLE:
 		*modex = 1;
-		break;
-
+	break;
 	case TEL_SS_CF_MODE_REGISTER:
 		*modex = 3;
-		break;
-
+	break;
 	case TEL_SS_CF_MODE_DEREGISTER:
 		*modex = 4;
-		break;
-
+	break;
 	default:
 		err("Unspported mode: [%d]", mode);
 		return FALSE;
@@ -305,33 +291,28 @@ static gboolean __imc_ss_convert_forwarding_mode_to_modem_mode(TelSsForwardMode 
 	return TRUE;
 }
 
-static gboolean __imc_ss_convert_forwarding_condition_to_modem_reason(TelSsForwardCondition condition, guint *reason)
+static gboolean __imc_ss_convert_forwarding_condition_to_modem_reason(TelSsForwardCondition condition,
+	guint *reason)
 {
 	switch (condition) {
 	case TEL_SS_CF_COND_CFU:
 		*reason = 0;
-		break;
-
+	break;
 	case TEL_SS_CF_COND_CFB:
 		*reason = 1;
-		break;
-
+	break;
 	case TEL_SS_CF_COND_CFNRY:
 		*reason = 2;
-		break;
-
+	break;
 	case TEL_SS_CF_COND_CFNRC:
 		*reason = 3;
-		break;
-
+	break;
 	case TEL_SS_CF_COND_ALL:
 		*reason = 4;
-		break;
-
+	break;
 	case TEL_SS_CF_COND_ALL_CFC:
 		*reason = 5;
-		break;
-
+	break;
 	default:
 		dbg("Unsupported condition: [%d]", condition);
 		return FALSE;
@@ -365,44 +346,53 @@ static gint __imc_ss_convert_clir_status_modem_status(gint clir_status)
 	}
 }
 
-static gboolean __imc_ss_convert_cli_info_modem_info(const TelSsCliInfo **cli_info,	gint *status,
+static gboolean __imc_ss_convert_cli_info_modem_info(const TelSsCliInfo **cli_info,gint *status,
 	gchar **cmd_prefix)
 {
 	switch((*cli_info)->type)
 	{
 	case TEL_SS_CLI_CLIR:
-		if ((*status = __imc_ss_convert_clir_status_modem_status((*cli_info)->status.clir)) != -1)
+		if ((*status = __imc_ss_convert_clir_status_modem_status((*cli_info)->status.clir))
+			!= -1) {
 			*cmd_prefix = "+CLIR";
-		else
+		} else {
 			err("invalid clir status");
-		break;
+		}
+	break;
 
 	case TEL_SS_CLI_CLIP:
-		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.clip) != -1))
+		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.clip)
+			!= -1)) {
 			*cmd_prefix = "+CLIP";
-		else
-			err("invalid cli status");
-		break;
+		} else {
+			err("invalid clip status");
+		}
+	break;
 	case TEL_SS_CLI_COLP:
-		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.colp) != -1))
+		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.colp)
+			!= -1)) {
 			*cmd_prefix = "+COLP";
-		else
-			err("invalid cli status");
-		break;
+		} else {
+			err("invalid colp status");
+		}
+	break;
 	case TEL_SS_CLI_COLR:
-		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.colr) != -1))
+		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.colr)
+			!= -1)) {
 			*cmd_prefix = "+COLR";
-		else
-			err("invalid cli status");
-		break;
-
+		} else {
+			err("invalid colr status");
+		}
+	break;
 	case TEL_SS_CLI_CNAP:
-		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.cnap) != -1))
+		if ((*status =__imc_ss_convert_cli_status_modem_status((*cli_info)->status.cnap)
+			!= -1)) {
 			*cmd_prefix = "+CNAP";
-		else
-			err("invalid cli status");
+		} else {
+			err("invalid cnap status");
+		}
 
-		break;
+	break;
 	case TEL_SS_CLI_CDIP:
 	default:
 		err("Unsupported CLI type: [%d]", (*cli_info)->type);
@@ -415,41 +405,41 @@ static gboolean __imc_ss_convert_cli_info_modem_info(const TelSsCliInfo **cli_in
 	return TRUE;
 }
 
-static gboolean __imc_ss_convert_modem_cli_net_status_cli_status(TelSsCliType cli_type, gint net_status,
-	 gint *status)
+static gboolean __imc_ss_convert_modem_cli_net_status_cli_status(TelSsCliType cli_type,
+	gint net_status, gint *status)
 {
 	if (cli_type == TEL_SS_CLI_CLIR) {
 		switch (net_status) {
-			case 0:
-				*status = TEL_CLIR_STATUS_NOT_PROVISIONED;
-				break;
-			case 1:
-				*status = TEL_CLIR_STATUS_PROVISIONED;
-				break;
-			case 2:
-				*status = TEL_CLIR_STATUS_UNKNOWN;
-				break;
-			case 3:
-				*status = TEL_CLIR_STATUS_TEMP_RESTRICTED;
-				break;
-			case 4:
-				*status = TEL_CLIR_STATUS_TEMP_ALLOWED;
-				break;
-			default:
-				err("Invalid clir net status: [%d]", net_status);
-				return FALSE;
+		case 0:
+			*status = TEL_CLIR_STATUS_NOT_PROVISIONED;
+		break;
+		case 1:
+			*status = TEL_CLIR_STATUS_PROVISIONED;
+		break;
+		case 2:
+			*status = TEL_CLIR_STATUS_UNKNOWN;
+		break;
+		case 3:
+			*status = TEL_CLIR_STATUS_TEMP_RESTRICTED;
+		break;
+		case 4:
+			*status = TEL_CLIR_STATUS_TEMP_ALLOWED;
+		break;
+		default:
+			err("Invalid clir net status: [%d]", net_status);
+			return FALSE;
 		}
 	} else { //CLIP, COLP,COLR,CNAP.
 		switch (net_status) {
 		case 0:
 			*status = TEL_SS_CLI_NOT_PROVISIONED;
-			break;
+		break;
 		case 1:
 			*status = TEL_SS_CLI_PROVISIONED;
-			break;
+		break;
 		case 2:
 			*status = TEL_SS_CLI_UNKNOWN;
-			break;
+		break;
 		default:
 			err("Invalid status: [%d]", net_status);
 			return FALSE;
@@ -465,13 +455,13 @@ static gboolean __imc_ss_convert_modem_cli_dev_status_cli_status(TelSsCliType cl
 		switch (dev_status) {
 		case 0:
 			*status = TEL_CLIR_STATUS_DEFAULT;
-			break;
+		break;
 		case 1:
 			*status = TEL_CLIR_STATUS_INVOCATION;
-			break;
+		break;
 		case 2:
 			*status = TEL_CLIR_STATUS_SUPPRESSION;
-			break;
+		break;
 		default:
 			err("Invalid dev status: [%d]", dev_status);
 			return FALSE;
@@ -480,10 +470,10 @@ static gboolean __imc_ss_convert_modem_cli_dev_status_cli_status(TelSsCliType cl
 		switch(dev_status) {
 		case 0:
 			*status  = TEL_SS_CLI_DISABLE;
-			break;
+		break;
 		case 1:
 			*status  = TEL_SS_CLI_ENABLE;
-			break;
+		break;
 		default:
 			err("Invalid dev status: [%d]", dev_status);
 			return FALSE;
@@ -494,13 +484,14 @@ static gboolean __imc_ss_convert_modem_cli_dev_status_cli_status(TelSsCliType cl
 
 /* SS Responses */
 static void on_response_imc_ss_set_barring(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 
-	TelSsResult result = TEL_SS_RESULT_FAILURE; // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -520,7 +511,7 @@ static void on_response_imc_ss_set_barring(TcorePending *p,
 }
 
 static void on_response_imc_ss_get_barring_status(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
@@ -529,8 +520,8 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 	TelSsBarringGetInfo *req_info;
 	gint valid_records = 0;
 	GSList *resp_data = NULL;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE; // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -554,6 +545,7 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 	if (barring_resp.record_num > 0) {
 		barring_resp.records = tcore_malloc0((barring_resp.record_num) *
 			sizeof(TelSsBarringInfoRecord));
+
 		for (valid_records = 0; resp_data != NULL; resp_data = resp_data->next) {
 			const gchar *line;
 			GSList *tokens = NULL;
@@ -579,11 +571,13 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 
 				classx_str = g_slist_nth_data(tokens, 1);
 				if (!classx_str) {
-					dbg("Class error. Setting to the requested class: [%d]", req_info->class);
+					dbg("Class error. Setting to the requested class: [%d]",
+						req_info->class);
 					barring_resp.records[valid_records].class = req_info->class;
 				} else {
 					if (__imc_ss_convert_modem_class_to_class(atoi(classx_str),
-						&(barring_resp.records[valid_records].class)) == FALSE) {
+						&(barring_resp.records[valid_records].class))
+						== FALSE) {
 						tcore_at_tok_free(tokens);
 						continue;
 					}
@@ -615,13 +609,13 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 }
 
 static void on_response_imc_ss_change_barring_password(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE;  // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -641,13 +635,14 @@ static void on_response_imc_ss_change_barring_password(TcorePending *p,
 }
 
 static void on_response_imc_ss_set_forwarding(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 
-	TelSsResult result = TEL_SS_RESULT_FAILURE;  // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -667,7 +662,7 @@ static void on_response_imc_ss_set_forwarding(TcorePending *p,
 }
 
 static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
@@ -676,8 +671,8 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 	TelSsForwardGetInfo *req_info;
 	gint valid_records = 0;
 	GSList *resp_data = NULL;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE; // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -690,8 +685,7 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 			resp_data = (GSList *) at_resp->lines;
 			forwarding_resp.record_num= g_slist_length(resp_data);
 			dbg("Total records: [%d]", forwarding_resp.record_num);
-		}
-		else {
+		} else {
 			err("RESPONSE - [NOK]");
 		}
 	} else {
@@ -707,6 +701,7 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 
 			line = (const char *) resp_data->data;
 			tokens = tcore_at_tok_new(line);
+
 			if (g_slist_length(tokens) > 0) {
 				gchar *classx_str;
 				gchar *status = NULL;
@@ -728,11 +723,14 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 
 				classx_str = g_slist_nth_data(tokens, 1);
 				if (!classx_str) {
-					dbg("Class error. Setting to the requested class: [%d]", req_info->class);
-					forwarding_resp.records[valid_records].class = req_info->class;
+					dbg("Class error. Setting to the requested class: [%d]",
+						req_info->class);
+					forwarding_resp.records[valid_records].class =
+						req_info->class;
 				} else {
 					if (__imc_ss_convert_modem_class_to_class(atoi(classx_str),
-						&(forwarding_resp.records[valid_records].class)) == FALSE) {
+						&(forwarding_resp.records[valid_records].class))
+						== FALSE) {
 						tcore_at_tok_free(tokens);
 						continue;
 					}
@@ -741,15 +739,18 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 				number = g_slist_nth_data(tokens, 2);
 				if (number) {
 					number =  tcore_at_tok_extract(number);
-					memcpy((forwarding_resp.records[valid_records].number), number, strlen(number));
+					memcpy((forwarding_resp.records[valid_records].number),
+						number, strlen(number));
 					g_free(number);
 				}
 
 				time_str = g_slist_nth_data(tokens, 6);
 				if (time_str)
-					forwarding_resp.records[valid_records].wait_time = atoi(time_str);
+					forwarding_resp.records[valid_records].wait_time =
+					atoi(time_str);
 
-				forwarding_resp.records[valid_records].condition = req_info->condition;
+				forwarding_resp.records[valid_records].condition =
+					req_info->condition;
 
 				result = TEL_SS_RESULT_SUCCESS;
 				valid_records++;
@@ -776,13 +777,13 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 }
 
 static void on_response_imc_ss_set_waiting(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE;  // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -802,7 +803,7 @@ static void on_response_imc_ss_set_waiting(TcorePending *p,
 }
 
 static void on_response_imc_ss_get_waiting_status(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
@@ -811,8 +812,8 @@ static void on_response_imc_ss_get_waiting_status(TcorePending *p,
 	TelSsClass *class;
 	gint valid_records = 0;
 	GSList *resp_data = NULL;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE; // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -834,13 +835,16 @@ static void on_response_imc_ss_get_waiting_status(TcorePending *p,
 	}
 
 	if (waiting_resp.record_num > 0) {
-		waiting_resp.records = tcore_malloc0((waiting_resp.record_num) * sizeof(TelSsWaitingInfo));
+		waiting_resp.records = tcore_malloc0((waiting_resp.record_num) *
+			sizeof(TelSsWaitingInfo));
+
 		for (valid_records = 0; resp_data != NULL; resp_data = resp_data->next) {
 			const gchar *line;
 			GSList *tokens = NULL;
 
 			line = (const char *) resp_data->data;
 			tokens = tcore_at_tok_new(line);
+
 			if (g_slist_length(tokens) > 0) {
 				gchar *classx_str;
 				gchar *status = NULL;
@@ -860,10 +864,13 @@ static void on_response_imc_ss_get_waiting_status(TcorePending *p,
 
 				classx_str = g_slist_nth_data(tokens, 1);
 				if (!classx_str) {
-					dbg("Class error. Setting to the requested class: [%d]", *class);
+					dbg("Class error. Setting to the requested class: [%d]",
+						*class);
 					waiting_resp.records[valid_records].class = *class;
 				} else {
-					if (__imc_ss_convert_modem_class_to_class(atoi(classx_str), &(waiting_resp.records[valid_records].class)) == FALSE) {
+					if (__imc_ss_convert_modem_class_to_class(atoi(classx_str),
+						&(waiting_resp.records[valid_records].class))
+						== FALSE) {
 						tcore_at_tok_free(tokens);
 						continue;
 					}
@@ -899,8 +906,8 @@ static void on_response_imc_ss_set_cli(TcorePending *p,
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE;  // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -920,7 +927,7 @@ static void on_response_imc_ss_set_cli(TcorePending *p,
 }
 
 static void on_response_imc_ss_get_cli_status(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
@@ -928,20 +935,14 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 	TelSsCliResp cli_resp = {0,};
 	TelSsCliType *cli_type;
 	GSList *tokens = NULL;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE; // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
 	tcore_check_return_assert(resp_cb_data != NULL);
 
 	cli_type = (TelSsCliType *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
-
-	if (*cli_type == TEL_SS_CLI_CDIP) {
-		err("Unsupported CLI type: [%d]", *cli_type);
-		result = TEL_SS_RESULT_INVALID_PARAMETER;
-		goto END;
-	}
 
 	if (at_resp && at_resp->success) {
 		const gchar *line;
@@ -960,13 +961,13 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 			goto END;
 		}
 
-		dbg("RESPONSE OK");
 		status = g_slist_nth_data(tokens, 0);
 		if (!status) {
 			err("dev_status is missing");
 			goto END;
 		}
-		if (!__imc_ss_convert_modem_cli_dev_status_cli_status(*cli_type, atoi(status), &dev_status))
+		if (!__imc_ss_convert_modem_cli_dev_status_cli_status(*cli_type,
+			atoi(status), &dev_status))
 			goto END;
 
 		status = g_slist_nth_data(tokens, 1);
@@ -974,7 +975,8 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 			err("net_status is missing");
 			goto END;
 		}
-		if (!__imc_ss_convert_modem_cli_net_status_cli_status(*cli_type, atoi(status), &net_status))
+		if (!__imc_ss_convert_modem_cli_net_status_cli_status(*cli_type,
+			atoi(status), &net_status))
 			goto END;
 
 		switch(*cli_type){
@@ -1003,7 +1005,7 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 			result = TEL_SS_RESULT_INVALID_PARAMETER;
 			goto END;
 		}
-
+		dbg("RESPONSE OK");
 		cli_resp.type = *cli_type;
 		result = TEL_SS_RESULT_SUCCESS;
 	} else{
@@ -1021,15 +1023,15 @@ END:
 }
 
 static void on_response_imc_ss_send_ussd_request(TcorePending *p,
-		guint data_len, const void *data, void *user_data)
+	guint data_len, const void *data, void *user_data)
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 	TelSsUssdResp ussd_resp = {0,};
 	UssdSession *ussd_s = NULL;
-
-	TelSsResult result = TEL_SS_RESULT_FAILURE;  // TODO: CMEE error mapping is required
+	/* TODO: CMEE error mapping is required */
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -1097,7 +1099,7 @@ static void on_response_imc_ss_send_ussd_request(TcorePending *p,
  *	+CME ERROR: <error>
  */
 static TelReturn imc_ss_set_barring(CoreObject *co, const TelSsBarringInfo *barring_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	guint mode;
@@ -1111,7 +1113,8 @@ static TelReturn imc_ss_set_barring(CoreObject *co, const TelSsBarringInfo *barr
 	else
 		mode = 0;
 
-	if (__imc_ss_convert_barring_type_to_facility(barring_info->type, &facility) == FALSE) {
+	if (__imc_ss_convert_barring_type_to_facility(barring_info->type,
+		&facility) == FALSE) {
 		err("Invalid arguments");
 		return ret;
 	}
@@ -1121,7 +1124,8 @@ static TelReturn imc_ss_set_barring(CoreObject *co, const TelSsBarringInfo *barr
 	dbg("facility: [%s], classx:[%d], mode: [%d]", facility, classx, mode);
 
 	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+CLCK=\"%s\",%d,\"%s\",%d", facility, mode, barring_info->pwd, classx);
+	at_cmd = g_strdup_printf("AT+CLCK=\"%s\",%d,\"%s\",%d", facility, mode,
+			barring_info->pwd, classx);
 
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
@@ -1135,12 +1139,12 @@ static TelReturn imc_ss_set_barring(CoreObject *co, const TelSsBarringInfo *barr
 	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Set Barring");
 
 	g_free(at_cmd);
-
 	return ret;
 }
 
-static TelReturn imc_ss_get_barring_status(CoreObject *co, const TelSsBarringGetInfo *get_barring_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+static TelReturn imc_ss_get_barring_status(CoreObject *co,
+	const TelSsBarringGetInfo *get_barring_info,
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	guint mode;
@@ -1151,7 +1155,8 @@ static TelReturn imc_ss_get_barring_status(CoreObject *co, const TelSsBarringGet
 
 	mode = 2; /* query status - mode is fixed to 2 */
 
-	if (__imc_ss_convert_barring_type_to_facility(get_barring_info->type, &facility) == FALSE) {
+	if (__imc_ss_convert_barring_type_to_facility(get_barring_info->type,
+		&facility) == FALSE) {
 		err("Invalid arguments");
 		return ret;
 	}
@@ -1163,7 +1168,8 @@ static TelReturn imc_ss_get_barring_status(CoreObject *co, const TelSsBarringGet
 	/* AT-Command */
 	at_cmd = g_strdup_printf("AT+CLCK=\"%s\",%d,,%d", facility, mode, classx);
 
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, (void *)get_barring_info, sizeof(TelSsBarringGetInfo));
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, (void *)get_barring_info,
+		sizeof(TelSsBarringGetInfo));
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
@@ -1200,21 +1206,24 @@ static TelReturn imc_ss_get_barring_status(CoreObject *co, const TelSsBarringGet
  * Failure:
  *	+CME ERROR: <error>
  */
-static TelReturn imc_ss_change_barring_password(CoreObject *co, const TelSsBarringPwdInfo *barring_pwd_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+static TelReturn imc_ss_change_barring_password(CoreObject *co,
+	const TelSsBarringPwdInfo *barring_pwd_info,
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	ImcRespCbData *resp_cb_data = NULL;
 	TelReturn ret = TEL_RETURN_INVALID_PARAMETER;
 
-	if (barring_pwd_info->old_pwd== NULL || barring_pwd_info->new_pwd == NULL) {
+	if (barring_pwd_info->old_pwd == NULL || barring_pwd_info->new_pwd == NULL) {
 		err("Invalid data");
 		return ret;
 	}
 
-	dbg("Old password: [%s], New password: [%s]", barring_pwd_info->old_pwd, barring_pwd_info->new_pwd);
+	dbg("Old password: [%s], New password: [%s]", barring_pwd_info->old_pwd,
+		barring_pwd_info->new_pwd);
 
-	at_cmd = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", "AB", barring_pwd_info->old_pwd, barring_pwd_info->new_pwd);
+	at_cmd = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", "AB",
+			barring_pwd_info->old_pwd, barring_pwd_info->new_pwd);
 
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
@@ -1235,7 +1244,8 @@ static TelReturn imc_ss_change_barring_password(CoreObject *co, const TelSsBarri
  * Operation - set_forwarding/get_forwarding_status
  *
  * Request -
- * AT-Command: AT+CCFC=<reason>,<mode>[,<number>[,<type>[,<class>[,<subaddr>[,<satype>[,<time>]]]]]]
+ * AT-Command: AT+CCFC=<reason>,<mode>[,<number>[,<type>
+ * [,<class>[,<subaddr>[,<satype>[,<time>]]]]]]
  * where,
  * <reason>
  * Forwarding Condition. Ref #TelSsForwardCondition
@@ -1283,7 +1293,7 @@ static TelReturn imc_ss_change_barring_password(CoreObject *co, const TelSsBarri
  *	+CME ERROR: <error>
  */
 static TelReturn imc_ss_set_forwarding(CoreObject *co, const TelSsForwardInfo *forwarding_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	gchar *tmp_cmd = NULL;
@@ -1296,12 +1306,14 @@ static TelReturn imc_ss_set_forwarding(CoreObject *co, const TelSsForwardInfo *f
 
 	classx = __imc_ss_convert_class_to_imc_class(forwarding_info->class);
 
-	if (__imc_ss_convert_forwarding_mode_to_modem_mode(forwarding_info->mode, &mode) == FALSE) {
+	if (__imc_ss_convert_forwarding_mode_to_modem_mode(forwarding_info->mode, &mode)
+		== FALSE) {
 		err("Invalid arguments");
 		return ret;
 	}
 
-	if (__imc_ss_convert_forwarding_condition_to_modem_reason(forwarding_info->condition, &reason) == FALSE) {
+	if (__imc_ss_convert_forwarding_condition_to_modem_reason(forwarding_info->condition,
+		&reason) == FALSE) {
 		err("Invalid arguments");
 		return ret;
 	}
@@ -1314,11 +1326,12 @@ static TelReturn imc_ss_set_forwarding(CoreObject *co, const TelSsForwardInfo *f
 	dbg("classx: [%d], reason:[%d], mode: [%d]", classx, reason, mode);
 
 	if (mode == 3)	/* TEL_SS_CF_MODE_REGISTER */
-		tmp_cmd = g_strdup_printf("AT+CCFC=%d,%d,\"%s\",%d,%d", reason, mode, forwarding_info->number, num_type, classx);
+		tmp_cmd = g_strdup_printf("AT+CCFC=%d,%d,\"%s\",%d,%d", reason, mode,
+		forwarding_info->number, num_type, classx);
 	else
 		tmp_cmd = g_strdup_printf("AT+CCFC=%d,%d,,,%d", reason, mode, classx);
 
-	if (reason == 2)	/* TEL_SS_CF_COND_CFNRY */
+	if (reason == 2) /* TEL_SS_CF_COND_CFNRY */
 		at_cmd = g_strdup_printf("%s,,,%d", tmp_cmd, forwarding_info->wait_time);
 	else
 		at_cmd = g_strdup_printf("%s", tmp_cmd);
@@ -1341,7 +1354,7 @@ static TelReturn imc_ss_set_forwarding(CoreObject *co, const TelSsForwardInfo *f
 }
 
 static TelReturn imc_ss_get_forwarding_status(CoreObject *co, const TelSsForwardGetInfo *get_forwarding_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	guint classx;
@@ -1352,7 +1365,8 @@ static TelReturn imc_ss_get_forwarding_status(CoreObject *co, const TelSsForward
 
 	classx = __imc_ss_convert_class_to_imc_class(get_forwarding_info->class);
 
-	if (__imc_ss_convert_forwarding_condition_to_modem_reason(get_forwarding_info->condition, &reason) == FALSE) {
+	if (__imc_ss_convert_forwarding_condition_to_modem_reason(get_forwarding_info->condition,
+		&reason) == FALSE) {
 		err("Invalid arguments");
 		return ret;
 	}
@@ -1361,7 +1375,8 @@ static TelReturn imc_ss_get_forwarding_status(CoreObject *co, const TelSsForward
 
 	at_cmd = g_strdup_printf("AT+CCFC=%d,%d,,,%d", reason, mode, classx);
 
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, (void *)get_forwarding_info, sizeof(TelSsForwardGetInfo));
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, (void *)get_forwarding_info,
+		sizeof(TelSsForwardGetInfo));
 
 	/* Send Request to modem */
 	ret = tcore_at_prepare_and_send_request(co,
@@ -1408,7 +1423,7 @@ static TelReturn imc_ss_get_forwarding_status(CoreObject *co, const TelSsForward
  *	+CME ERROR: <error>
  */
 static TelReturn imc_ss_set_waiting(CoreObject *co, const TelSsWaitingInfo *waiting_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	guint classx;
@@ -1443,7 +1458,7 @@ static TelReturn imc_ss_set_waiting(CoreObject *co, const TelSsWaitingInfo *wait
 }
 
 static TelReturn imc_ss_get_waiting_status(CoreObject *co, TelSsClass ss_class,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	guint classx;
@@ -1513,7 +1528,7 @@ static TelReturn imc_ss_get_waiting_status(CoreObject *co, TelSsClass ss_class,
  *	+CME ERROR: <error>
  */
 static TelReturn imc_ss_set_cli(CoreObject *co, const TelSsCliInfo *cli_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	gchar *cmd_prefix = NULL;
@@ -1542,7 +1557,7 @@ static TelReturn imc_ss_set_cli(CoreObject *co, const TelSsCliInfo *cli_info,
 }
 
 static TelReturn imc_ss_get_cli_status(CoreObject *co, TelSsCliType cli_type,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	gchar *cmd_prefix = NULL;
@@ -1552,24 +1567,19 @@ static TelReturn imc_ss_get_cli_status(CoreObject *co, TelSsCliType cli_type,
 	switch (cli_type) {
 	case TEL_SS_CLI_CLIR:
 		cmd_prefix = "+CLIR";
-		break;
-
+	break;
 	case TEL_SS_CLI_CLIP:
 		cmd_prefix = "+CLIP";
-		break;
-
+	break;
 	case TEL_SS_CLI_COLP:
 		cmd_prefix = "+COLP";
-		break;
-
+	break;
 	case TEL_SS_CLI_COLR:
 		cmd_prefix = "+COLR";
-		break;
-
+	break;
 	case TEL_SS_CLI_CNAP:
 		cmd_prefix = "+CNAP";
-		break;
-
+	break;
 	case TEL_SS_CLI_CDIP:
 	default:
 		dbg("Unsupported CLI type: [%d]", cli_type);
@@ -1617,7 +1627,7 @@ static TelReturn imc_ss_get_cli_status(CoreObject *co, TelSsCliType cli_type,
  *	+CME ERROR: <error>
  */
 static TelReturn imc_ss_send_ussd_request(CoreObject *co, const TelSsUssdInfo *ussd_request,
-		TcoreObjectResponseCallback cb, void *cb_data)
+	TcoreObjectResponseCallback cb, void *cb_data)
 {
 	gchar *at_cmd = NULL;
 	UssdSession *ussd_s = NULL;
@@ -1627,7 +1637,8 @@ static TelReturn imc_ss_send_ussd_request(CoreObject *co, const TelSsUssdInfo *u
 	ussd_s = tcore_ss_ussd_get_session(co);
 	if (!ussd_s) {
 		dbg("USSD session does not  exist");
-		tcore_ss_ussd_create_session(co, ussd_request->type, (void *)ussd_request->str, strlen((char *)ussd_request->str));
+		tcore_ss_ussd_create_session(co, ussd_request->type, (void *)ussd_request->str,
+			strlen((char *)ussd_request->str));
 	} else {
 		if (ussd_request->type == TEL_SS_USSD_TYPE_USER_INIT) {
 			err("Ussd session is already exist");
