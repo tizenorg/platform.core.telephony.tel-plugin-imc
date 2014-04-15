@@ -1081,6 +1081,23 @@ OUT :
 	imc_destroy_resp_cb_data(resp_cb_data);
 }
 
+static void on_response_set_sound_path(TcorePending *p, guint data_len,
+					const void *data, void *user_data)
+{
+	const TcoreAtResponse *at_resp = data;
+	ImcRespCbData *resp_cb_data = user_data;
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
+	CoreObject *co_call = tcore_pending_ref_core_object(p);
+
+	if (at_resp && at_resp->success)
+			result = TEL_CALL_RESULT_SUCCESS;
+
+	if(resp_cb_data->cb)
+		resp_cb_data->cb(co_call, (gint)result, NULL, resp_cb_data->cb_data);
+
+	imc_destroy_resp_cb_data(resp_cb_data);
+}
+
 static void on_response_imc_call_set_mute(TcorePending *p, guint data_len,
 	const void *data, void *user_data)
 {
@@ -1662,6 +1679,8 @@ static TelReturn imc_call_set_sound_path(CoreObject *co, const TelCallSoundPathI
 	TelReturn ret;
 	gchar *at_cmd;
 	gint device_type = -1;
+	TcorePlugin *plugin = tcore_object_ref_plugin(co);
+	const char *cp_name = tcore_server_get_cp_name_by_plugin(plugin);
 
 	dbg("audio device type - 0x%x", sound_path_info->path);
 
@@ -1696,19 +1715,91 @@ static TelReturn imc_call_set_sound_path(CoreObject *co, const TelCallSoundPathI
 			return TEL_RETURN_INVALID_PARAMETER;
 	}
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, &device_type, sizeof(gint));
+	if (g_str_has_prefix(cp_name, "imcmodem")) {
+		/* Response callback data */
+		resp_cb_data = imc_create_resp_cb_data(cb, cb_data, &device_type, sizeof(gint));
 
-	at_cmd = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d", device_type);
+		at_cmd = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d", device_type);
 
-	ret = tcore_at_prepare_and_send_request(co,
+		ret = tcore_at_prepare_and_send_request(co,
 			at_cmd, "+XDRV",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
 			NULL,
 			on_response_imc_call_set_sound_path, resp_cb_data,
 			on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
-	g_free(at_cmd);
+		IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
+		g_free(at_cmd);
+	} else {
+		/* Response callback data */
+		resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
+
+		/* Configure modem I2S1 to 8khz, mono, PCM if routing to bluetooth */
+		if (sound_path_info->path == TEL_SOUND_PATH_BLUETOOTH ||
+				sound_path_info->path == TEL_SOUND_PATH_STEREO_BLUETOOTH) {
+			tcore_at_prepare_and_send_request(co,
+					"AT+XDRV=40,4,3,0,1,0,0,0,0,0,0,0,21",
+					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+					NULL, NULL, NULL, NULL, NULL);
+
+			tcore_at_prepare_and_send_request(co,
+					"AT+XDRV=40,5,2,0,1,0,0,0,0,0,0,0,22",
+					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+					NULL, NULL, NULL, NULL, NULL);
+		} else {
+			tcore_at_prepare_and_send_request(co,
+					"AT+XDRV=40,4,3,0,1,0,8,0,1,0,2,0,21",
+					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+					NULL, NULL, NULL, NULL, NULL);
+
+			tcore_at_prepare_and_send_request(co,
+					"AT+XDRV=40,5,2,0,1,0,8,0,1,0,2,0,22",
+					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+					NULL, NULL, NULL, NULL, NULL);
+		}
+
+		/* Configure modem I2S2 and do the modem routing */
+		tcore_at_prepare_and_send_request(co,
+				"AT+XDRV=40,4,4,0,0,0,8,0,1,0,2,0,21",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co,
+				"AT+XDRV=40,5,3,0,0,0,8,0,1,0,2,0,22",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,0,4",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,3,0",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,4,2",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,5,2",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		/* amc enable */
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,2,4",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,2,3",
+				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
+				NULL, NULL, NULL, NULL, NULL);
+
+		/* amc route: AMC_RADIO_RX => AMC_I2S1_TX */
+		ret = tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,0,2",
+				"+XDRV", TCORE_AT_COMMAND_TYPE_SINGLELINE, NULL,
+				on_response_set_sound_path, resp_cb_data, NULL, NULL);
+
+		IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
+	}
 
 	return ret;
 }
