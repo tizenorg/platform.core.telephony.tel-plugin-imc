@@ -923,6 +923,8 @@ static void on_response_imc_network_search(TcorePending *p,
 {
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
+	CustomData *custom_data;
+
 	ImcRespCbData *resp_cb_data = user_data;
 	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
 	TelNetworkPlmnList plmn_list = {0, };
@@ -934,15 +936,16 @@ static void on_response_imc_network_search(TcorePending *p,
 	tcore_check_return_assert(co != NULL);
 	tcore_check_return_assert(resp_cb_data != NULL);
 
+	custom_data = tcore_object_ref_user_data(co);
+	tcore_check_return_assert(custom_data != NULL);
+
 	if (at_resp && at_resp->success) {
-		CustomData *custom_data;
 		const gchar *line;
 		GSList *net_token = NULL;
 		gchar *resp;
 		gint act;
 
 		/* If Request is Cancelled then return back SUCCESS/SEARCH_CANCELLED */
-		custom_data = tcore_object_ref_user_data(co);
 		if (custom_data->search_state
 			== IMC_NETWORK_SEARCH_STATE_CANCELLED) {
 			dbg("Network Search has been Cancelled!!!");
@@ -956,9 +959,6 @@ static void on_response_imc_network_search(TcorePending *p,
 			 * Presently sending TEL_NETWORK_RESULT_FAILURE
 			 */
 			result = TEL_NETWORK_RESULT_FAILURE;
-
-			/* Update Search state */
-			custom_data->search_state = IMC_NETWORK_SEARCH_STATE_NO_SEARCH;
 
 			goto END;
 		}
@@ -1042,6 +1042,9 @@ static void on_response_imc_network_search(TcorePending *p,
 END:
 	dbg("Network search : [%s]",
 			(result == TEL_NETWORK_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
+
+	/* Update Search state */
+	custom_data->search_state = IMC_NETWORK_SEARCH_STATE_NO_SEARCH;
 
 	/* Invoke callback */
 	if (resp_cb_data->cb)
