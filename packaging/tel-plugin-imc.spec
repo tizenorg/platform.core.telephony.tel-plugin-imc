@@ -15,7 +15,6 @@ Requires(post):	/sbin/ldconfig
 Requires(postun):/sbin/ldconfig
 BuildRequires:	cmake
 BuildRequires:	pkgconfig(glib-2.0)
-BuildRequires:	pkgconfig(dlog)
 BuildRequires:	pkgconfig(tcore)
 BuildRequires:	pkgconfig(db-util)
 BuildRequires:	pkgconfig(libxml-2.0)

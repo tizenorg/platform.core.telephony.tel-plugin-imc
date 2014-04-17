@@ -10,7 +10,7 @@ SET(INCLUDEDIR "\${prefix}/include")
 
 # Set required packages
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED glib-2.0 tcore dlog db-util libxml-2.0 libtzplatform-config vconf)
+pkg_check_modules(pkgs REQUIRED glib-2.0 tcore db-util libxml-2.0 libtzplatform-config vconf)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
@@ -22,7 +22,7 @@ INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include
 
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wdeclaration-after-statement -Wmissing-declarations -Wredundant-decls -Wcast-align")
 
-ADD_DEFINITIONS("-DFEATURE_DLOG_DEBUG")
+ADD_DEFINITIONS("-DFEATURE_TLOG_DEBUG")
 ADD_DEFINITIONS("-DTCORE_LOG_TAG=\"IMC\"")
 
 MESSAGE(${CMAKE_C_FLAGS})
