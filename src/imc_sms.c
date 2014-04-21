@@ -60,11 +60,11 @@
 
 typedef struct {
 	guint total_param_count;
-	guint count;
+	guint record_count;
+	guint record_length;
 	guint index;
 	TelSmsParamsInfo *params;
 } ImcSmsParamsCbData;
-
 /*
  * Notification - SMS-DELIVER
  * +CMT = [<alpha>],<length><CR><LF><pdu> (PDU mode enabled)
@@ -1417,8 +1417,10 @@ static void on_response_imc_sms_get_sms_params(TcorePending *p,
 				err("invalid response received");
 				goto OUT;
 			}
+			hex_data = tcore_at_tok_extract((const gchar *)hex_data);
 
 			tcore_util_hexstring_to_bytes(hex_data, &record_data, (guint*)&decoding_length);
+			tcore_free(hex_data);
 			/*
 			* Decrementing the Record Count and Filling the ParamsInfo List
 			* Final Response will be posted when Record count is ZERO
@@ -1436,8 +1438,32 @@ static void on_response_imc_sms_get_sms_params(TcorePending *p,
 				result = TEL_SMS_RESULT_SUCCESS;
 				goto OUT;
 			} else {
-				dbg("Reading all records incomplete [%d - Pending]",
+				gchar *at_cmd;
+				TelReturn ret;
+
+				dbg("Reading all records incomplete [Pending - %d]",
 					params_req_data->total_param_count);
+
+				params_req_data->index++;
+
+				/* AT-Command */
+				at_cmd = g_strdup_printf("AT+CRSM=178,28482,%d,4,%d",
+					params_req_data->index, params_req_data->record_length);
+
+				/* Send Request to modem */
+				ret = tcore_at_prepare_and_send_request(co,
+						at_cmd, "+CRSM",
+						TCORE_AT_COMMAND_TYPE_SINGLELINE,
+						NULL,
+						on_response_imc_sms_get_sms_params, resp_cb_data,
+						on_send_imc_request, NULL);
+				g_free(at_cmd);
+
+				if (ret != TEL_RETURN_SUCCESS) {
+					err("Failed to process request - [%s]", "Get SMS Parameters");
+					goto OUT;
+				}
+
 				tcore_at_tok_free(tokens);
 				return;
 			}
@@ -1454,7 +1480,7 @@ OUT:
 
 		if (result == TEL_SMS_RESULT_SUCCESS) {
 			param_info_list.params = params_req_data->params;
-			param_info_list.count = params_req_data->count;
+			param_info_list.count = params_req_data->record_count;
 		}
 
 		/* Invoke callback */
@@ -2208,6 +2234,9 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
 	ImcRespCbData *resp_cb_data;
 	ImcSmsParamsCbData params_req_data = {0, };
 	gint loop_count, record_count = 0, smsp_record_len = 0;
+
+	gchar *at_cmd;
+
 	TelReturn ret = TEL_RETURN_INVALID_PARAMETER;
 
 	dbg("Enter");
@@ -2228,36 +2257,37 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
 	params_req_data.params = tcore_malloc0(sizeof(TelSmsParamsInfo) * record_count);
 	/* Counter */
 	params_req_data.total_param_count = record_count;
-	/* Saving actual count to be returned */
-	params_req_data.count = record_count;
+
+	/* Actual count to be returned */
+	params_req_data.record_count = record_count;
+	/* SMSP record length */
+	params_req_data.record_length = smsp_record_len;
+
 	/* Response callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 					(void *)&params_req_data,
 					sizeof(ImcSmsParamsCbData));
 
-	for (loop_count = 1; loop_count <= record_count; loop_count++) {
-		gchar *at_cmd;
+	/* Starting the Index with 1 */
+	params_req_data.index = 1;
 
-		/* Updating the Index */
-		params_req_data.index = loop_count;
-		/* AT-Command */
-		at_cmd = g_strdup_printf("AT+CRSM=178,28482,%d,4,%d",
-					params_req_data.index, smsp_record_len);
+	/* AT-Command */
+	at_cmd = g_strdup_printf("AT+CRSM=178,28482,%d,4,%d",
+		params_req_data.index, params_req_data.record_length);
 
-		/* Send Request to modem */
-		ret = tcore_at_prepare_and_send_request(co,
+	/* Send Request to modem */
+	ret = tcore_at_prepare_and_send_request(co,
 			at_cmd, "+CRSM",
 			TCORE_AT_COMMAND_TYPE_SINGLELINE,
 			NULL,
 			on_response_imc_sms_get_sms_params, resp_cb_data,
 			on_send_imc_request, NULL);
-		IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SMS Parameters");
+	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get SMS Parameters");
 
-		/* Free resources */
-		if (ret != TEL_RETURN_SUCCESS)
-			tcore_free(params_req_data.params);
-		g_free(at_cmd);
-	}
+	/* Free resources */
+	if (ret != TEL_RETURN_SUCCESS)
+		tcore_free(params_req_data.params);
+	g_free(at_cmd);
 
 	return ret;
 }
@@ -2310,6 +2340,7 @@ static TelReturn imc_sms_set_sms_params(CoreObject *co,
 
 	tcore_util_encode_sms_parameters((TelSmsParamsInfo *)params,
 		set_params_data, smsp_record_len);
+	dbg("SCA Address: [%s]", params->sca.number);
 
 	tcore_util_byte_to_hex((const char *)set_params_data,
 		(char *)encoded_data, smsp_record_len);

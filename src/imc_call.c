@@ -862,8 +862,12 @@ static void on_response_imc_call_default(TcorePending *p,
 	if (at_resp && at_resp->success) {
 		result = TEL_CALL_RESULT_SUCCESS;
 	} else {
-		err("ERROR[%s] CME error[%s]",at_resp->final_response,
-			at_resp->lines->data);
+		if(at_resp){
+			err("ERROR[%s]", at_resp->final_response);
+
+			if(at_resp->lines)
+				err("CME error[%s]", at_resp->lines->data);
+		}
 		/*
 		 * TODO - need to map CME error and final
 		 * response error to TelCallResult
