@@ -2333,10 +2333,10 @@ static TelReturn imc_sms_set_sms_params(CoreObject *co,
 	dbg("SMSP Record Length: [%d]", smsp_record_len);
 
 	/* Allocate memory for set_params_data */
-	set_params_data = tcore_malloc0(sizeof(smsp_record_len));
+	set_params_data = tcore_malloc0(smsp_record_len);
 
 	/* Allocate memory for encoded data*/
-	encoded_data = tcore_malloc0((2 * sizeof(smsp_record_len)+1));
+	encoded_data = tcore_malloc0((2*smsp_record_len)+1);
 
 	tcore_util_encode_sms_parameters((TelSmsParamsInfo *)params,
 		set_params_data, smsp_record_len);
@@ -2346,7 +2346,7 @@ static TelReturn imc_sms_set_sms_params(CoreObject *co,
 		(char *)encoded_data, smsp_record_len);
 
 	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, sizeof(gint));
+	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* AT+ Command*/
 	at_cmd = g_strdup_printf("AT+CRSM=220,28482,%d,4,%d,\"%s\"",
