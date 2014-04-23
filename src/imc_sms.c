@@ -994,6 +994,7 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
 			GSList *tokens = NULL;
 			const char *sca_tok_addr;
 			gchar *line = NULL, *sca_addr = NULL, *sca_toa = NULL;
+			gint hexa_toa = 0;
 
 			line = (char *)at_resp->lines->data;
 			tokens = tcore_at_tok_new(line);
@@ -1005,14 +1006,10 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
 			if ((NULL != sca_addr) && (NULL != sca_toa)) {
 				memcpy(sca_resp.number, sca_addr, strlen(sca_addr));
 
-				/* Type-of-Address */
-				if (145 == atoi(sca_toa)) {
-					sca_resp.ton = IMC_SIM_TON_INTERNATIONAL;
-				}
-				else {
-					sca_resp.ton = IMC_SIM_TON_NATIONAL;
-				}
-				sca_resp.npi = 0;/* TODO */
+				hexa_toa = atoi(sca_toa);
+				dbg("SCA-TOA: [0x%x]", hexa_toa);
+				sca_resp.npi = hexa_toa & 0x0F;
+				sca_resp.ton = (hexa_toa & 0x70) >> 4;
 				result = TEL_SMS_RESULT_SUCCESS;
 			}
 			else {
