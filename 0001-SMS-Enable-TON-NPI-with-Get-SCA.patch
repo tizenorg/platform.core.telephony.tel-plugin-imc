@@ -1,0 +1,46 @@
+From 08db5920203de92f6b109bda42f30e4366df3315 Mon Sep 17 00:00:00 2001
+From: Dongchul Lim <dc7.lim@samsung.com>
+Date: Wed, 23 Apr 2014 16:44:00 +0900
+Subject: [PATCH] [SMS]Enable TON/NPI with Get SCA
+
+Change-Id: I70f111a6eb7f22ae4198fd400010d1ffd3be8771
+---
+ src/imc_sms.c |   15 ++++++---------
+ 1 file changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/src/imc_sms.c b/src/imc_sms.c
+index 0d91cf1..6ce3ecd 100644
+--- a/src/imc_sms.c
++++ b/src/imc_sms.c
+@@ -994,6 +994,7 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
+ 			GSList *tokens = NULL;
+ 			const char *sca_tok_addr;
+ 			gchar *line = NULL, *sca_addr = NULL, *sca_toa = NULL;
++			gint hexa_toa = 0;
+ 
+ 			line = (char *)at_resp->lines->data;
+ 			tokens = tcore_at_tok_new(line);
+@@ -1005,15 +1006,11 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
+ 			if ((NULL != sca_addr) && (NULL != sca_toa)) {
+ 				memcpy(sca_resp.number, sca_addr, strlen(sca_addr));
+ 
+-				/* Type-of-Address */
+-				if (145 == atoi(sca_toa)) {
+-					sca_resp.ton = IMC_SIM_TON_INTERNATIONAL;
+-				}
+-				else {
+-					sca_resp.ton = IMC_SIM_TON_NATIONAL;
+-				}
+-				sca_resp.npi = 0;/* TODO */
+-				result = TEL_SMS_RESULT_SUCCESS;
++				hexa_toa = atoi(sca_toa);
++				dbg("SCA-TOA: [0x%x]", hexa_toa);
++ 				sca_resp.npi = hexa_toa & 0x0F;
++ 				sca_resp.ton = (hexa_toa & 0x70) >> 4;
++ 				result = TEL_SMS_RESULT_SUCCESS;
+ 			}
+ 			else {
+ 				err("SCA is NULL");
+-- 
+1.7.9.5
+
