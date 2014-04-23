@@ -142,6 +142,66 @@ static void __imc_network_register_to_network(CoreObject *co)
 		(ret == TEL_RETURN_SUCCESS ? "SUCCESS" : "FAIL"));
 }
 
+static TelNetworkResult
+__imc_network_convert_cme_error_tel_network_result(const TcoreAtResponse *at_resp)
+{
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+			result = TEL_NETWORK_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 4:
+			result = TEL_NETWORK_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 20:
+			result = TEL_NETWORK_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 30:
+		case 31:
+			result = TEL_NETWORK_RESULT_FAILURE;
+		break;
+
+		case 50:
+			result =  TEL_NETWORK_RESULT_INVALID_PARAMETER;
+		break;
+
+		default:
+			result = TEL_NETWORK_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 static void __on_response_imc_network_fetch_nw_name_internal(CoreObject *co,
 	gint result, const void *response, void *user_data)
 {
@@ -926,7 +986,7 @@ static void on_response_imc_network_search(TcorePending *p,
 	CustomData *custom_data;
 
 	ImcRespCbData *resp_cb_data = user_data;
-	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
 	TelNetworkPlmnList plmn_list = {0, };
 	guint num_network_avail = 0;
 	guint count;
@@ -1035,8 +1095,7 @@ static void on_response_imc_network_search(TcorePending *p,
 		result = TEL_NETWORK_RESULT_SUCCESS;
 	} else {
 		err("RESPONSE NOK");
-		if (at_resp->lines)
-			err("CME Error[%s]",(char *)at_resp->lines->data);
+		result = __imc_network_convert_cme_error_tel_network_result(at_resp);
 	}
 
 END:
@@ -1089,7 +1148,7 @@ static void on_response_imc_network_get_selection_mode(TcorePending *p,
 	TelNetworkSelectionMode selection_mode = -1;
 	GSList *tokens = NULL;
 
-	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -1123,6 +1182,7 @@ static void on_response_imc_network_get_selection_mode(TcorePending *p,
 
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_network_convert_cme_error_tel_network_result(at_resp);
 	}
 
 END:
@@ -1144,7 +1204,7 @@ static void on_response_imc_network_default(TcorePending *p,
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
 
 	dbg("Enter");
 	tcore_check_return_assert(co != NULL);
@@ -1155,8 +1215,7 @@ static void on_response_imc_network_default(TcorePending *p,
 		result = TEL_NETWORK_RESULT_SUCCESS;
 	} else {
 		err("RESPONSE NOK");
-		if (at_resp->lines)
-			err("CME Error[%s]",(char *)at_resp->lines->data);
+		result = __imc_network_convert_cme_error_tel_network_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1173,7 +1232,7 @@ static void on_response_imc_network_get_mode(TcorePending *p,
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
 	TelNetworkMode mode = -1;
 	GSList *tokens = NULL;
 
@@ -1201,7 +1260,7 @@ static void on_response_imc_network_get_mode(TcorePending *p,
 		net_mode = atoi(tcore_at_tok_nth(tokens, 0));
 		dbg("mode = %d", net_mode);
 
-		switch(net_mode) {
+		switch (net_mode) {
 		case 0:
 			mode = TEL_NETWORK_MODE_2G;
 			break;
@@ -1218,6 +1277,7 @@ static void on_response_imc_network_get_mode(TcorePending *p,
 		result = TEL_NETWORK_RESULT_SUCCESS;
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_network_convert_cme_error_tel_network_result(at_resp);
 	}
 END:
 	/* Invoke callback */
@@ -1238,7 +1298,7 @@ static void on_response_imc_network_get_preferred_plmn(TcorePending *p,
 	ImcRespCbData *resp_cb_data = user_data;
 	TelNetworkPreferredPlmnList plmn_list = {0,};
 	guint count = 0, total_lines = 0;
-	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE; //TODO - CME Error mapping required.
+	TelNetworkResult result = TEL_NETWORK_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -1315,8 +1375,7 @@ static void on_response_imc_network_get_preferred_plmn(TcorePending *p,
 		plmn_list.count = count;
 	} else {
 		err("RESPONSE NOK");
-		if (at_resp->lines)
-			err("CME Error[%s]",(char *)at_resp->lines->data);
+		result = __imc_network_convert_cme_error_tel_network_result(at_resp);
 	}
 
 END:
@@ -1577,7 +1636,7 @@ static TelReturn imc_network_select_manual(CoreObject *co,
 	gint act;
 	dbg("entry");
 
-	switch(sel_manual->act) {
+	switch (sel_manual->act) {
 	case TEL_NETWORK_ACT_GSM:
 	case TEL_NETWORK_ACT_GPRS:
 	case TEL_NETWORK_ACT_EGPRS:
@@ -1695,7 +1754,7 @@ static TelReturn imc_network_set_preferred_plmn(CoreObject *co,
 	TelReturn ret = TEL_RETURN_INVALID_PARAMETER;
 	dbg("entry");
 
-	switch(pref_plmn->act) {
+	switch (pref_plmn->act) {
 	case TEL_NETWORK_ACT_GSM:
 	case TEL_NETWORK_ACT_GPRS:
 	case TEL_NETWORK_ACT_EGPRS:
@@ -1799,7 +1858,7 @@ static TelReturn imc_network_set_mode(CoreObject *co, TelNetworkMode mode,
 	int act;
 	gchar *at_cmd;
 
-	switch(mode) {
+	switch (mode) {
 	case TEL_NETWORK_MODE_AUTO:
 		act = 1;
 		break;

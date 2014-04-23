@@ -154,6 +154,95 @@ static void __on_response_imc_sim_get_response(TcorePending *p, guint data_len, 
 static void __on_response_imc_sim_get_retry_count(TcorePending *p, guint data_len, const void *data, void *user_data);
 static void __on_response_imc_sim_update_file(TcorePending *p, guint data_len, const void *data, void *user_data);
 
+static TelSimResult
+__imc_sim_convert_cme_error_tel_sim_result(const TcoreAtResponse *at_resp)
+{
+
+	TelSimResult result = TEL_SIM_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+			result = TEL_SIM_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 4:
+			result = TEL_SIM_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 10:
+		case 13:
+		case 14:
+		case 15:
+			result = TEL_SIM_RESULT_CARD_ERROR;
+		break;
+
+		case 5:
+		case 6:
+		case 11:
+		case 17:
+		case 46:
+		case 47:
+			result = TEL_SIM_RESULT_PIN_REQUIRED;
+		break;
+
+		case 7:
+		case 12:
+		case 18:
+		case 45:
+			result = TEL_SIM_RESULT_PUK_REQUIRED;
+		break;
+
+		case 16:
+			result =  TEL_SIM_RESULT_INCORRECT_PASSWORD;
+		break;
+
+		case 20:
+			result = TEL_SIM_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 50:
+			result =  TEL_SIM_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 132:
+		case 133:
+		case 134:
+			result = TEL_SS_RESULT_SERVICE_NOT_AVAILABLE;
+		break;
+
+		default:
+			result = TEL_SIM_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 /* GET SMSP info for SMS module */
 gboolean imc_sim_get_smsp_info(TcorePlugin *plugin, int *rec_count, int *rec_len)
 {
@@ -696,7 +785,7 @@ static void __imc_sim_next_from_read_binary(CoreObject *co, ImcRespCbData *resp_
 			/* 2G */
 			/* The ME requests the Extended Language Preference. The ME only requests the Language Preference (EFLP) if at least one of the following conditions holds:
 			 -	EFELP is not available;
-			 -	EFELP does not contain an entry corresponding to a language specified in ISO 639[30];
+			 -	EFELP does not contain an Entry corresponding to a language specified in ISO 639[30];
 			 -	the ME does not support any of the languages in EFELP.
 			 */
 			/* 3G */
@@ -1140,7 +1229,7 @@ static void __on_response_imc_sim_update_file(TcorePending *p, guint data_len, c
 		}
 	} else {
 		err("RESPONSE NOK");
-		sim_result = TEL_SIM_RESULT_FAILURE;
+		sim_result = __imc_sim_convert_cme_error_tel_sim_result(resp);
 	}
 OUT:
 	/* Send Response */
@@ -1541,7 +1630,7 @@ static void __on_response_imc_sim_read_data(TcorePending *p, guint data_len,
 	} else {
 		err("RESPONSE NOK");
 		dbg("Error - File ID: [0x%x]", file_meta->file_id);
-		sim_result = TEL_SIM_RESULT_FAILURE;
+		sim_result = __imc_sim_convert_cme_error_tel_sim_result(resp);
 	}
 
 	/* Get File data */
@@ -1963,7 +2052,7 @@ static void __on_response_imc_sim_get_response(TcorePending *p,
 	} else {
 		err("RESPONSE NOK");
 		err("Failed to get ef[0x%x] (file_meta->file_id) ", file_meta->file_id);
-		sim_result = TEL_SIM_RESULT_FAILURE;
+		sim_result = __imc_sim_convert_cme_error_tel_sim_result(resp);
 	}
 
 	dbg("Calling __imc_sim_next_from_get_response");
@@ -2334,7 +2423,7 @@ static TelReturn __imc_sim_get_retry_count(CoreObject *co,
 
 static TelSimLockType __imc_sim_lock_type(int lock_type)
 {
-	switch(lock_type) {
+	switch (lock_type) {
 		case 1 :
 			return TEL_SIM_LOCK_SC;
 		case 2 :
@@ -2359,7 +2448,7 @@ static char *__imc_sim_get_fac_from_lock_type(TelSimLockType lock_type,
 		ImcSimCurrSecOp *sec_op, int flag)
 {
 	char *fac = NULL;
-	switch(lock_type) {
+	switch (lock_type) {
 		case TEL_SIM_LOCK_PS :
 			fac = "PS";
 			if (flag == ENABLE_FLAG)
@@ -2431,7 +2520,7 @@ static char *__imc_sim_get_fac_from_lock_type(TelSimLockType lock_type,
 
 static int __imc_sim_get_lock_type(ImcSimCurrSecOp sec_op)
 {
-	switch(sec_op) {
+	switch (sec_op) {
 		case IMC_SIM_CURR_SEC_OP_SIM_DISABLE :
 		case IMC_SIM_CURR_SEC_OP_SIM_ENABLE :
 		case IMC_SIM_CURR_SEC_OP_SIM_STATUS :
@@ -3040,6 +3129,8 @@ static void on_response_imc_sim_get_facility(TcorePending *p, guint data_len,
 		tcore_at_tok_free(tokens);
 	} else {
 		err("Sim Get Facility Response- [NOK]");
+		result = __imc_sim_convert_cme_error_tel_sim_result(at_resp);
+
 	}
 EXIT:
 	/* Invoke callback */
@@ -3094,6 +3185,7 @@ static void on_response_imc_sim_get_lock_info(TcorePending *p, guint data_len,
 		tcore_at_tok_free(tokens);
 	} else {
 		err("Sim Get Lock Info Response- [NOK]");
+		result = __imc_sim_convert_cme_error_tel_sim_result(at_resp);
 	}
 EXIT:
 	/* Invoke callback */
@@ -3140,6 +3232,7 @@ static void on_response_imc_sim_req_apdu (TcorePending *p, guint data_len, const
 		}
 	} else {
 		err("RESPONSE NOK");
+		sim_result = __imc_sim_convert_cme_error_tel_sim_result(resp);
 	}
 
 OUT:
@@ -3188,6 +3281,8 @@ static void on_response_imc_sim_req_atr(TcorePending *p, guint data_len, const v
 		}
 	} else {
 		err("RESPONSE NOK");
+		sim_result = __imc_sim_convert_cme_error_tel_sim_result(resp);
+
 	}
 
 OUT:

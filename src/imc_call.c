@@ -69,6 +69,9 @@ static void on_response_imc_call_default(TcorePending *p,
 
 static TelReturn __call_list_get(CoreObject *co, gboolean flag);
 
+static void __on_response_imc_call_end_cause(TcorePending *p,
+	guint data_len, const void *data, void *user_data);
+
 static TelCallType __call_type(int type)
 {
 	dbg("Entry");
@@ -166,7 +169,7 @@ static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
 		case TEL_CALL_STATE_INCOMING:
 		case TEL_CALL_STATE_WAITING: {
 			TelCallIncomingInfo incoming = {0,};
-			command = TCORE_NOTIFICATION_CALL_STATUS_INCOMING;
+
 			incoming.call_id = call_id;
 			tcore_call_object_get_cli_validity(call_obj, &incoming.cli_validity);
 			tcore_call_object_get_number(call_obj, incoming.number);
@@ -176,22 +179,41 @@ static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
 			tcore_call_object_get_active_line(call_obj, &incoming.active_line);
 
 			/* Send notification */
-			tcore_object_send_notification(co, command,
+			tcore_object_send_notification(co,
+				TCORE_NOTIFICATION_CALL_STATUS_INCOMING,
 				sizeof(TelCallIncomingInfo), &incoming);
 			return;
 		}
 
 		case TEL_CALL_STATE_IDLE: {
-			TelCallStatusIdleNoti idle;
-			command = TCORE_NOTIFICATION_CALL_STATUS_IDLE;
-			idle.call_id = call_id;
+			/* Send AT+CEER command*/
+			ImcRespCbData *resp_cb_data = NULL;
+			TelReturn ret;
 
-			/* TODO - get proper call end cause. */
-			idle.cause = TEL_CALL_END_CAUSE_NONE;
+			/* Response callback data */
+			resp_cb_data = imc_create_resp_cb_data(NULL, NULL, &call_id, sizeof(call_id));
 
-			/* Send notification */
-			tcore_object_send_notification(co, command,
-				sizeof(TelCallStatusIdleNoti), &idle);
+			/* Send Request to modem */
+			ret = tcore_at_prepare_and_send_request(co,
+				"AT+CEER", "+CEER:",
+				TCORE_AT_COMMAND_TYPE_SINGLELINE,
+				NULL,
+				__on_response_imc_call_end_cause, resp_cb_data,
+				on_send_imc_request, NULL);
+			if (ret != TEL_RETURN_SUCCESS) {
+				warn("Failed to send request");
+				TelCallStatusIdleNoti idle;
+
+				idle.call_id = call_id;
+				idle.cause = TEL_CALL_END_CAUSE_NONE;
+
+				/* Send notification */
+				tcore_object_send_notification(co,
+					TCORE_NOTIFICATION_CALL_STATUS_IDLE,
+					sizeof(TelCallStatusIdleNoti), &idle);
+
+				imc_destroy_resp_cb_data(resp_cb_data);
+			}
 
 			/* Free Call object */
 			tcore_call_object_free(co, call_obj);
@@ -226,14 +248,13 @@ static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
 
 		case TEL_CALL_STATE_IDLE: {
 			TelCallStatusIdleNoti idle;
-			command = TCORE_NOTIFICATION_VIDEO_CALL_STATUS_IDLE;
-			idle.call_id = call_id;
 
-			/* TODO - get proper call end cause. */
+			idle.call_id = call_id;
 			idle.cause = TEL_CALL_END_CAUSE_NONE;
 
 			/* Send notification */
-			tcore_object_send_notification(co, command,
+			tcore_object_send_notification(co,
+				TCORE_NOTIFICATION_VIDEO_CALL_STATUS_IDLE,
 				sizeof(TelCallStatusIdleNoti), &idle);
 
 			/* Free Call object */
@@ -241,8 +262,7 @@ static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
 			return;
 		}
 		}
-	}
-	else {
+	} else {
 		err("Unknown Call type: [%d]", call_type);
 	}
 
@@ -471,7 +491,7 @@ static void __on_response_imc_call_list_get(TcorePending *p, guint data_len, con
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 	GSList *lines = NULL;
-	TelCallResult result = TEL_CALL_RESULT_FAILURE; //TODO - CME error mapping required
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	gboolean *flag = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
 	int count;
 	dbg("entry");
@@ -568,26 +588,163 @@ static TelReturn __call_list_get(CoreObject *co, gboolean flag)
 	return ret;
 }
 
+static TelCallResult __convert_imc_extended_err_tel_call_result(gint error)
+{
+	/*
+	 * CEER error codes
+	 * 1   - unassigned (unallocated) number.
+	 * 28  - invalid number format (incomplete number).
+	 * 96  - invalid mandatory information.
+	 * 258 - Invalid parameters.
+	 * 371 - Invalid mandatory info.
+	 * 257 - Out of memory.
+	 * 279 - FDN Failed.
+	 * 42  - switching equipment congestion
+	 * 287 - MM network failure unspecified.
+	 * 380 - Congestion.
+	 */
+	dbg("CEER Error: [%d]", error);
+
+	switch (error) {
+	case 1:
+	case 28:
+	case 96:
+	case 258:
+	case 371:
+		return TEL_CALL_RESULT_INVALID_PARAMETER;
+	case 257:
+		return TEL_CALL_RESULT_MEMORY_FAILURE;
+	case 279:
+		return TEL_CALL_RESULT_FDN_RESTRICTED;
+	case 42:
+	case 287:
+	case 380:
+		return TEL_CALL_RESULT_NETWORK_BUSY;
+	default:
+		return TEL_CALL_RESULT_FAILURE;
+	}
+}
+
+static TelCallEndCause __convert_imc_extended_err_call_end_cause(gint error)
+{
+	/*
+	 * CEER error codes
+	 * 1  - unassigned (unallocated) number.
+	 * 3  -  No route to destination.
+	 * 16 - operator determined barring.
+	 * 17 - user busy.
+	 * 18 - no user responding.
+	 * 19 -  user alerting, no answer.
+	 * 21 - call rejected.
+	 * 22 - number changed
+	 * 27 - destination out of order.
+	 * 28 - invalid number format (incomplete number).
+	 * 29 - facility rejected
+	 * 34 - no circuit / channel available.
+	 * 38 - network out of order
+	 * 41 - temporary failure
+	 * 44 - requested circuit / channel not available.
+	 * 50 - requested facility not subscribed
+	 * 68 - ACM equal to or greater than ACMmax
+	 */
+	dbg("Call end-cause: [%d]", error);
+	switch (error) {
+	case 1:
+		return TEL_CALL_END_CAUSE_UNASSIGNED_NUMBER;
+	case 3:
+		return TEL_CALL_END_CAUSE_NO_ROUTE_TO_DEST;
+	case 8:
+		return TEL_CALL_END_CAUSE_OPERATOR_DETERMINED_BARRING;
+	case 16:
+		return TEL_CALL_END_CAUSE_NORMAL_CALL_CLEARING;
+	case 17:
+		return TEL_CALL_END_CAUSE_USER_BUSY;
+	case 18:
+		return TEL_CALL_END_CAUSE_NO_USER_RESPONDING;
+	case 19:
+		return TEL_CALL_END_CAUSE_USER_ALERTING_NO_ANSWER;
+	case 21:
+		return TEL_CALL_END_CAUSE_CALL_REJECTED;
+	case 22:
+		return TEL_CALL_END_CAUSE_NUMBER_CHANGED;
+	case 27:
+		return TEL_CALL_END_CAUSE_DESTINATION_OUT_OF_ORDER;
+	case 28:
+		return TEL_CALL_END_CAUSE_INVALID_NUMBER_FORMAT;
+	case 29:
+		return TEL_CALL_END_CAUSE_FACILITY_REJECTED;
+	case 34:
+		return TEL_CALL_END_CAUSE_NO_CIRCUIT_CHANNEL_AVAILABLE;
+	case 38:
+		return TEL_CALL_END_CAUSE_NETWORK_OUT_OF_ORDER;
+	case 41:
+		return TEL_CALL_END_CAUSE_TEMPORARY_FAILURE;
+	case 42:
+		return TEL_CALL_END_CAUSE_SWITCHING_EQUIPMENT_CONGESTION;
+	case 44:
+		return TEL_CALL_END_CAUSE_REQUESTED_CIRCUIT_CHANNEL_NOT_AVAILABLE;
+	case 50:
+		return TEL_CALL_END_CAUSE_REQUESTED_FACILITY_NOT_SUBSCRIBED;
+	case 68:
+		return TEL_CALL_END_CAUSE_ACM_GEQ_ACMMAX;
+	case 63:
+	case 79:
+		return TEL_CALL_END_CAUSE_SERVICE_OPTION_OUT_OF_ORDER;
+	default:
+		return TEL_CALL_END_CAUSE_FAILED;
+	}
+}
+
+static TelCallResult __convert_imc_xdrv_result_tel_call_result(gint xdrv_err)
+{
+	 /*
+	  * 0  - Command was executed without any error.
+	  * 1  - One of the parameters is out of range.
+	  * 2  - The function doesn’t exist for this driver.
+	  * 3  - The group is not supported.
+	  * 4  - The internal state of the driver is not allowing to process the command.
+	  * 5  - The driver interface function for the command is not available.
+	  * 6  - The corresponding driver for the command retuns an error.
+	  * 7  - Timeout occured when expecting response from the corresponding driver.
+	  * 8  - The driver is not supported for this product.
+	  * 12 - No of parameteres passed for the command is mismatch with the rquirements.
+	  * 13 - The given command to xdrv is invalid.
+	  * 14 - Any internal error in xdrv like out of memory.
+	  */
+
+	dbg("XDRV result: [%d]", xdrv_err);
+	switch (xdrv_err) {
+	case 1:
+	case 12:
+	case 13:
+		return  TEL_CALL_RESULT_INVALID_PARAMETER;
+	case 14:
+		return TEL_CALL_RESULT_MEMORY_FAILURE;
+	default:
+		return TEL_CALL_RESULT_OPERATION_NOT_SUPPORTED;
+	}
+}
+
 /* Notification */
 
 /*
-* Operation -  call status notification from network.
-* notification message format:
-* +XCALLSTAT: <call_id><stat>
-* where
-* <call_id>
-* indicates the call identification (GSM02.30 4.5.5.1)
-* <stat>
-* 0 active
-* 1 hold
-* 2 dialling (MO call)
-* 3 alerting (MO call; ringing for the remote party)
-* 4 ringing (MT call)
-* 5 waiting (MT call)
-* 6 disconnected
-* 7 connected (indicates the completion of a call setup first time for MT and MO calls
-*   this is reported in addition to state active)
-*/
+ * Operation -  call status notification from network.
+ * notification message format:
+ * +XCALLSTAT: <call_id><stat>
+ * where
+ * <call_id>
+ * indicates the call identification (GSM02.30 4.5.5.1)
+ * <stat>
+ * 0 active
+ * 1 hold
+ * 2 dialling (MO call)
+ * 3 alerting (MO call; ringing for the remote party)
+ * 4 ringing (MT call)
+ * 5 waiting (MT call)
+ * 6 disconnected
+ * 7 connected (indicates the completion of a call setup first time
+ *	for MT and MO calls this is reported in addition to state active)
+ */
 static gboolean on_notification_imc_call_status(CoreObject *co, const void *data,
 	void *user_data)
 {
@@ -846,6 +1003,132 @@ static gboolean on_notification_imc_call_clip_info(CoreObject *co, const void *d
 }
 
 /* Response */
+static void __on_response_imc_call_handle_error_report(TcorePending *p,
+	guint data_len, const void *data, void *user_data)
+{
+	const TcoreAtResponse *at_resp = data;
+	CoreObject *co = tcore_pending_ref_core_object(p);
+	ImcRespCbData *resp_cb_data = user_data;
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
+	GSList *tokens = NULL;
+	dbg("entry");
+
+	tcore_check_return_assert(co != NULL);
+	tcore_check_return_assert(resp_cb_data != NULL);
+
+	if (at_resp && at_resp->success) {
+		GSList *resp_data = NULL;
+		gchar *resp_str;
+		gint error;
+
+		resp_data = at_resp->lines;
+		if (!resp_data) {
+			err("invalid response data received");
+			goto OUT;
+		}
+
+		tokens = tcore_at_tok_new(resp_data->data);
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("In extended error report - <category> missing");
+			goto OUT;
+		}
+		dbg("category[%s]", resp_str);
+
+		resp_str = g_slist_nth_data(tokens, 1);
+		if (!resp_str) {
+			err("In extended error report - <cause> missing");
+			goto OUT;
+		}
+		error = atoi(resp_str);
+		dbg("Cause: [%d] description: [%s]", error, g_slist_nth_data(tokens, 2));
+
+		result = __convert_imc_extended_err_tel_call_result(error);
+		dbg("result: [%d]", result);
+	} else {
+		err("Response - [NOK]");
+	}
+OUT:
+
+	dbg("%s: [%s]", IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data),
+		 (result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
+
+	/* Invoke callback */
+	if (resp_cb_data->cb)
+		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
+
+	/* Free callback data */
+	imc_destroy_resp_cb_data(resp_cb_data);
+
+	/* Free tokens*/
+	tcore_at_tok_free(tokens);
+}
+
+static void __on_response_imc_call_end_cause(TcorePending *p,
+	guint data_len, const void *data, void *user_data)
+{
+	const TcoreAtResponse *at_resp = data;
+	CoreObject *co = tcore_pending_ref_core_object(p);
+	ImcRespCbData *resp_cb_data = user_data;
+	TelCallStatusIdleNoti idle;
+	TcoreNotification command;
+	TelCallEndCause cause = TEL_CALL_END_CAUSE_NONE;
+	guint *call_id;
+	GSList *tokens = NULL;
+
+	dbg("entry");
+
+	tcore_check_return_assert(co != NULL);
+	tcore_check_return_assert(resp_cb_data != NULL);
+	call_id = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+
+	if (at_resp && at_resp->success) {
+		GSList *resp_data = NULL;
+		gchar *resp_str;
+		gint error;
+
+		resp_data = at_resp->lines;
+		if (!resp_data) {
+			err("invalid response data received");
+			goto OUT;
+		}
+		tokens = tcore_at_tok_new(resp_data->data);
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("In extended error report - <category> missing");
+			goto OUT;
+		}
+		dbg("category[%s]", resp_str);
+		resp_str = g_slist_nth_data(tokens, 1);
+		if (!resp_str) {
+			err("In extended error report - <cause> missing");
+			goto OUT;
+		}
+		error = atoi(resp_str);
+		dbg("cause: [%d] description: [%s]", error, g_slist_nth_data(tokens, 2));
+
+		cause = __convert_imc_extended_err_call_end_cause(error);
+		dbg("cause: [%d]", cause);
+
+	} else {
+		err("RESPONSE - [NOK]");
+	}
+OUT:
+	command = TCORE_NOTIFICATION_CALL_STATUS_IDLE;
+	idle.call_id = *call_id;
+
+	idle.cause = cause;
+
+	/* Send notification */
+	tcore_object_send_notification(co, command,
+		sizeof(TelCallStatusIdleNoti), &idle);
+
+	/* Free callback data */
+	imc_destroy_resp_cb_data(resp_cb_data);
+
+	/* Free tokens*/
+	tcore_at_tok_free(tokens);
+}
 static void on_response_imc_call_default(TcorePending *p,
 	guint data_len, const void *data, void *user_data)
 {
@@ -862,16 +1145,22 @@ static void on_response_imc_call_default(TcorePending *p,
 	if (at_resp && at_resp->success) {
 		result = TEL_CALL_RESULT_SUCCESS;
 	} else {
+		TelReturn ret;
 		if(at_resp){
 			err("ERROR[%s]", at_resp->final_response);
-
-			if(at_resp->lines)
-				err("CME error[%s]", at_resp->lines->data);
 		}
-		/*
-		 * TODO - need to map CME error and final
-		 * response error to TelCallResult
-		 */
+
+		/* Send Request to modem to get extended error report*/
+		ret = tcore_at_prepare_and_send_request(co,
+			"AT+CEER", "+CEER:",
+			TCORE_AT_COMMAND_TYPE_SINGLELINE,
+			NULL,
+			__on_response_imc_call_handle_error_report, resp_cb_data,
+			on_send_imc_request, NULL);
+
+
+		if (ret == TEL_RETURN_SUCCESS)
+			return;
 	}
 
 	dbg("%s: [%s]", IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data),
@@ -896,7 +1185,6 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 	char *resp_str = NULL;
 	gboolean error;
 
-	/* TODO: XDRV error mapping required */
 	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	dbg("Enter");
 
@@ -930,6 +1218,7 @@ static void on_response_imc_call_set_volume_info(TcorePending *p,
 			error = atoi(resp_str);
 			if (error) {
 				err("RESPONSE NOK");
+				result = __convert_imc_xdrv_result_tel_call_result(error);
 				goto OUT;
 			}
 
@@ -1022,7 +1311,7 @@ static void on_response_imc_call_set_sound_path(TcorePending *p,
 	gboolean error;
 	gint xdrv_func_id = -1;
 
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;  // TODO: XDRV error mapping is required
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -1049,6 +1338,7 @@ static void on_response_imc_call_set_sound_path(TcorePending *p,
 		error = atoi(resp_str);
 		if (error) {
 			err("RESPONSE NOK");
+			result = __convert_imc_xdrv_result_tel_call_result(error);
 			goto OUT;
 		}
 
@@ -1117,7 +1407,7 @@ static void on_response_imc_call_set_mute(TcorePending *p, guint data_len,
 	char *resp_str = NULL;
 	gboolean error;
 
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;  // TODO: XDRV error mapping is required
+	TelCallResult result = TEL_CALL_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
@@ -1144,8 +1434,9 @@ static void on_response_imc_call_set_mute(TcorePending *p, guint data_len,
 			goto OUT;
 		}
 		error = atoi(resp_str);
-		if (!error) {
+		if (error) {
 			err(" RESPONSE NOK [%d]", error);
+			result = __convert_imc_xdrv_result_tel_call_result(error);
 			goto OUT;
 		}
 		result = TEL_CALL_RESULT_SUCCESS;

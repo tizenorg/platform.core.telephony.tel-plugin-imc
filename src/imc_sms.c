@@ -65,6 +65,190 @@ typedef struct {
 	guint index;
 	TelSmsParamsInfo *params;
 } ImcSmsParamsCbData;
+
+static TelSmsResult
+__imc_sms_convert_cms_error_tel_sms_result(const TcoreAtResponse *at_resp)
+{
+	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cms_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("invalid cms error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cms_err = atoi(resp_str);
+		dbg("CMS error[%d]", cms_err);
+
+		switch (cms_err) {
+		case 96:
+			result = TEL_SMS_RESULT_INVALID_MANDATORY_INFO;
+		break;
+
+		case 208:
+		case 209:
+		case 211:
+		case 320:
+		case 321:
+		case 322:
+			result =  TEL_SMS_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 42:
+			result = TEL_SMS_RESULT_NETWORK_CONGESTION;
+		break;
+
+		case 17:
+		case 38:
+		case 287:
+		case 290:
+		case 331:
+		case 332:
+		case 538:
+			result = TEL_SMS_RESULT_NETWORK_FAILURE;
+		break;
+
+		case 8:
+		case 10:
+		case 302:
+		case 303:
+			result = TEL_SMS_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 255:
+		case 500:
+		case 548:
+		case 547:
+			result = TEL_SMS_RESULT_UNKNOWN_FAILURE;
+		break;
+
+		case 310:
+		case 311:
+		case 312:
+		case 313:
+		case 314:
+		case 315:
+			result =  TEL_SMS_RESULT_SIM_FAILURE;
+		break;
+
+		case 84:
+		case 95:
+		case 161:
+		case 176:
+		case 195:
+		case 304:
+		case 305:
+		case 516:
+		case 521:
+		case 524:
+		case 525:
+		case 526:
+		case 527:
+		case 528:
+		case 529:
+		case 530:
+		case 531:
+		case 532:
+		case 533:
+		case 534:
+		case 535:
+			result = TEL_SMS_RESULT_INVALID_PARAMETER;
+		break;
+
+		default:
+			result = TEL_SMS_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
+static TelSmsResult
+__imc_sms_convert_cme_error_tel_sms_result(const TcoreAtResponse *at_resp)
+{
+	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+		case 4:
+			result = TEL_SMS_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 10:
+		case 11:
+		case 12:
+		case 13:
+		case 14:
+		case 15:
+		case 17:
+		case 18:
+			result = TEL_SMS_RESULT_SIM_FAILURE;
+		break;
+
+		case 20:
+			result = TEL_SMS_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 30:
+		case 31:
+			result = TEL_SMS_RESULT_NETWORK_FAILURE;
+		break;
+
+		case 50:
+			result =  TEL_SMS_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 100:
+			result =  TEL_SMS_RESULT_UNKNOWN_FAILURE;
+		break;
+
+		default:
+			result = TEL_SMS_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 /*
  * Notification - SMS-DELIVER
  * +CMT = [<alpha>],<length><CR><LF><pdu> (PDU mode enabled)
@@ -246,7 +430,7 @@ static gboolean on_notification_imc_sms_cb_incom_msg(CoreObject *co,
 				TCORE_NOTIFICATION_SMS_CB_INCOM_MSG, sizeof(TelSmsCbMsgInfo), &cb_noti);
 		g_free(byte_pdu);
 	} else {
-		err("Response NOK");
+		err("RESPONSE NOK");
 	}
 
 	tcore_at_tok_free(tokens);
@@ -290,7 +474,7 @@ static gboolean on_notification_imc_sms_memory_status(CoreObject *co,
 		}
 		tcore_at_tok_free(tokens);
 	} else {
-		err("Response NOK");
+		err("RESPONSE NOK");
 	}
 
 	return TRUE;
@@ -384,7 +568,7 @@ static void on_response_imc_class2_sms_incom_msg(TcorePending *p,
 			g_free(byte_pdu);
 		}
 		else {
-			err("Invalid Response Received");
+			err("Invalid RESPONSE Received");
 		}
 	}
 	else {
@@ -432,7 +616,7 @@ static gboolean on_notification_imc_sms_class2_incoming_msg(CoreObject *co, cons
 	 *  where
 	 * <index> index of the message to be read.
 	 *
-	 * Response -
+	 * RESPONSE -
 	 * Success: (PDU: Multi-line output)
 	 * +CMGR: <stat>,[<alpha>],<length><CR><LF><pdu>
 	 *
@@ -464,9 +648,9 @@ static void on_response_imc_sms_send_more_msg(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success)
-		dbg("Response OK for AT+CMMS: More msgs to send!!");
+		dbg("RESPONSE OK for AT+CMMS: More msgs to send!!");
 	else
-		err("Response NOK for AT+CMMS: More msgs to send");
+		err("RESPONSE NOK for AT+CMMS: More msgs to send");
 
 	/* Need not send any response */
 }
@@ -478,14 +662,14 @@ static void on_response_imc_sms_send_sms(TcorePending *p,
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 
-	TelSmsResult result = TEL_SMS_RESULT_FAILURE;/*TODO: CMS error mapping required */
+	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
 	dbg("Enter");
 
 	tcore_check_return_assert(co != NULL);
 	tcore_check_return_assert(resp_cb_data != NULL);
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		if (at_resp->lines) {
 			const gchar *line;
 			gchar* line_token;
@@ -496,7 +680,7 @@ static void on_response_imc_sms_send_sms(TcorePending *p,
 			tokens = tcore_at_tok_new(line);
 			line_token = g_slist_nth_data(tokens, 0);
 			if (line_token != NULL) {
-				/*Response from MODEM for send SMS: +CMGS: <mr>[,<ackpdu>]*/
+				/*RESPONSE from MODEM for send SMS: +CMGS: <mr>[,<ackpdu>]*/
 				/*Message Reference is not used by MSG_SERVER and application.So Filling only result*/
 				msg_ref = atoi(line_token);
 
@@ -511,7 +695,8 @@ static void on_response_imc_sms_send_sms(TcorePending *p,
 		}
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -538,7 +723,7 @@ static void on_response_imc_sms_write_sms_in_sim(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		if (at_resp->lines) {
 		line = (char *)at_resp->lines->data;
 			tokens = tcore_at_tok_new(line);
@@ -558,7 +743,8 @@ static void on_response_imc_sms_write_sms_in_sim(TcorePending *p,
 		}
 	}
 	else {
-		dbg("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -578,7 +764,7 @@ static void on_response_imc_sms_read_sms_in_sim(TcorePending *p,
 	TelSmsSimDataInfo read_resp;
 	GSList *tokens = NULL;
 
-	TelSmsResult result = TEL_SMS_RESULT_FAILURE;/* CMS error mapping required */
+	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
 	dbg("Enter");
 
 	memset(&read_resp, 0x0, sizeof(TelSmsSimDataInfo));
@@ -702,11 +888,12 @@ static void on_response_imc_sms_read_sms_in_sim(TcorePending *p,
 				g_free(byte_pdu);
 			}
 		} else {
-			err("Invalid Response Received");
+			err("Invalid RESPONSE Received");
 		}
 	}
 	else {
 		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 OUT:
 	/* Invoke callback */
@@ -733,11 +920,12 @@ static void on_response_imc_sms_delete_sms_in_sim(TcorePending *p,
 	tcore_check_return_assert(co != NULL);
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		result = TEL_SMS_RESULT_SUCCESS;
 	}
 	else {
-		dbg("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -751,8 +939,8 @@ static void on_response_imc_sms_delete_sms_in_sim(TcorePending *p,
 static void on_response_imc_sms_get_msg_indices(TcorePending *p,
 	guint data_len, const void *data, void *user_data)
 {
-	TelSmsStoredMsgCountInfo *count_info;/*Response from get_count Request*/
-	TelSmsResult result = TEL_SMS_RESULT_FAILURE;/*TODO: CMS error mapping required */
+	TelSmsStoredMsgCountInfo *count_info;/*RESPONSE from get_count Request*/
+	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
 
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
@@ -803,7 +991,7 @@ static void on_response_imc_sms_get_msg_indices(TcorePending *p,
 			result = TEL_SMS_RESULT_SUCCESS;
 		}
 		else {
-			err("Invalid Response received. No Lines present in Response");
+			err("Invalid RESPONSE received. No Lines present in RESPONSE");
 
 			/* Check if used count is zero*/
 			if (count_info->used_count == 0)
@@ -812,6 +1000,7 @@ static void on_response_imc_sms_get_msg_indices(TcorePending *p,
 	}
 	else {
 		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 ERROR:
@@ -885,7 +1074,7 @@ static void on_response_imc_sms_get_sms_count(TcorePending *p,
 				*  where
 				* <mem1> memory storage to read.
 				*
-				* Response -
+				* RESPONSE -
 				* Success: (Multi-line output)
 				* +CMGL=<stat>]
 				*
@@ -897,7 +1086,7 @@ static void on_response_imc_sms_get_sms_count(TcorePending *p,
 				/* Sending the Second AT Request to fetch msg indices */
 				at_cmd = g_strdup_printf("AT+CMGL=4");
 
-				/* Response callback data */
+				/* RESPONSE callback data */
 				getcnt_resp_cb_data = imc_create_resp_cb_data(resp_cb_data->cb,
 						resp_cb_data->cb_data,
 						&count_info, sizeof(TelSmsStoredMsgCountInfo));
@@ -935,11 +1124,12 @@ static void on_response_imc_sms_get_sms_count(TcorePending *p,
 			}
 		}
 		else {
-			err("Invalid Response Received: NO Lines Present");
+			err("Invalid RESPONSE Received: NO Lines Present");
 		}
 	}
 	else {
 		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 ERROR:
@@ -958,15 +1148,16 @@ static void on_response_imc_sms_set_sca(TcorePending *p,
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
 
-	TelSmsResult result = TEL_SMS_RESULT_FAILURE;
+	TelSmsResult result;
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		result = TEL_SMS_RESULT_SUCCESS;
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -989,7 +1180,7 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		if (at_resp->lines) {
 			GSList *tokens = NULL;
 			const char *sca_tok_addr;
@@ -1019,11 +1210,12 @@ static void on_response_imc_sms_get_sca(TcorePending *p,
 			g_free(sca_addr);
 		}
 		else {
-			err("Invalid Response.No Lines Received");
+			err("Invalid RESPONSE.No Lines Received");
 		}
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cms_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1045,11 +1237,12 @@ static void on_response_imc_sms_set_cb_config(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		result = TEL_SMS_RESULT_SUCCESS;
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1080,7 +1273,7 @@ static void on_response_imc_sms_get_cb_config(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		if (at_resp->lines) {
 			GSList *tokens = NULL;
 			char *line_token = NULL, *line = NULL;
@@ -1088,7 +1281,7 @@ static void on_response_imc_sms_get_cb_config(TcorePending *p,
 			if (line != NULL) {
 				tokens = tcore_at_tok_new(line);
 				/*
-				 * Response -
+				 * RESPONSE -
 				 *	+CSCB: <mode>,<mids>,<dcss>
 				 */
 				 line_token = g_slist_nth_data(tokens, 0);
@@ -1157,11 +1350,12 @@ static void on_response_imc_sms_get_cb_config(TcorePending *p,
 			g_free(cb_str_token);
 		}
 		else {
-			err("Invalid Response.No Lines Received");
+			err("Invalid RESPONSE.No Lines Received");
 		}
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 OUT:
@@ -1184,11 +1378,12 @@ static void on_response_imc_sms_set_memory_status(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		result = TEL_SMS_RESULT_SUCCESS;
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1248,7 +1443,8 @@ static void on_response_imc_sms_set_message_status(TcorePending *p,
 		}
 	}
 	else {
-			err("RESPONSE NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1362,11 +1558,12 @@ static void _response_get_efsms_data(TcorePending *p,
 			return;
 		}
 		else {
-			err("Invalid Response Received");
+			err("Invalid RESPONSE Received");
 		}
 	}
 	else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1420,7 +1617,7 @@ static void on_response_imc_sms_get_sms_params(TcorePending *p,
 			tcore_free(hex_data);
 			/*
 			* Decrementing the Record Count and Filling the ParamsInfo List
-			* Final Response will be posted when Record count is ZERO
+			* Final RESPONSE will be posted when Record count is ZERO
 			*/
 			params_req_data->params[params_req_data->index].index = params_req_data->index;
 
@@ -1465,10 +1662,11 @@ static void on_response_imc_sms_get_sms_params(TcorePending *p,
 				return;
 			}
 		} else {
-			err("Invalid Response Received");
+			err("Invalid RESPONSE Received");
 		}
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 OUT:
@@ -1509,7 +1707,7 @@ static void on_response_imc_sms_set_sms_params(TcorePending *p,
 	dbg("Enter");
 
 	if (at_resp && at_resp->success) {
-		dbg("Response OK");
+		dbg("RESPONSE OK");
 		if (at_resp->lines) {
 			line = (const char *) at_resp->lines->data;
 			tokens = tcore_at_tok_new(line);
@@ -1526,7 +1724,8 @@ static void on_response_imc_sms_set_sms_params(TcorePending *p,
 		}
 		tcore_at_tok_free(tokens);
 	} else {
-		err("Response NOK");
+		err("RESPONSE NOK");
+		result = __imc_sms_convert_cme_error_tel_sms_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -1568,7 +1767,7 @@ static gboolean async_callback(gpointer data)
  * <length> Length of the pdu.
  * <PDU>    PDU to send.
  *
- * Response -
+ * RESPONSE -
  *+CMGS: <mr>[,<ackpdu>]
  *	OK
  * Failure:
@@ -1603,7 +1802,7 @@ static TelReturn imc_sms_send_sms(CoreObject *co,
 
 	tcore_util_encode_hex((unsigned char *)pdu, pdu_byte_len, buf);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	if (send_info->more_msgs == TRUE) {
@@ -1646,7 +1845,7 @@ static TelReturn imc_sms_send_sms(CoreObject *co,
  * 	<stat>	status of the message
  *	<PDU>	PDu of the message
  *
- * Response -
+ * RESPONSE -
  *	+CMGW: <index>
  * Success: (Single line)
  *	OK
@@ -1705,7 +1904,7 @@ static TelReturn imc_sms_write_sms_in_sim(CoreObject *co,
 	at_cmd = g_strdup_printf("AT+CMGW=%d,%d%c%s%c",
 			tpdu_byte_len, status, CR, buf, CTRL_Z);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -1731,7 +1930,7 @@ static TelReturn imc_sms_write_sms_in_sim(CoreObject *co,
  *  where
  * <index> index of the message to be read.
  *
- * Response -
+ * RESPONSE -
  * Success: (PDU: Multi-line output)
  * +CMGR: <stat>,[<alpha>],<length><CR><LF><pdu>
  *
@@ -1750,7 +1949,7 @@ static TelReturn imc_sms_read_sms_in_sim(CoreObject *co,
 	/* AT+Command */
 	at_cmd = g_strdup_printf("AT+CMGR=%d", index);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, ZERO);
 
 	/* Send Request to modem */
@@ -1775,7 +1974,7 @@ static TelReturn imc_sms_read_sms_in_sim(CoreObject *co,
  * AT-Command: AT+CGMD
  * 	+CMGD=<index>[,<delflag>]
  *
- * Response -
+ * RESPONSE -
  * Success: (NO RESULT) -
  *	OK
  * Failure:
@@ -1791,7 +1990,7 @@ static TelReturn imc_sms_delete_sms_in_sim(CoreObject *co,
 	TelReturn ret;
 	dbg("Enter");
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 	/*
 	 * TODO: Delete All Messages
@@ -1828,7 +2027,7 @@ static TelReturn imc_sms_delete_sms_in_sim(CoreObject *co,
  *  where
  * <mem1> memory storage to read.
  *
- * Response -
+ * RESPONSE -
  * Success: (Single-line output)
  * +CPMS: <mem1>,<used1>,<total1>,<mem2>,<used2>,<total2>,
  * <mem3>,<used3>,<total3>
@@ -1849,7 +2048,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 	/*AT Command*/
 	at_cmd = g_strdup_printf("AT+CPMS=\"SM\"");
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -1877,7 +2076,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
  * <sca> Service center number
  * <tosca> address type of SCA
  *
- * Response -
+ * RESPONSE -
  * Success: No result
  * 	OK
  *
@@ -1898,7 +2097,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 	/* AT Command */
 	at_cmd = g_strdup_printf("AT+CSCA=\"%s\",%d", sca->number, address_type);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -1922,7 +2121,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
  * Request -
  * AT-Command: AT+CSCA?
  *
- * Response -
+ * RESPONSE -
  * 	Success: Single-Line
  * 	+CSCA: <sca>,<tosca>
  * 	OK
@@ -1943,7 +2142,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
 	/* AT Command */
 	at_cmd = g_strdup_printf("AT+CSCA?");
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -1968,7 +2167,7 @@ static TelReturn imc_sms_get_msg_count_in_sim(CoreObject *co,
  * AT-Command: AT+CSCB
  *      +CSCB=[<mode>[,<mids>[,<dcss>]]]
  *
- * Response -
+ * RESPONSE -
  * Success
  * OK
  *
@@ -2025,7 +2224,7 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
 		at_cmd = g_strdup_printf("AT+CSCB=%d", cb_conf->cb_enabled);	/* Enable or Disable MsgId's */
 	}
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -2050,7 +2249,7 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
  * AT-Command: AT+CSCB
  *      +CSCB?
  *
- * Response -
+ * RESPONSE -
  * Success - (Single line)
  * 	+CSCB : <mode>,<mids>,<dcss>
  * OK
@@ -2068,7 +2267,7 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
 	/* AT Command */
 	at_cmd = g_strdup_printf("AT+CSCB?");
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -2092,7 +2291,7 @@ static TelReturn imc_sms_set_cb_config(CoreObject *co,
  * Request -
  *	Modem Takes care of sending the ACK to the network
  *
- * Response -
+ * RESPONSE -
  * Success: Default response always SUCCESS posted
  *
  */
@@ -2107,7 +2306,7 @@ static TelReturn imc_sms_send_deliver_report(CoreObject *co,
 		"classes of SMS. Sending default success.!!!");
 	ret =  TEL_RETURN_SUCCESS;
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 		(void *)&co, sizeof(CoreObject*));
 
@@ -2125,7 +2324,7 @@ static TelReturn imc_sms_send_deliver_report(CoreObject *co,
  * 0: memory capacity free
  * 1: memory capacity full
  *
- * Response -No Result
+ * RESPONSE -No Result
  * 	Success
  *	 OK
  *
@@ -2143,7 +2342,7 @@ static TelReturn imc_sms_set_memory_status(CoreObject *co,
 	/*AT+Command*/
 	at_cmd = g_strdup_printf("AT+XTESM=%d", available? 0: 1);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* Send Request to modem */
@@ -2169,7 +2368,7 @@ static TelReturn imc_sms_set_memory_status(CoreObject *co,
  *	p3 SMSP record length
  *
  *
- * Response -Single Line
+ * RESPONSE -Single Line
  * 	Success
  *	 OK
  *
@@ -2189,7 +2388,7 @@ static TelReturn imc_sms_set_message_status(CoreObject *co,
 	at_cmd = g_strdup_printf("AT+CRSM=178,28476,%d,4,%d",
 		(status_info->index), IMC_AT_EF_SMS_RECORD_LEN);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 		(void *)status_info, sizeof(TelSmsStatusInfo));
 
@@ -2215,7 +2414,7 @@ static TelReturn imc_sms_set_message_status(CoreObject *co,
  * AT-Command: AT+CRSM
  * 	AT+CRSM= command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>[,<pathid>]]]]
  *
- * Response -
+ * RESPONSE -
  * Success: (Single-line output)
  * 	+CRSM:
  * 	<sw1>,<sw2>[,<response>]
@@ -2230,7 +2429,7 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
 	TcorePlugin *plugin;
 	ImcRespCbData *resp_cb_data;
 	ImcSmsParamsCbData params_req_data = {0, };
-	gint loop_count, record_count = 0, smsp_record_len = 0;
+	gint record_count = 0, smsp_record_len = 0;
 
 	gchar *at_cmd;
 
@@ -2260,7 +2459,7 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
 	/* SMSP record length */
 	params_req_data.record_length = smsp_record_len;
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
 					(void *)&params_req_data,
 					sizeof(ImcSmsParamsCbData));
@@ -2296,7 +2495,7 @@ static TelReturn imc_sms_get_sms_params(CoreObject *co,
  * AT-Command: AT+CRSM
  * 	AT+CRSM= command>[,<fileid>[,<P1>,<P2>,<P3>[,<data>[,<pathid>]]]]
  *
- * Response -
+ * RESPONSE -
  * Success: (Single-line output)
  * 	+CRSM:
  * 	<sw1>,<sw2>[,<response>]
@@ -2342,7 +2541,7 @@ static TelReturn imc_sms_set_sms_params(CoreObject *co,
 	tcore_util_byte_to_hex((const char *)set_params_data,
 		(char *)encoded_data, smsp_record_len);
 
-	/* Response callback data */
+	/* RESPONSE callback data */
 	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
 
 	/* AT+ Command*/

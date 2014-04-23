@@ -152,9 +152,72 @@ static gboolean on_notification_imc_ss_ussd(CoreObject *co, const void *event_da
 	return TRUE;
 }
 
+static TelSsResult __imc_ss_convert_cme_error_tel_ss_result(const TcoreAtResponse *at_resp)
+{
+	TelSsResult result = TEL_SS_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("invalid cme error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+			result = TEL_SS_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 4:
+			result = TEL_SS_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 16:
+			result =  TEL_SS_RESULT_INVALID_PASSWORD;
+		break;
+
+		case 20:
+			result = TEL_SS_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 50:
+			result =  TEL_SS_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 132:
+		case 133:
+		case 134:
+			result = TEL_SS_RESULT_SERVICE_NOT_AVAILABLE;
+		break;
+
+		default:
+			result = TEL_SS_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 static gboolean __imc_ss_convert_modem_class_to_class(gint classx, TelSsClass *class)
 {
-	switch(classx)
+	switch (classx)
 	{
 	case 7:
 		*class = TEL_SS_CLASS_ALL_TELE;
@@ -193,7 +256,7 @@ static gboolean __imc_ss_convert_modem_class_to_class(gint classx, TelSsClass *c
 
 static guint __imc_ss_convert_class_to_imc_class(TelSsClass class)
 {
-	switch(class)
+	switch (class)
 	{
 	case TEL_SS_CLASS_ALL_TELE:
 		return 7;
@@ -231,7 +294,7 @@ static guint __imc_ss_convert_class_to_imc_class(TelSsClass class)
 static gboolean __imc_ss_convert_barring_type_to_facility(TelSsBarringType type,
 	gchar **facility)
 {
-	switch(type)
+	switch (type)
 	{
 	case TEL_SS_CB_TYPE_BAOC:
 		*facility = "AO";
@@ -270,7 +333,7 @@ static gboolean __imc_ss_convert_barring_type_to_facility(TelSsBarringType type,
 static gboolean __imc_ss_convert_forwarding_mode_to_modem_mode(TelSsForwardMode mode,
 	guint *modex)
 {
-	switch(mode)
+	switch (mode)
 	{
 	case TEL_SS_CF_MODE_DISABLE:
 		*modex = 0;
@@ -349,7 +412,7 @@ static gint __imc_ss_convert_clir_status_modem_status(gint clir_status)
 static gboolean __imc_ss_convert_cli_info_modem_info(const TelSsCliInfo **cli_info,gint *status,
 	gchar **cmd_prefix)
 {
-	switch((*cli_info)->type)
+	switch ((*cli_info)->type)
 	{
 	case TEL_SS_CLI_CLIR:
 		if ((*status = __imc_ss_convert_clir_status_modem_status((*cli_info)->status.clir))
@@ -467,7 +530,7 @@ static gboolean __imc_ss_convert_modem_cli_dev_status_cli_status(TelSsCliType cl
 			return FALSE;
 		}
 	} else { //CLIP, COLP,COLR,CNAP.
-		switch(dev_status) {
+		switch (dev_status) {
 		case 0:
 			*status  = TEL_SS_CLI_DISABLE;
 		break;
@@ -499,6 +562,10 @@ static void on_response_imc_ss_set_barring(TcorePending *p,
 
 	if (at_resp && at_resp->success)
 		result = TEL_SS_RESULT_SUCCESS;
+	else {
+		err("RESPONSE NOK");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
+	}
 
 	dbg("Setting Barring status: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
@@ -537,6 +604,7 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 		}
 		else {
 			err("RESPONSE - [NOK]");
+			result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
 		}
 	} else {
 		err("No response data");
@@ -573,7 +641,8 @@ static void on_response_imc_ss_get_barring_status(TcorePending *p,
 				if (!classx_str) {
 					dbg("Class error. Setting to the requested class: [%d]",
 						req_info->class);
-					barring_resp.records[valid_records].class = req_info->class;
+					barring_resp.records[valid_records].class =
+						req_info->class;
 				} else {
 					if (__imc_ss_convert_modem_class_to_class(atoi(classx_str),
 						&(barring_resp.records[valid_records].class))
@@ -614,7 +683,6 @@ static void on_response_imc_ss_change_barring_password(TcorePending *p,
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-	/* TODO: CMEE error mapping is required */
 	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
@@ -623,6 +691,10 @@ static void on_response_imc_ss_change_barring_password(TcorePending *p,
 
 	if (at_resp && at_resp->success)
 		result = TEL_SS_RESULT_SUCCESS;
+	else {
+		err("RESPONSE NOK");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
+	}
 
 	dbg("Change Barring Password: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
@@ -650,6 +722,10 @@ static void on_response_imc_ss_set_forwarding(TcorePending *p,
 
 	if (at_resp && at_resp->success)
 		result = TEL_SS_RESULT_SUCCESS;
+	else {
+		err("RESPONSE NOK");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
+	}
 
 	dbg("Set Forwarding Status: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
@@ -671,7 +747,6 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 	TelSsForwardGetInfo *req_info;
 	gint valid_records = 0;
 	GSList *resp_data = NULL;
-	/* TODO: CMEE error mapping is required */
 	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
@@ -687,6 +762,7 @@ static void on_response_imc_ss_get_forwarding_status(TcorePending *p,
 			dbg("Total records: [%d]", forwarding_resp.record_num);
 		} else {
 			err("RESPONSE - [NOK]");
+			result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
 		}
 	} else {
 		err("No response data");
@@ -782,7 +858,6 @@ static void on_response_imc_ss_set_waiting(TcorePending *p,
 	const TcoreAtResponse *at_resp = data;
 	CoreObject *co = tcore_pending_ref_core_object(p);
 	ImcRespCbData *resp_cb_data = user_data;
-	/* TODO: CMEE error mapping is required */
 	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
@@ -791,6 +866,10 @@ static void on_response_imc_ss_set_waiting(TcorePending *p,
 
 	if (at_resp && at_resp->success)
 		result = TEL_SS_RESULT_SUCCESS;
+	else {
+		err("RESPONSE NOK");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
+	}
 
 	dbg("Set Waiting Status: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
@@ -812,7 +891,6 @@ static void on_response_imc_ss_get_waiting_status(TcorePending *p,
 	TelSsClass *class;
 	gint valid_records = 0;
 	GSList *resp_data = NULL;
-	/* TODO: CMEE error mapping is required */
 	TelSsResult result = TEL_SS_RESULT_FAILURE;
 	dbg("Enter");
 
@@ -826,9 +904,9 @@ static void on_response_imc_ss_get_waiting_status(TcorePending *p,
 			resp_data = (GSList *) at_resp->lines;
 			waiting_resp.record_num= g_slist_length(resp_data);
 			dbg("Total records: [%d]", waiting_resp.record_num);
-		}
-		else {
+		} else {
 			err("RESPONSE - [NOK]");
+			result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
 		}
 	} else {
 		err("No response data");
@@ -915,6 +993,10 @@ static void on_response_imc_ss_set_cli(TcorePending *p,
 
 	if (at_resp && at_resp->success)
 		result = TEL_SS_RESULT_SUCCESS;
+	else {
+		err("RESPONSE - [NOK]");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
+	}
 
 	dbg("Set Cli Status: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
@@ -979,7 +1061,7 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 			atoi(status), &net_status))
 			goto END;
 
-		switch(*cli_type){
+		switch (*cli_type){
 		case TEL_SS_CLI_CLIR:
 			cli_resp.status.clir.net_status = net_status;
 			cli_resp.status.clir.dev_status = dev_status;
@@ -1010,6 +1092,7 @@ static void on_response_imc_ss_get_cli_status(TcorePending *p,
 		result = TEL_SS_RESULT_SUCCESS;
 	} else{
 		err("RESPONSE NOK");
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
 	}
 
 END:
@@ -1047,15 +1130,16 @@ static void on_response_imc_ss_send_ussd_request(TcorePending *p,
 		/* Need to initialise ussd response string  */
 		ussd_resp.str = (unsigned char *)g_strdup("Operation success");
 	} else {
+		err("RESPONSE - [NOK]");
 		ussd_resp.str = (unsigned char *)g_strdup("Operation failed");
-	}
+		result = __imc_ss_convert_cme_error_tel_ss_result(at_resp);
 
+	}
 
 	dbg("Send Ussd Request: [%s]",
 			(result == TEL_SS_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
 
 	tcore_ss_ussd_destroy_session(ussd_s);
-
 
 	/* Invoke callback */
 	if (resp_cb_data->cb)
