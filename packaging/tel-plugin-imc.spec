@@ -46,10 +46,12 @@ rm -f /tmp/mcc_mnc_oper_list.sql
 if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db ]
 then
 	chmod 600 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db
+	chsmack -a 'System' %{TZ_SYS_DB}/.mcc_mnc_oper_list.db
 fi
 if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal ]
 then
 	chmod 644 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal
+	chsmack -a 'System' %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal
 fi
 
 %postun -p /sbin/ldconfig
