@@ -40,6 +40,65 @@
 static gboolean on_event_imc_nvm_update(CoreObject *co,
 	const void *event_info, void *user_data);
 
+static TelModemResult
+__imc_modem_convert_cme_error_tel_modem_result(const TcoreAtResponse *at_resp)
+{
+	TelModemResult result = TEL_MODEM_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+			result = TEL_MODEM_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 4:
+			result = TEL_MODEM_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 20:
+			result = TEL_MODEM_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 50:
+			result = TEL_MODEM_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 100:
+			result = TEL_MODEM_RESULT_UNKNOWN_FAILURE;
+		break;
+
+		default:
+			result = TEL_MODEM_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 /* NVM Req/Response */
 static gboolean __imc_modem_check_nvm_response(const void *data, int command)
 {
@@ -334,8 +393,14 @@ static void on_response_imc_modem_set_power_status(TcorePending *p,
 	tcore_check_return_assert(co != NULL);
 	tcore_check_return_assert(resp_cb_data != NULL);
 
-	if (at_resp && at_resp->success)
+	if (at_resp && at_resp->success){
+		dbg("RESPONSE OK");
 		result = TEL_MODEM_RESULT_SUCCESS;
+	} else{
+		err("RESPONSE NOK");
+		result = __imc_modem_convert_cme_error_tel_modem_result(at_resp);
+		goto END;
+	}
 
 	status = (TelModemPowerStatus *)
 		IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
@@ -359,6 +424,7 @@ static void on_response_imc_modem_set_power_status(TcorePending *p,
 	}
 	tcore_modem_set_powered(co, powered);
 
+END:
 	/* Invoke callback */
 	if (resp_cb_data->cb)
 		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
@@ -381,8 +447,14 @@ static void on_response_imc_modem_set_flight_mode(TcorePending *p,
 	tcore_check_return_assert(co != NULL);
 	tcore_check_return_assert(resp_cb_data != NULL);
 
-	if (at_resp && at_resp->success)
+	if (at_resp && at_resp->success){
+		dbg("RESPONSE OK");
 		result = TEL_MODEM_RESULT_SUCCESS;
+	} else{
+		err("RESPONSE NOK");
+		result = __imc_modem_convert_cme_error_tel_modem_result(at_resp);
+		goto END;
+	}
 
 	enable = (gboolean *)IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
 
@@ -393,6 +465,7 @@ static void on_response_imc_modem_set_flight_mode(TcorePending *p,
 	/* Update Core Object */
 	(void)tcore_modem_set_flight_mode_state(co, *enable);
 
+END:
 	/* Invoke callback */
 	if (resp_cb_data->cb)
 		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
@@ -521,6 +594,7 @@ static void on_response_imc_modem_get_imei(TcorePending *p,
 				} else {
 					err("RESPONSE - [NOK]");
 					err("[%s]", g_slist_nth_data(tokens, 0));
+					result = __imc_modem_convert_cme_error_tel_modem_result(at_resp);
 				}
 			}  else {
 				err("Invalid response message");
