@@ -229,15 +229,20 @@ gboolean nvm_create_nvm_data()
 			/* Close 'modem_fd' */
 			close(modem_fd);
 			return ret_val;
-		} else if (open(NV_FILE_PATH, O_EXCL) > 0) {
-			/* NV data file already exists */
-			dbg("File exists: [%s]", NV_FILE_PATH);
-
-			/* Close 'modem_fd' */
-			close(modem_fd);
-			return TRUE;
 		} else {
-			dbg("File does't exsits... need to create!!!");
+			gint fd = open(NV_FILE_PATH, O_EXCL);
+			if (fd < 0) {
+				dbg("File does't exsits... need to create!!!");
+			} else {
+				/* NV data file already exists */
+				dbg("File exists: [%s]", NV_FILE_PATH);
+
+				/* Close 'fds' */
+				close(fd);
+				close(modem_fd);
+
+				return TRUE;
+			}
 		}
 	}
 

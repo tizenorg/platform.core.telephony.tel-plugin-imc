@@ -10,7 +10,7 @@ SET(INCLUDEDIR "\${prefix}/include")
 
 # Set required packages
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED glib-2.0 tcore db-util libxml-2.0 libtzplatform-config vconf)
+pkg_check_modules(pkgs REQUIRED glib-2.0 tcore tel-headers db-util libxml-2.0 libtzplatform-config vconf)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")

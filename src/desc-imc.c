@@ -209,16 +209,12 @@ static void __subscribe_modem_notifications(TcorePlugin *plugin)
 		tcore_strdup("AT+XDNS=1,1"));
 
 	/* CMEE */
-	__send_request(ps, "AT+CMEE=2",
+	__send_request(ps, "AT+CMEE=1",
 		__on_response_subscribe_bootup_notification,
-		tcore_strdup("AT+CMEE=2"));
+		tcore_strdup("AT+CMEE=1"));
 
 	/****** SMS subscriptions ******/
 	sms = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_SMS);
-	/* CMEE */
-	__send_request(sms, "AT+CMEE=2",
-		__on_response_subscribe_bootup_notification,
-		tcore_strdup("AT+CMEE=2"));
 
 	/* Incoming SMS, Cell Broadcast, Status Report Subscription */
 	__send_request(sms, "AT+CNMI=1,2,2,1,0",
