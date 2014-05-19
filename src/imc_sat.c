@@ -38,6 +38,63 @@
 
 #define PROACTV_CMD_LEN	256
 
+static TelSatResult
+__imc_sim_convert_cme_error_tel_sat_result(const TcoreAtResponse *at_resp)
+{
+	TelSatResult result = TEL_SAT_RESULT_FAILURE;
+	const gchar *line;
+	GSList *tokens = NULL;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+
+		cme_err = atoi(resp_str);
+		dbg("CME error[%d]", cme_err);
+		switch (cme_err) {
+		case 3:
+		case 4:
+			result = TEL_SAT_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 20:
+		case 23:
+			result = TEL_SAT_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 50:
+			result =  TEL_SAT_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 100:
+			result =  TEL_SAT_RESULT_UNKNOWN_FAILURE;
+		break;
+
+		default:
+			result = TEL_SAT_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 static void on_response_enable_sat(TcorePending *p,
 	guint data_len, const void *data, void *user_data)
 {
@@ -66,15 +123,17 @@ static TcoreHookReturn on_hook_imc_sim_status(TcorePlugin *plugin,
 	 */
 	dbg("SIM Status: [%d]", *sim_status);
 	if (*sim_status == TEL_SIM_STATUS_SIM_INIT_COMPLETED) {
+		TelReturn ret;
 		dbg("SIM Initialized!!! Enable SAT");
 
 		/* Enable SAT - Send AT+CFUN=6 */
-		tcore_at_prepare_and_send_request(co,
+		ret = tcore_at_prepare_and_send_request(co,
 			"AT+CFUN=6", NULL,
 			TCORE_AT_COMMAND_TYPE_NO_RESULT,
 			NULL,
 			on_response_enable_sat, NULL,
 			on_send_imc_request, NULL);
+		IMC_CHECK_REQUEST_RET(ret, NULL, "Enable SAT");
 	}
 
 	return TCORE_HOOK_RETURN_CONTINUE;
@@ -339,7 +398,6 @@ static void on_response_imc_sat_send_envelop_cmd(TcorePending *p,
 	TelSatResult result = TEL_SAT_RESULT_FAILURE;
 	GSList *tokens = NULL;
 	const gchar *line = NULL;
-	const gchar *env_res = NULL;
 	gint sw2 = -1;
 
 	dbg("Entry");
@@ -356,28 +414,33 @@ static void on_response_imc_sat_send_envelop_cmd(TcorePending *p,
 			tokens = tcore_at_tok_new(line);
 			if (g_slist_length(tokens) < 1) {
 				err("invalid message");
-				tcore_at_tok_free(tokens);
-				return;
+				goto OUT;
 			}
-		}
-		env_res = g_slist_nth_data(tokens, 0);
-		envelop_resp = TEL_SAT_ENVELOPE_SUCCESS;
-		dbg("RESPONSE tokens present");
-		if (NULL != g_slist_nth_data(tokens, 1)) {
-			sw2 = atoi(g_slist_nth_data(tokens, 1));
-			dbg("status word SW2:[%d]", sw2);
-			if (sw2 == 0) {
-				dbg("Response is processed completely and sending session end notification");
-				/* Send Session End notification */
-				tcore_object_send_notification(co,
-				TCORE_NOTIFICATION_SAT_SESSION_END, 0, NULL);
+
+			envelop_resp = TEL_SAT_ENVELOPE_SUCCESS;
+			dbg("RESPONSE tokens present");
+			if (NULL != g_slist_nth_data(tokens, 1)) {
+				sw2 = atoi(g_slist_nth_data(tokens, 1));
+				dbg("status word SW2:[%d]", sw2);
+				if (sw2 == 0) {
+					dbg("Response is processed completely " \
+						"and sending session end notification");
+
+					/* Send Session End notification */
+					tcore_object_send_notification(co,
+						TCORE_NOTIFICATION_SAT_SESSION_END,
+						0, NULL);
+				}
 			}
 		}
 	} else {
-		dbg("RESPONSE NOK");
+		err("RESPONSE NOK");
+
 		envelop_resp = TEL_SAT_ENVELOPE_FAILED;
+		result = __imc_sim_convert_cme_error_tel_sat_result(at_resp);
 	}
 
+OUT:
 	/* Invoke callback */
 	if (resp_cb_data->cb)
 		resp_cb_data->cb(co, (gint)result, &envelop_resp, resp_cb_data->cb_data);
@@ -407,6 +470,9 @@ static void on_response_imc_sat_send_terminal_response(TcorePending *p,
 		dbg(" at_resp->success = %d", at_resp->success);
 		/* Send Session End notification */
 		tcore_object_send_notification(co, TCORE_NOTIFICATION_SAT_SESSION_END, 0, NULL);
+	} else {
+		err("RESPONSE NOK");
+		result = __imc_sim_convert_cme_error_tel_sat_result(at_resp);
 	}
 
 	/* Invoke callback */
@@ -434,6 +500,9 @@ static void on_response_imc_sat_send_user_confirmation(TcorePending *p,
 	if (at_resp && at_resp->success) {
 		dbg("RESPONSE OK");
 		result = TEL_SAT_RESULT_SUCCESS;
+	} else {
+		err("RESPONSE NOK");
+		result = __imc_sim_convert_cme_error_tel_sat_result(at_resp);
 	}
 
 	/* Invoke callback */

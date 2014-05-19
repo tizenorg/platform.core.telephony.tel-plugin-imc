@@ -36,6 +36,53 @@
 #include "imc_sap.h"
 #include "imc_common.h"
 
+static TelSapResult __imc_sap_convert_cme_error_tel_sap_result(const TcoreAtResponse *at_resp)
+{
+	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
+	const gchar *line;
+	GSList *tokens = NULL;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME Error: [%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+		case 4:
+			result = TEL_SAP_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 14:
+			result = TEL_SAP_RESULT_ONGOING_CALL;
+		break;
+
+		default:
+			result = TEL_SAP_RESULT_FAILURE_NO_REASON;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 static TelSapResult __map_sap_status_to_result(int sap_status)
 {
 	switch(sap_status){
@@ -132,8 +179,8 @@ static void on_response_imc_sap_req_connect(TcorePending *p,
 		result = TEL_SAP_RESULT_SUCCESS;
 		memcpy(&max_msg_size, IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data), sizeof(unsigned int));
 	} else {
-		err("CME error[%s]", at_resp->lines->data);
-		/*TODO - need to map CME error to TelSapResult */
+		err("RESPONSE NOK");
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 	dbg("Request to sap connection : [%s]",
@@ -162,8 +209,8 @@ static void on_response_imc_sap_req_disconnect(TcorePending *p,
 	if (at_resp && at_resp->success) {
 		result = TEL_SAP_RESULT_SUCCESS;
 	} else {
-		err("CME error[%s]", at_resp->lines->data);
-		/*TODO - need to map CME error to TelSapResult */
+		err("RESPONSE NOK");
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 	dbg("Request to sap connection : [%s]",
@@ -219,6 +266,7 @@ static void on_response_imc_sap_get_atr(TcorePending *p,
 		tcore_at_tok_free(tokens);
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 END:
@@ -286,6 +334,7 @@ static void on_response_imc_sap_req_transfer_apdu(TcorePending *p,
 		tcore_at_tok_free(tokens);
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 END:
@@ -331,6 +380,7 @@ static void on_response_imc_sap_req_power_operation(TcorePending *p,
 		tcore_at_tok_free(tokens);
 	} else {
 		err("RESPONSE NOK");
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 END:
@@ -377,18 +427,20 @@ static void on_response_imc_sap_get_cardreader_status(TcorePending *p,
 		result = __map_sap_status_to_result(atoi(g_slist_nth_data(tokens, 0)));
 
 		card_reader_status = (unsigned char)atoi(g_slist_nth_data(tokens, 1));
-        card_reader_status = card_reader_status >> 3;
+		card_reader_status = card_reader_status >> 3;
 		for (count = 8; count > 3; count--) { //check bit 8 to 3
+			/*TODO - Need to map card reader status to TelSapCardStatus.
 			if ((card_reader_status & 0x80) == TRUE) { //Check most significant bit
-				//card_status =  //TODO - Need to map card reader status to TelSapCardStatus.
+				//card_status =  TEL_SAP_CARD_STATUS_UNKNOWN;
 				break;
 			}
+			*/
 			card_reader_status = card_reader_status << 1; //left shift by 1
 		}
 		tcore_at_tok_free(tokens);
 	} else {
 		err("RESPONSE NOK");
-		result = TEL_SAP_RESULT_FAILURE_NO_REASON;
+		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
 	}
 
 END:

@@ -16,6 +16,7 @@ Requires(postun):/sbin/ldconfig
 BuildRequires:	cmake
 BuildRequires:	pkgconfig(glib-2.0)
 BuildRequires:	pkgconfig(tcore)
+BuildRequires:	pkgconfig(tel-headers)
 BuildRequires:	pkgconfig(db-util)
 BuildRequires:	pkgconfig(libxml-2.0)
 BuildRequires:  pkgconfig(libtzplatform-config)

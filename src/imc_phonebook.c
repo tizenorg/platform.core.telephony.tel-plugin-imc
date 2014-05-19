@@ -51,6 +51,77 @@ typedef struct {
 	gboolean used_index_usim_valid;
 } PrivateInfo;
 
+static TelPbResult
+__imc_phonebook_convert_cme_error_tel_phonebook_result(const TcoreAtResponse *at_resp)
+{
+	TelPbResult result = TEL_PB_RESULT_FAILURE;
+	GSList *tokens = NULL;
+	const gchar *line;
+
+	dbg("Entry");
+
+	if (!at_resp || !at_resp->lines) {
+		err("Invalid response data");
+		return result;
+	}
+
+	line = (const gchar *)at_resp->lines->data;
+	tokens = tcore_at_tok_new(line);
+	if (g_slist_length(tokens) > 0) {
+		gchar *resp_str;
+		gint cme_err;
+
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("Invalid CME Error data");
+			tcore_at_tok_free(tokens);
+			return result;
+		}
+		cme_err = atoi(resp_str);
+		dbg("CME Error: [%d]", cme_err);
+
+		switch (cme_err) {
+		case 3:
+			result = TEL_PB_RESULT_OPERATION_NOT_PERMITTED;
+		break;
+
+		case 4:
+			result = TEL_PB_RESULT_OPERATION_NOT_SUPPORTED;
+		break;
+
+		case 17:
+			result = TEL_PB_RESULT_PIN2_REQUIRED;
+		break;
+
+		case 18:
+			result = TEL_PB_RESULT_PUK2_REQUIRED;
+		break;
+
+		case 20:
+			result = TEL_PB_RESULT_MEMORY_FAILURE;
+		break;
+
+		case 21:
+			result = TEL_PB_RESULT_INVALID_INDEX;
+		break;
+
+		case 50:
+			result =  TEL_PB_RESULT_INVALID_PARAMETER;
+		break;
+
+		case 100:
+			result =  TEL_PB_RESULT_UNKNOWN_FAILURE;
+		break;
+
+		default:
+			result = TEL_PB_RESULT_FAILURE;
+		}
+	}
+	tcore_at_tok_free(tokens);
+
+	return result;
+}
+
 static gboolean __imc_phonebook_get_sim_type(CoreObject *co_pb,
 		TelSimCardType *sim_type)
 {
@@ -416,6 +487,7 @@ static void on_response_imc_phonebook_get_info(TcorePending *p,
 
 	if (at_resp->success != TRUE) {
 		err("Response NOK");
+		result = __imc_phonebook_convert_cme_error_tel_phonebook_result(at_resp);
 		goto out;
 	}
 
@@ -538,6 +610,7 @@ static void on_response_imc_phonebook_read_record(TcorePending *p,
 
 	if (at_resp->success != TRUE) {
 		err("Response NOK");
+		result = __imc_phonebook_convert_cme_error_tel_phonebook_result(at_resp);
 		goto out;
 	}
 
@@ -704,6 +777,7 @@ static void on_response_imc_phonebook_update_record(TcorePending *p,
 
 	if (at_resp->success != TRUE) {
 		err("Response NOK");
+		result = __imc_phonebook_convert_cme_error_tel_phonebook_result(at_resp);
 		goto out;
 	}
 
@@ -721,6 +795,7 @@ static void on_response_imc_phonebook_update_record(TcorePending *p,
 	} else {
 		list = g_slist_insert_sorted(list, (gpointer)req_data->index,
 			__imc_phonebook_compare_index);
+		dbg("list: [0x%x]", list);
 	}
 
 out:
@@ -748,6 +823,7 @@ static void on_response_imc_phonebook_delete_record(TcorePending *p,
 
 	if (at_resp->success != TRUE) {
 		err("Response NOK");
+		result = __imc_phonebook_convert_cme_error_tel_phonebook_result(at_resp);
 		goto out;
 	}
 
@@ -764,7 +840,7 @@ static void on_response_imc_phonebook_delete_record(TcorePending *p,
 		err("used_index list is NOT valid");
 	} else {
 		list = g_slist_remove(list, (gconstpointer)req_data->index);
-		dbg("Remove index: [%u]", req_data->index);
+		dbg("Remove index: [%u], list: [0x%x]", req_data->index, list);
 	}
 
 out:
