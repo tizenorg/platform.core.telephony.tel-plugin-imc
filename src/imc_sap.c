@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2012 Samsung Electronics Co., Ltd All Rights Reserved
+ *
+ * Contact: Ankit Jogi <ankit.jogi@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,772 +21,848 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <glib.h>
-
 #include <tcore.h>
-#include <server.h>
-#include <plugin.h>
-#include <core_object.h>
 #include <hal.h>
+#include <core_object.h>
+#include <plugin.h>
 #include <queue.h>
-#include <storage.h>
+#include <co_sap.h>
+#include <co_sim.h>
+#include <user_request.h>
+#include <server.h>
 #include <at.h>
 
-#include <co_sap.h>
-
-#include "imc_sap.h"
 #include "imc_common.h"
+#include "imc_sap.h"
 
-static TelSapResult __imc_sap_convert_cme_error_tel_sap_result(const TcoreAtResponse *at_resp)
+
+static void on_confirmation_sap_message_send(TcorePending *p, gboolean result, void *user_data)
 {
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-	const gchar *line;
-	GSList *tokens = NULL;
+	dbg("on_confirmation_sap_message_send - msg out from queue.\n");
 
-	dbg("Entry");
-
-	if (!at_resp || !at_resp->lines) {
-		err("Invalid response data");
-		return result;
-	}
-
-	line = (const gchar *)at_resp->lines->data;
-	tokens = tcore_at_tok_new(line);
-	if (g_slist_length(tokens) > 0) {
-		gchar *resp_str;
-		gint cme_err;
-
-		resp_str = g_slist_nth_data(tokens, 0);
-		if (!resp_str) {
-			err("Invalid CME Error data");
-			tcore_at_tok_free(tokens);
-			return result;
-		}
-		cme_err = atoi(resp_str);
-		dbg("CME Error: [%d]", cme_err);
-
-		switch (cme_err) {
-		case 3:
-		case 4:
-			result = TEL_SAP_RESULT_OPERATION_NOT_PERMITTED;
-		break;
-
-		case 14:
-			result = TEL_SAP_RESULT_ONGOING_CALL;
-		break;
-
-		default:
-			result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-		}
-	}
-	tcore_at_tok_free(tokens);
-
-	return result;
-}
-
-static TelSapResult __map_sap_status_to_result(int sap_status)
-{
-	switch(sap_status){
-	case 0:
-		return TEL_SAP_RESULT_SUCCESS;
-	case 1:
-		return TEL_SAP_RESULT_FAILURE_NO_REASON;
-	case 2:
-		return TEL_SAP_RESULT_CARD_NOT_ACCESSIBLE;
-	case 3:
-		return TEL_SAP_RESULT_CARD_ALREADY_POWERED_OFF;
-	case 4:
-		return TEL_SAP_RESULT_CARD_REMOVED;
-	case 5:
-		return TEL_SAP_RESULT_CARD_ALREADY_POWERED_ON;
-	case 6:
-		return TEL_SAP_RESULT_DATA_NOT_AVAILABLE;
-	case 7:
-		return TEL_SAP_RESULT_NOT_SUPPORTED;
-	default:
-		return TEL_SAP_RESULT_FAILURE_NO_REASON;
+	if (result == FALSE) {
+		/* Fail */
+		dbg("SEND FAIL");
+	} else {
+		dbg("SEND OK");
 	}
 }
 
-/* Notification */
-static gboolean on_notification_imc_sap_status(CoreObject *co,
-	const void *event_info, void *user_data)
+static gboolean on_event_sap_status(CoreObject *o, const void *event_info, void *user_data)
 {
+	struct tnoti_sap_status_changed noti;
 	GSList *tokens = NULL;
 	GSList *lines = NULL;
 	const char *line = NULL;
-	TelSapCardStatus status;
+	int status = 0;
 
-	dbg("Entry");
+	dbg(" Function entry ");
 
 	lines = (GSList *) event_info;
-	if (g_slist_length(lines) != 1) {
-		err("unsolicited msg but multiple lines");
+	if (1 != g_slist_length(lines)) {
+		dbg("unsolicited msg but multiple line");
 		return FALSE;
 	}
+	line = (char *) (lines->data);
 
-	line = (char *)lines->data;
 	tokens = tcore_at_tok_new(line);
-	tcore_check_return_value(tokens != NULL, FALSE);
-
+	if (g_slist_length(tokens) != 1) {
+		msg("invalid message");
+		tcore_at_tok_free(tokens);
+		return FALSE;
+	}
 	status = atoi(g_slist_nth_data(tokens, 0));
 
 	switch(status){
-	case 0:
-		status = TEL_SAP_CARD_STATUS_UNKNOWN;
-		break;
-	case 1:
-		status = TEL_SAP_CARD_STATUS_RESET;
-		break;
-	case 2:
-		status = TEL_SAP_CARD_STATUS_NOT_ACCESSIBLE;
-		break;
-	case 3:
-		status = TEL_SAP_CARD_STATUS_REMOVED;
-		break;
-	case 4:
-		status = TEL_SAP_CARD_STATUS_INSERTED;
-		break;
-	case 5:
-		status = TEL_SAP_CARD_STATUS_RECOVERED;
-		break;
-	default:
-		status = TEL_SAP_CARD_STATUS_NOT_ACCESSIBLE;
-		break;
+		case 0:
+			noti.status = SAP_CARD_STATUS_UNKNOWN;
+			break;
+		case 1:
+			noti.status = SAP_CARD_STATUS_RESET;
+			break;
+		case 2:
+			noti.status = SAP_CARD_STATUS_NOT_ACCESSIBLE;
+			break;
+		case 3:
+			noti.status = SAP_CARD_STATUS_REMOVED;
+			break;
+		case 4:
+			noti.status = SAP_CARD_STATUS_INSERTED;
+			break;
+		case 5:
+			noti.status = SAP_CARD_STATUS_RECOVERED;
+			break;
+		default:
+			noti.status = SAP_CARD_STATUS_NOT_ACCESSIBLE;
+			break;
 	}
 
-	tcore_at_tok_free(tokens);
-	tcore_object_send_notification(co,
-		TCORE_NOTIFICATION_SAP_STATUS,
-	 	sizeof(TelSapCardStatus), &status);
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAP_STATUS,
+			sizeof(struct tnoti_sap_status_changed), &noti);
 	return TRUE;
 }
 
-/* Response */
-static void on_response_imc_sap_req_connect(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+/*static void on_event_sap_disconnect(CoreObject *o, const void *event_info, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_UNABLE_TO_ESTABLISH;
-	unsigned int max_msg_size = 0;
-	dbg("entry");
+	//ToDo - Indication not present
 
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
+	const ipc_sap_disconnect_noti_type *ipc = event_info;
+	struct tnoti_sap_disconnect noti;
 
-	if (at_resp && at_resp->success) {
-		result = TEL_SAP_RESULT_SUCCESS;
-		memcpy(&max_msg_size, IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data), sizeof(unsigned int));
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
-	}
+	dbg("NOTI RECEIVED");
 
-	dbg("Request to sap connection : [%s]",
-	(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
+	noti.type = ipc->disconnect_type;
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o, TNOTI_SAP_DISCONNECT,
+				sizeof(struct tnoti_sap_disconnect), &noti);
+}*/
 
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, &max_msg_size, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
-}
-
-static void on_response_imc_sap_req_disconnect(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static void on_response_connect(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-	dbg("entry");
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_req_connect res;
+	int *max_msg_size = (int *)user_data;
 
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
+	dbg(" Function entry ");
 
-	if (at_resp && at_resp->success) {
-		result = TEL_SAP_RESULT_SUCCESS;
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
-	}
+	memset(&res, 0x00, sizeof(struct tresp_sap_req_connect));
+	ur = tcore_pending_ref_user_request(p);
 
-	dbg("Request to sap connection : [%s]",
-	(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
-}
-
-static void on_response_imc_sap_get_atr(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-	TelSapAtr atr_resp = {0,};
-
-	dbg("entry");
-
-	if (at_resp && at_resp->success) {
-		const gchar *line;
-		char *atr_data;
-		GSList *tokens = NULL;
-
+	if(resp->success > 0)
+	{
 		dbg("RESPONSE OK");
-		if (at_resp->lines == NULL) {
-			err("invalid response recieved");
-			goto END;
-		}
 
-		line = (const char*)at_resp->lines->data;
-		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
-			err("invalid response message");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
-		atr_data = (char *) g_slist_nth_data(tokens, 1);
-		atr_resp.atr_len = strlen(atr_data);
-		if (atr_resp.atr_len > TEL_SAP_ATR_LEN_MAX) {
-			err(" invalid atr data length");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
-		memcpy(atr_resp.atr, atr_data, atr_resp.atr_len);
+		res.status = SAP_CONNECTION_STATUS_OK;
+		res.max_msg_size = *max_msg_size;
 
-		result = __map_sap_status_to_result(atoi(g_slist_nth_data(tokens, 0)));
-		tcore_at_tok_free(tokens);
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
+	}else{
+		dbg("RESPONSE NOK");
+		res.status = SAP_CONNECTION_STATUS_UNABLE_TO_ESTABLISH;
+		res.max_msg_size = 0;
 	}
 
-END:
-	dbg("Request to get sap atr : [%s]",
-		(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, &atr_resp, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_REQ_CONNECT, sizeof(struct tresp_sap_req_connect), &res);
+	}
+	dbg(" Function exit");
 }
 
-static void on_response_imc_sap_req_transfer_apdu(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static void on_response_disconnect(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-	TelSapApduResp apdu_resp = {0,};
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_req_disconnect res;
 
-	dbg("entry");
+	dbg(" Function entry ");
+	memset(&res, 0x00, sizeof(struct tresp_sap_req_disconnect));
+	ur = tcore_pending_ref_user_request(p);
 
-	if (at_resp && at_resp->success) {
-		const gchar *line;
-		int sap_status;
-		char *apdu_data;
-		GSList *tokens = NULL;
-
+	if(resp->success > 0)
+	{
 		dbg("RESPONSE OK");
-		if (at_resp->lines == NULL) {
-			err("invalid response recieved");
-			goto END;
-		}
 
-		line = (const char*)at_resp->lines->data;
-		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
-			err("invalid response message");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
+		res.result = SAP_RESULT_CODE_OK;
 
-		apdu_data = (char *) g_slist_nth_data(tokens, 1);
-		apdu_resp.apdu_resp_len = strlen(apdu_data);
-		if (apdu_resp.apdu_resp_len > TEL_SAP_APDU_RESP_LEN_MAX) {
-			err(" invalid apdu data length");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
-		memcpy(apdu_resp.apdu_resp, apdu_data, apdu_resp.apdu_resp_len);
-
-		sap_status = atoi(g_slist_nth_data(tokens, 0));
-		if (sap_status > 4)
-		/* In this case modem does not provide sap_status 5 ('Card already powered ON'),
-		   instead it will provide status 5 ('Data not available') and 6 ('Not Supported'),
-		   So to align 'sap_status' value with __map_sap_status_to_result(), it is increased by 1.
-		*/
-			result = __map_sap_status_to_result(sap_status + 1);
-		else
-			result = __map_sap_status_to_result(sap_status);
-
-		tcore_at_tok_free(tokens);
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
+	}else{
+		dbg("RESPONSE NOK");
+		//ToDo - Error mapping
 	}
 
-END:
-	dbg("Request to transfer apdu : [%s]",
-		(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, &apdu_resp, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_REQ_DISCONNECT, sizeof(struct tresp_sap_req_disconnect), &res);
+	}
+	dbg(" Function exit");
 }
 
-static void on_response_imc_sap_req_power_operation(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static void on_response_req_status(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_req_status res;
 
-	dbg("entry");
+	dbg(" Function entry ");
 
-	if (at_resp && at_resp->success) {
-		const gchar *line;
-		GSList *tokens = NULL;
+	ur = tcore_pending_ref_user_request(p);
 
+	if(resp->success > 0)
+	{
 		dbg("RESPONSE OK");
-		if (at_resp->lines == NULL) {
-			err("invalid response recieved");
-			goto END;
-		}
+		//ToDo - No AT command present
+		//res.status = NULL;
 
-		line = (const char*)at_resp->lines->data;
-		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
-			err("invalid response message");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
-		result = __map_sap_status_to_result(atoi(g_slist_nth_data(tokens, 0)));
-		tcore_at_tok_free(tokens);
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
+	}else{
+		dbg("RESPONSE NOK");
+		//ToDo - Error mapping
 	}
 
-END:
-	dbg("Request to sap power operation : [%s]",
-		(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_REQ_STATUS, sizeof(struct tresp_sap_req_status), &res);
+	}
+	dbg(" Function exit");
 }
 
-static void on_response_imc_sap_get_cardreader_status(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static void on_response_set_transfort_protocol(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelSapResult result = TEL_SAP_RESULT_FAILURE_NO_REASON;
-	TelSapCardStatus card_status = TEL_SAP_CARD_STATUS_UNKNOWN;
-	dbg("entry");
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_set_protocol res;
 
-	if (at_resp && at_resp->success) {
-		const gchar *line;
-		GSList *tokens = NULL;
-		unsigned char card_reader_status;
-		int count;
+	dbg(" Function entry ");
 
+	ur = tcore_pending_ref_user_request(p);
+
+	if(resp->success > 0)
+	{
 		dbg("RESPONSE OK");
-		if (at_resp->lines == NULL) {
-			err("invalid response recieved");
-			goto END;
-		}
+		//ToDo - No AT command present
+		//res.result = NULL;
 
-		line = (const char*)at_resp->lines->data;
-		tokens = tcore_at_tok_new(line);
-		if (g_slist_length(tokens) < 1) {
-			err("invalid response message");
-			tcore_at_tok_free(tokens);
-			goto END;
-		}
-		result = __map_sap_status_to_result(atoi(g_slist_nth_data(tokens, 0)));
+	}else{
+		dbg("RESPONSE NOK");
+		//ToDo - Error mapping
+	}
 
-		card_reader_status = (unsigned char)atoi(g_slist_nth_data(tokens, 1));
-		card_reader_status = card_reader_status >> 3;
-		for (count = 8; count > 3; count--) { //check bit 8 to 3
-			/*TODO - Need to map card reader status to TelSapCardStatus.
-			if ((card_reader_status & 0x80) == TRUE) { //Check most significant bit
-				//card_status =  TEL_SAP_CARD_STATUS_UNKNOWN;
-				break;
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_SET_PROTOCOL, sizeof(struct tresp_sap_set_protocol), &res);
+	}
+	dbg(" Function exit");
+}
+
+static void on_response_set_power(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_set_power res;
+	GSList *tokens=NULL;
+	const char *line;
+	int sap_status = -1;
+
+	dbg(" Function entry ");
+
+	ur = tcore_pending_ref_user_request(p);
+
+	if(resp->success > 0)
+	{
+		dbg("RESPONSE OK");
+		if(resp->lines) {
+			line = (const char*)resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				tcore_at_tok_free(tokens);
+				return;
 			}
-			*/
-			card_reader_status = card_reader_status << 1; //left shift by 1
 		}
-		tcore_at_tok_free(tokens);
-	} else {
-		err("RESPONSE NOK");
-		result = __imc_sap_convert_cme_error_tel_sap_result(at_resp);
+		sap_status = atoi(g_slist_nth_data(tokens, 0));
+
+		switch(sap_status){
+			case 0:
+				res.result = SAP_RESULT_CODE_OK;
+				break;
+			case 1:
+				res.result = SAP_RESULT_CODE_NO_REASON;
+				break;
+			case 2:
+				res.result = SAP_RESULT_CODE_CARD_NOT_ACCESSIBLE;
+				break;
+			case 3:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_OFF;
+				break;
+			case 4:
+				res.result = SAP_RESULT_CODE_CARD_REMOVED;
+				break;
+			case 5:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_ON;
+				break;
+			case 6:
+				res.result = SAP_RESULT_CODE_DATA_NOT_AVAILABLE;
+				break;
+			case 7:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+			default:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+		}
+
+	}else{
+		dbg("RESPONSE NOK");
+		res.result = SAP_RESULT_CODE_NOT_SUPPORT;
 	}
 
-END:
-	dbg("Request to get card reader status : [%s]",
-		(result == TEL_SAP_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, &card_status, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_SET_POWER, sizeof(struct tresp_sap_set_power), &res);
+	}
+	tcore_at_tok_free(tokens);
+	dbg(" Function exit");
 }
 
-/* Sap operations */
-
-/*
- * Operation - switch the modem to the  BT SAP server mode.
- *
- * Request -
- * AT-Command: AT+ XBCON = <op_mode>, <change_mode>, <reject_mode>
- * where,
- * <op_mode>
- * 0 - BT SAP Server modes
- * 1 - BT SAP Client mode (Client mode is currently not supported)
- * <change_mode>
- * 0 - gracefully, or Time out
- * 1 - immediately
- * <reject_mode>
- * 0 - Reject is not allowed.
- * 1 - Reject is allowed.
- * Response -
- * Success: (No Result)
- *	OK
- * Failure:
- *	+CME ERROR: <error>
- */
-static TelReturn imc_sap_req_connect(CoreObject *co, unsigned int max_msg_size,
-	TcoreObjectResponseCallback cb, void *cb_data)
+static void on_response_get_atr(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_req_atr res;
+	GSList *tokens=NULL;
+	const char *line;
+	int sap_status = -1;
+	char *atr_data = NULL;
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				&max_msg_size, sizeof(unsigned int));
+	dbg(" Function entry ");
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"AT+XBCON=0,0,0", NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_sap_req_connect, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_connect");
+	ur = tcore_pending_ref_user_request(p);
 
-	return ret;
+	if(resp->success > 0)
+	{
+		dbg("RESPONSE OK");
+
+		if(resp->lines) {
+			line = (const char*)resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				tcore_at_tok_free(tokens);
+				return;
+			}
+		}
+		sap_status = atoi(g_slist_nth_data(tokens, 0));
+		atr_data = (char *) g_slist_nth_data(tokens, 1);
+
+		res.atr_length = strlen(atr_data);
+		if( res.atr_length > 256 ) {
+			dbg(" Memory overflow handling");
+			return;
+		}
+		memcpy(res.atr, atr_data, res.atr_length);
+
+		switch(sap_status){
+			case 0:
+				res.result = SAP_RESULT_CODE_OK;
+				break;
+			case 1:
+				res.result = SAP_RESULT_CODE_NO_REASON;
+				break;
+			case 2:
+				res.result = SAP_RESULT_CODE_CARD_NOT_ACCESSIBLE;
+				break;
+			case 3:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_OFF;
+				break;
+			case 4:
+				res.result = SAP_RESULT_CODE_CARD_REMOVED;
+				break;
+			case 5:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_ON;
+				break;
+			case 6:
+				res.result = SAP_RESULT_CODE_DATA_NOT_AVAILABLE;
+				break;
+			case 7:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+			default:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+		}
+
+	}else{
+		dbg("RESPONSE NOK");
+		res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+	}
+
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_REQ_ATR, sizeof(struct tresp_sap_req_atr), &res);
+	}
+	dbg(" Function exit");
 }
 
-/*
- * Operation - disconnects BT SAP.
- *
- * Request -
- * AT-Command: AT+ XBDISC
- *
- * Response -
- * Success: (No Result)
- *	OK
- * Failure:
- *	+CME ERROR: <error>
- */
-static TelReturn imc_sap_req_disconnect(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
+static void on_response_transfer_apdu(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_transfer_apdu res;
+	GSList *tokens=NULL;
+	const char *line;
+	int sap_status = -1;
+	char *apdu_data = NULL;
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				NULL, 0);
+	dbg(" Function entry ");
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"AT+XBDISC", NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_sap_req_disconnect, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_disconnect");
+	ur = tcore_pending_ref_user_request(p);
 
-	return ret;
+	if(resp->success > 0)
+	{
+		dbg("RESPONSE OK");
+
+		if(resp->lines) {
+			line = (const char*)resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				tcore_at_tok_free(tokens);
+				return;
+			}
+		}
+		sap_status = atoi(g_slist_nth_data(tokens, 0));
+		apdu_data = (char *) g_slist_nth_data(tokens, 1);
+
+		res.resp_apdu_length = strlen(apdu_data);
+		if( res.resp_apdu_length > 256 ) {
+			dbg(" Memory overflow handling");
+			return;
+		}
+		memcpy(res.resp_adpdu, apdu_data, res.resp_apdu_length);
+
+		switch(sap_status){
+			case 0:
+				res.result = SAP_RESULT_CODE_OK;
+				break;
+			case 1:
+				res.result = SAP_RESULT_CODE_NO_REASON;
+				break;
+			case 2:
+				res.result = SAP_RESULT_CODE_CARD_NOT_ACCESSIBLE;
+				break;
+			case 3:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_OFF;
+				break;
+			case 4:
+				res.result = SAP_RESULT_CODE_CARD_REMOVED;
+				break;
+			case 5:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_ON;
+				break;
+			case 6:
+				res.result = SAP_RESULT_CODE_DATA_NOT_AVAILABLE;
+				break;
+			case 7:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+			default:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+		}
+
+	}else{
+		dbg("RESPONSE NOK");
+		res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+	}
+
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_TRANSFER_APDU, sizeof(struct tresp_sap_transfer_apdu), &res);
+	}
+	dbg(" Function exit");
 }
 
-/*
- * Operation - In BT SAP server mode, request the ATR from the stack to the Application.
- *
- * Request -
- * AT-Command: AT+ XBATR
- *
- * Response -
- * Success: +XBATR: <status>, <data_ATR>
- * OK
- * where
- * <status>
- * 0 OK, request processed correctly
- * 1 No Reason defined
- * 2 Card not accessible
- * 3 Card (already) powered off
- * 4 Card Removed
- * 6 Data Not available
- * 7 Not Supported
- * <data_ATR>
- * Hex Data (an array of bytes)
- *
- * Failure:
- *	+CME ERROR: <error>
- */
-static TelReturn imc_sap_get_atr(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
+static void on_response_get_cardreader_status(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
+	const TcoreATResponse *resp = data;
+	UserRequest *ur = NULL;
+	struct tresp_sap_req_cardreaderstatus res;
+	GSList *tokens=NULL;
+	const char *line;
+	int sap_status = -1;
+	char *card_reader_status = NULL;
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				NULL, 0);
+	dbg(" Function entry ");
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"AT+XBATR", "+XBATR:",
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		on_response_imc_sap_get_atr, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_get_atr");
+	ur = tcore_pending_ref_user_request(p);
 
-	return ret;
+	if(resp->success > 0)
+	{
+		dbg("RESPONSE OK");
+
+		if(resp->lines) {
+			line = (const char*)resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				msg("invalid message");
+				tcore_at_tok_free(tokens);
+				return;
+			}
+		}
+		sap_status = atoi(g_slist_nth_data(tokens, 0));
+		card_reader_status = (char *) g_slist_nth_data(tokens, 1);
+
+		res.reader_status = *card_reader_status;
+
+		switch(sap_status){
+			case 0:
+				res.result = SAP_RESULT_CODE_OK;
+				break;
+			case 1:
+				res.result = SAP_RESULT_CODE_NO_REASON;
+				break;
+			case 2:
+				res.result = SAP_RESULT_CODE_CARD_NOT_ACCESSIBLE;
+				break;
+			case 3:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_OFF;
+				break;
+			case 4:
+				res.result = SAP_RESULT_CODE_CARD_REMOVED;
+				break;
+			case 5:
+				res.result = SAP_RESULT_CODE_CARD_ALREADY_POWER_ON;
+				break;
+			case 6:
+				res.result = SAP_RESULT_CODE_DATA_NOT_AVAILABLE;
+				break;
+			case 7:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+			default:
+				res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+				break;
+		}
+
+	}else{
+		dbg("RESPONSE NOK");
+		res.result = SAP_RESULT_CODE_NOT_SUPPORT;
+	}
+
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_SAP_REQ_CARDREADERSTATUS, sizeof(struct tresp_sap_req_cardreaderstatus), &res);
+	}
+	dbg(" Function exit");
 }
 
-/*
- * Operation - BT SAP server mode, Forward command APDU from application to SIM.
- *
- * Request -
- * AT-Command: AT+ XBAPDU = <data: command_APDU >
- * where
- * <data: command_APDU >
- * Hex Data (an array of bytes). CP supports Command_APDU up to 261 bytes long.
- *
- * Response -
- * Success: +XBAPDU: <status>, [<data:Response_APDU>]
- * OK
- * where
- * <status>
- * 0 OK, request processed correctly
- * 1 No Reason defined
- * 2 Card not accessible
- * 3 Card (already) powered off
- * 4 Card Removed
- * 5 Data not available
- * 6 Not Supported
- * <data:Response_APDU>
- * Hex Data (an array of bytes). CP supports Response_APDU up to 258 bytes long
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_sap_req_transfer_apdu(CoreObject *co, const TelSapApdu *apdu_data,
-	TcoreObjectResponseCallback cb, void *cb_data)
+static	TReturn imc_connect(CoreObject *o, UserRequest *ur)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
-	gchar *at_cmd;
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_sap_req_connect *req_data;
+	int *usr_data = NULL;
 
-	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+XBAPDU=\"%s\"", apdu_data->apdu);
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+	req_data = tcore_user_request_ref_data(ur, NULL);
+	usr_data = (int*)malloc(sizeof(int));
+	*usr_data = req_data->max_msg_size;
+	cmd_str = g_strdup_printf("AT+XBCON=0,0,0");
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				NULL, 0);
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		at_cmd, "+XBAPDU:",
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		on_response_imc_sap_req_transfer_apdu, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_transfer_apdu");
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
-	g_free(at_cmd);
-	return ret;
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_connect, usr_data);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
-static TelReturn imc_sap_req_transport_protocol(CoreObject *co, TelSimSapProtocol protocol,
-	TcoreObjectResponseCallback cb, void *cb_data)
+static	TReturn imc_disconnect(CoreObject *o, UserRequest *ur)
 {
-	err("Operation not supported");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	//const struct treq_sap_req_disconnect *req_data;
+
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	//req_data = tcore_user_request_ref_data(ur, NULL);
+
+	cmd_str = g_strdup_printf("AT+ XBDISC");
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_disconnect, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
-/*
- * Operation - In BT SAP server mode, Power ON,OFF and Reset the SIM.
- *
- * Request -
- * AT-Command: AT+ XBPWR =<action>
- * where
- * <Action>:
- * 0 SIM Power ON
- * 1 SIM Power OFF
- * 2 SIM RESET
- *
- * Response -
- * Success: + XBPWR: <status>
- * OK
- * where
- * <status>
- * 0 OK, Request processed correctly
- * 1 Error no reason defined
- * 2 Card not Accessible
- * 3 Card already powered OFF
- * 4 Card removed
- * 5 Card already powered ON
- * 6 Data Not vailable
- * 7 Not Supported
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_sap_req_power_operation(CoreObject *co, TelSapPowerMode power_mode,
-	TcoreObjectResponseCallback cb, void *cb_data)
+static TReturn imc_req_status(CoreObject *o, UserRequest *ur)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret = TEL_RETURN_FAILURE;
-	gchar *at_cmd;
-	int action;
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	//const struct treq_sap_req_status *req_data;
 
-	if(power_mode == TEL_SAP_SIM_POWER_ON_REQ) {
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	//req_data = tcore_user_request_ref_data(ur, NULL);
+
+	//cmd_str = g_strdup_printf("");//ToDo - No AT command present.
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_req_status, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_set_transport_protocol(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	//const struct treq_sap_set_protocol *req_data;
+
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	//req_data = tcore_user_request_ref_data(ur, NULL);
+
+	//cmd_str = g_strdup_printf("");//ToDo - No AT command present.
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_set_transfort_protocol, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static	TReturn imc_set_power(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_sap_set_power *req_data;
+	int action = -1;
+
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	if(req_data->mode == SAP_POWER_ON) {
 		action = 0;
-	} else if(power_mode == TEL_SAP_SIM_POWER_OFF_REQ) {
-		action  = 1;
-	} else if (power_mode == TEL_SAP_SIM_RESET_REQ) {
+	} else if ( req_data->mode == SAP_POWER_OFF ) {
+		action = 1;
+	} else if ( req_data->mode == SAP_POWER_RESET ) {
 		action = 2;
 	} else {
-		err("invalid power mode");
-		return ret;
+		action = -1;;
 	}
 
-	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+XBPWR=%d", action);
+	cmd_str = g_strdup_printf("AT+ XBPWR=%d", action);
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				NULL, 0);
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		at_cmd, "+XBPWR:",
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		on_response_imc_sap_req_power_operation, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_req_power_operation");
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
-	g_free(at_cmd);
-	return ret;
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_set_power, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
-/*
- * Operation - In BT SAP server mode, get the Card reader Status.
- *
- * Request -
- * AT-Command: AT+XBCRDSTAT
- *
- * Response -
- * Success: +XBCRDSTAT: <status>, <card_reader_status>
- * OK
- * where
- * <status>
- * 0 OK, Request processed correctly
- * 1 Error no reason defined
- * 2 Card not Accessible
- * 3 Card already powered OFF
- * 4 Card removed
- * 5 Card already powered ON
- * 6 Data Not vailable
- * 7 Not Supported
- * <card_reader_status>
- * One byte. It represents card reader identity and status.
- * The value of this byte indicates the identity and status of a card reader.
- * Bits 1-3 = identity of card reader x.
- * bit 4, 0 = Card reader is not removable, 1 = Card reader is removable
- * bit 5, 0 = Card reader is not present, 1 = Card reader is present
- * bit 6, 0 = Card reader present is not ID-1 size, 1 = Card reader present is ID-1 size
- * bit 7, 0 = No card present, 1 = Card is present in reader
- * bit 8, 0 = No card powered, 1 = Card in reader is powered
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_sap_get_cardreader_status(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
+static	TReturn imc_get_atr(CoreObject *o, UserRequest *ur)
 {
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	//const struct treq_sap_req_atr *req_data;
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				NULL, 0);
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"AT+XBCRDSTAT", "+XBCRDSTAT:",
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		on_response_imc_sap_get_cardreader_status, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_sap_get_cardreader_status");
+	//req_data = tcore_user_request_ref_data(ur, NULL);
 
-	return ret;
+	cmd_str = g_strdup_printf("AT+ XBATR");
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_get_atr, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
 }
 
-/* SAP Operations */
-static TcoreSapOps imc_sap_ops = {
-	.req_connect = imc_sap_req_connect,
-	.req_disconnect = imc_sap_req_disconnect,
-	.get_atr = imc_sap_get_atr,
-	.req_transfer_apdu = imc_sap_req_transfer_apdu,
-	.req_transport_protocol = imc_sap_req_transport_protocol,
-	.req_power_operation = imc_sap_req_power_operation,
-	.get_cardreader_status = imc_sap_get_cardreader_status
+static	TReturn imc_transfer_apdu(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	const struct treq_sap_transfer_apdu *req_data;
+
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	req_data = tcore_user_request_ref_data(ur, NULL);
+
+	cmd_str = g_strdup_printf("AT+ XBAPDU=\"%s\"", req_data->apdu_data); //ToDo - Need to check passing input as a string.
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_transfer_apdu, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static	TReturn imc_get_cardreader_status(CoreObject *o, UserRequest *ur)
+{
+	TcoreHal *hal;
+	TcoreATRequest *req;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	//const struct treq_sap_req_cardreaderstatus *req_data;
+
+	dbg(" Function entry");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
+	hal = tcore_object_get_hal(o);
+	if(FALSE == tcore_hal_get_power_state(hal)){
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	//req_data = tcore_user_request_ref_data(ur, NULL);
+
+	cmd_str = g_strdup_printf("AT+ XBCRDSTAT");
+
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_SINGLELINE);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, on_response_get_cardreader_status, NULL);
+	tcore_pending_link_user_request(pending, ur);
+	tcore_pending_set_send_callback(pending, on_confirmation_sap_message_send, NULL);
+
+	tcore_hal_send_request(hal, pending);
+
+	free(cmd_str);
+	dbg(" Function exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static struct tcore_sap_operations sap_ops =
+{
+	.connect = imc_connect,
+	.disconnect = imc_disconnect,
+	.req_status = imc_req_status,
+	.set_transport_protocol = imc_set_transport_protocol,
+	.set_power = imc_set_power,
+	.get_atr = imc_get_atr,
+	.transfer_apdu = imc_transfer_apdu,
+	.get_cardreader_status = imc_get_cardreader_status,
 };
 
-gboolean imc_sap_init(TcorePlugin *p, CoreObject *co)
+
+gboolean imc_sap_init(TcorePlugin *cp, CoreObject *co_sap)
 {
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_sap_set_ops(co, &imc_sap_ops);
+	tcore_sap_set_ops(co_sap, &sap_ops);
 
-	/* Add Callbacks */
-	tcore_object_add_callback(co, "+XBCSTAT", on_notification_imc_sap_status, NULL);
+	tcore_object_add_callback(co_sap,"+XBCSTAT", on_event_sap_status, NULL);
 
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void imc_sap_exit(TcorePlugin *p, CoreObject *co)
+void imc_sap_exit(TcorePlugin *cp, CoreObject *co_sap)
 {
 	dbg("Exit");
 }

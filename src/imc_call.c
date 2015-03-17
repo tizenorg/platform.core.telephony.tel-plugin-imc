@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: sharanayya mathapati <sharan.m@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,1496 +18,2535 @@
  * limitations under the License.
  */
 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <glib.h>
 
 #include <tcore.h>
-#include <server.h>
-#include <plugin.h>
-#include <core_object.h>
 #include <hal.h>
+#include <core_object.h>
+#include <plugin.h>
 #include <queue.h>
 #include <storage.h>
+#include <co_call.h>
+#include <user_request.h>
+#include <server.h>
 #include <at.h>
 #include <vconf.h>
-#include <co_call.h>
 
-#include "imc_call.h"
 #include "imc_common.h"
+#include "imc_call.h"
 
-#define COMMA	0X2c
+
 #define STATUS_INCOMING    4
 #define STATUS_WAITING     5
 #define STATUS_CONNECTED   7
+#define COMMA              0X2c
+#define MAX_CALL_DTMF_DIGITS_LEN 32
 
-#define find_call_object(co, call_id, call_obj) \
-	do { \
-		call_obj = tcore_call_object_find_by_id(co, call_id); \
-		if (!call_obj) { \
-			err("unable to find call object"); \
-			return; \
-		} \
-	} while (0)
+static gboolean setsoundpath = FALSE;
+static gboolean soundvolume = FALSE;
 
-struct imc_set_volume_info {
-	guint next_index;
-	guint volume;
+// End Cause field  - Call state end cause
+
+typedef enum {
+	CALL_END_NO_CAUSE,
+
+	// These definitions are taken from GSM 04.08 Table 10.86
+
+	CC_CAUSE_UNASSIGNED_NUMBER,
+	CC_CAUSE_NO_ROUTE_TO_DEST,
+	CC_CAUSE_CHANNEL_UNACCEPTABLE,
+	CC_CAUSE_OPERATOR_DETERMINED_BARRING,
+	CC_CAUSE_NORMAL_CALL_CLEARING,
+	CC_CAUSE_USER_BUSY,
+	CC_CAUSE_NO_USER_RESPONDING,
+	CC_CAUSE_USER_ALERTING_NO_ANSWER,
+	CC_CAUSE_CALL_REJECTED,
+	CC_CAUSE_NUMBER_CHANGED,
+	CC_CAUSE_NON_SELECTED_USER_CLEARING,
+	CC_CAUSE_DESTINATION_OUT_OF_ORDER,
+	CC_CAUSE_INVALID_NUMBER_FORMAT,
+	CC_CAUSE_FACILITY_REJECTED,
+	CC_CAUSE_RESPONSE_TO_STATUS_ENQUIRY,
+	CC_CAUSE_NORMAL_UNSPECIFIED,
+	CC_CAUSE_NO_CIRCUIT_CHANNEL_AVAILABLE,
+	CC_CAUSE_NETWORK_OUT_OF_ORDER,
+	CC_CAUSE_TEMPORARY_FAILURE,
+	CC_CAUSE_SWITCHING_EQUIPMENT_CONGESTION,
+	CC_CAUSE_ACCESS_INFORMATION_DISCARDED,
+	CC_CAUSE_REQUESTED_CIRCUIT_CHANNEL_NOT_AVAILABLE,
+	CC_CAUSE_RESOURCES_UNAVAILABLE_UNSPECIFIED,
+	CC_CAUSE_QUALITY_OF_SERVICE_UNAVAILABLE,
+	CC_CAUSE_REQUESTED_FACILITY_NOT_SUBSCRIBED,
+	CC_CAUSE_INCOMING_CALL_BARRED_WITHIN_CUG,
+	CC_CAUSE_BEARER_CAPABILITY_NOT_AUTHORISED,
+	CC_CAUSE_BEARER_CAPABILITY_NOT_PRESENTLY_AVAILABLE,
+	CC_CAUSE_SERVICE_OR_OPTION_NOT_AVAILABLE,
+	CC_CAUSE_BEARER_SERVICE_NOT_IMPLEMENTED,
+	CC_CAUSE_ACM_GEQ_ACMMAX,
+	CC_CAUSE_REQUESTED_FACILITY_NOT_IMPLEMENTED,
+	CC_CAUSE_ONLY_RESTRICTED_DIGITAL_INFO_BC_AVAILABLE,
+	CC_CAUSE_SERVICE_OR_OPTION_NOT_IMPLEMENTED,
+	CC_CAUSE_INVALID_TRANSACTION_ID_VALUE,
+	CC_CAUSE_USER_NOT_MEMBER_OF_CUG,
+	CC_CAUSE_INCOMPATIBLE_DESTINATION,
+	CC_CAUSE_INVALID_TRANSIT_NETWORK_SELECTION,
+	CC_CAUSE_SEMANTICALLY_INCORRECT_MESSAGE,
+	CC_CAUSE_INVALID_MANDATORY_INFORMATION,
+	CC_CAUSE_MESSAGE_TYPE_NON_EXISTENT,
+	CC_CAUSE_MESSAGE_TYPE_NOT_COMPATIBLE_WITH_PROT_STATE,
+	CC_CAUSE_IE_NON_EXISTENT_OR_NOT_IMPLEMENTED,
+	CC_CAUSE_CONDITIONAL_IE_ERROR,
+	CC_CAUSE_MESSAGE_NOT_COMPATIBLE_WITH_PROTOCOL_STATE,
+	CC_CAUSE_RECOVERY_ON_TIMER_EXPIRY,
+	CC_CAUSE_PROTOCOL_ERROR_UNSPECIFIED,
+	CC_CAUSE_INTERWORKING_UNSPECIFIED,
+	CC_CAUSE_END = 128,
+
+	// Reject causes
+	REJECT_CAUSE_IMSI_UNKNOWN_IN_HLR,
+	REJECT_CAUSE_ILLEGAL_MS,
+	REJECT_CAUSE_IMSI_UNKNOWN_IN_VLR,
+	REJECT_CAUSE_IMEI_NOT_ACCEPTED,
+	REJECT_CAUSE_ILLEGAL_ME,
+	REJECT_CAUSE_GPRS_SERVICES_NOT_ALLOWED,
+	REJECT_CAUSE_GPRS_SERVICES_AND_NON_GPRS_SERVICES_NOT_ALLOWED,
+	REJECT_CAUSE_MS_IDENTITY_CANNOT_BE_DERIVED_BY_THE_NETWORK,
+	REJECT_CAUSE_IMPLICITLY_DETACHED,
+	REJECT_CAUSE_PLMN_NOT_ALLOWED,
+	REJECT_CAUSE_LA_NOT_ALLOWED,
+	REJECT_CAUSE_NATIONAL_ROAMING_NOT_ALLOWED,
+	REJECT_CAUSE_GPRS_SERVICES_NOT_ALLOWED_IN_THIS_PLMN,
+	REJECT_CAUSE_NO_SUITABLE_CELLS_IN_LA,
+	REJECT_CAUSE_MSC_TEMPORARILY_NOT_REACHABLE,
+	REJECT_CAUSE_NETWORK_FAILURE,
+	REJECT_CAUSE_MAC_FAILURE,
+	REJECT_CAUSE_SYNCH_FAILURE,
+	REJECT_CAUSE_CONGESTTION,
+	REJECT_CAUSE_GSM_AUTH_UNACCEPTED,
+	REJECT_CAUSE_SERVICE_OPTION_NOT_SUPPORTED,
+	REJECT_CAUSE_REQ_SERV_OPT_NOT_SUBSCRIBED,
+	REJECT_CAUSE_SERVICE_OPT__OUT_OF_ORDER,
+	REJECT_CAUSE_CALL_CANNOT_BE_IDENTIFIED,
+	REJECT_CAUSE_NO_PDP_CONTEXT_ACTIVATED,
+	REJECT_CAUSE_RETRY_UPON_ENTRY_INTO_A_NEW_CELL_MIN_VALUE,
+	REJECT_CAUSE_RETRY_UPON_ENTRY_INTO_A_NEW_CELL_MAX_VALUE,
+	REJECT_CAUSE_SEMANTICALLY_INCORRECT_MSG,
+	REJECT_CAUSE_INVALID_MANDATORY_INFO,
+	REJECT_CAUSE_MESSAGE_TYPE_NON_EXISTANT,
+	REJECT_CAUSE_MESSAGE_TYPE_NOT_COMP_PRT_ST,
+	REJECT_CAUSE_IE_NON_EXISTANT,
+	REJECT_CAUSE_MSG_NOT_COMPATIBLE_PROTOCOL_STATE,
+
+
+	// Connection Management establishment rejection cause
+	REJECT_CAUSE_REJ_UNSPECIFIED,
+
+	// AS reject causes
+	REJECT_CAUSE_AS_REJ_RR_REL_IND,
+	REJECT_CAUSE_AS_REJ_RR_RANDOM_ACCESS_FAILURE,
+	REJECT_CAUSE_AS_REJ_RRC_REL_IND,
+	REJECT_CAUSE_AS_REJ_RRC_CLOSE_SESSION_IND,
+	REJECT_CAUSE_AS_REJ_RRC_OPEN_SESSION_FAILURE,
+	REJECT_CAUSE_AS_REJ_LOW_LEVEL_FAIL,
+	REJECT_CAUSE_AS_REJ_LOW_LEVEL_FAIL_REDIAL_NOT_ALLOWED,
+	REJECT_CAUSE_AS_REJ_LOW_LEVEL_IMMED_RETRY,
+
+	// MM reject causes
+	REJECT_CAUSE_MM_REJ_INVALID_SIM,
+	REJECT_CAUSE_MM_REJ_NO_SERVICE,
+	REJECT_CAUSE_MM_REJ_TIMER_T3230_EXP,
+	REJECT_CAUSE_MM_REJ_NO_CELL_AVAILABLE,
+	REJECT_CAUSE_MM_REJ_WRONG_STATE,
+	REJECT_CAUSE_MM_REJ_ACCESS_CLASS_BLOCKED,
+	// Definitions for release ind causes between MM  and CNM
+	REJECT_CAUSE_ABORT_MSG_RECEIVED,
+	REJECT_CAUSE_OTHER_CAUSE,
+
+	// CNM reject causes
+	REJECT_CAUSE_CNM_REJ_TIMER_T303_EXP,
+	REJECT_CAUSE_CNM_REJ_NO_RESOURCES,
+	REJECT_CAUSE_CNM_MM_REL_PENDING,
+	REJECT_CAUSE_CNM_INVALID_USER_DATA,
+	CALL_END_CAUSE_MAX = 255
+} call_end_cause_e_type;
+
+
+struct clcc_call_t {
+	struct call_CLCC_info {
+		int id;
+		enum tcore_call_direction direction;
+		enum tcore_call_status status;
+		enum tcore_call_type type;
+		int mpty;
+		int num_len;
+		int num_type;
+	}
+	info;
+	char number[90];
 };
 
-static gchar *xdrv_set_volume[] = {
-	"AT+XDRV=40,7,3,88",
-	"AT+XDRV=40,7,0,88",
-	"AT+XDRV=40,8,0,88",
-	"AT+XDRV=40,8,2,",
-	NULL
+typedef struct {
+	int network_cause;
+	int tapi_cause;
+} call_end_cause_info;
+
+/**************************************************************************
+  *							Local Function Prototypes
+  **************************************************************************/
+/*************************		REQUESTS		***************************/
+static void _call_status_idle(TcorePlugin *p, CallObject *co);
+static void _call_status_active(TcorePlugin *p, CallObject *co);
+static void _call_status_dialing(TcorePlugin *p, CallObject *co);
+static void _call_status_alert(TcorePlugin *p, CallObject *co);
+static void _call_status_incoming(TcorePlugin *p, CallObject *co);
+static void _call_status_waiting(TcorePlugin *p, CallObject *co);
+static TReturn _call_list_get(CoreObject *o, gboolean *event_flag);
+/* Todo Need to check whether this api is required */
+//static TReturn _set_dtmf_tone_duration(CoreObject *o, UserRequest *ur);
+
+/*************************		CONFIRMATION		***************************/
+static void on_confirmation_call_message_send(TcorePending *p, gboolean result, void *user_data);     // from Kernel
+static void on_confirmation_call_hold(TcorePending *p, int data_len, const void *data, void *user_data);
+static void on_confirmation_call_swap(TcorePending *p, int data_len, const void *data, void *user_data);
+static void on_confirmation_call_split(TcorePending *p, int data_len, const void *data, void *user_data);
+static void on_confirmation_call_hold_and_accept(TcorePending *p, int data_len, const void *data, void *user_data);
+
+static void _on_confirmation_call_release(TcorePending *p, int data_len, const void *data, void *user_data, int type);
+static void _on_confirmation_call(TcorePending *p, int data_len, const void *data, void *user_data, int type);
+//static void _on_confirmation_dtmf_tone_duration(TcorePending *p, int data_len, const void *data, void *user_data);
+static void _on_confirmation_call_end_cause(TcorePending *p, int data_len, const void *data, void *user_data);
+
+/*************************		RESPONSES		***************************/
+static void on_response_call_list_get(TcorePending *p, int data_len, const void *data, void *user_data);
+
+/*************************		NOTIIFICATIONS		***************************/
+static void on_notification_call_waiting(CoreObject *o, const void *data, void *user_data);
+static void on_notification_call_incoming(CoreObject *o, const void *data, void *user_data);
+static void on_notification_call_status(CoreObject *o, const void *data, void *user_data);
+static gboolean on_notification_call_info(CoreObject *o, const void *data, void *user_data);
+static gboolean on_notification_call_clip_info(CoreObject *o, const void *data, void *user_data);
+
+
+/**************************************************************************
+  *							Local Utility Function Prototypes
+  **************************************************************************/
+static gboolean _call_request_message(TcorePending *pending, CoreObject *o, UserRequest *ur, void *on_resp, void *user_data);
+static void _call_branch_by_status(TcorePlugin *p, CallObject *co, unsigned int status);
+static int _callFromCLCCLine(char *line, struct clcc_call_t *p_call);
+
+/**************************************************************************
+  *							Local Function Definitions
+  **************************************************************************/
+
+const call_end_cause_info call_end_cause_table[] =   // call end cause table to convert Netwotk cause to TAPI cause
+{
+	{ 1, CC_CAUSE_UNASSIGNED_NUMBER}, { 3, CC_CAUSE_NO_ROUTE_TO_DEST},
+	{ 6, CC_CAUSE_CHANNEL_UNACCEPTABLE}, { 8, CC_CAUSE_OPERATOR_DETERMINED_BARRING},
+	{ 16, CC_CAUSE_NORMAL_CALL_CLEARING}, { 17, CC_CAUSE_USER_BUSY},
+	{ 18, CC_CAUSE_NO_USER_RESPONDING}, { 19, CC_CAUSE_USER_ALERTING_NO_ANSWER},
+	{ 21, CC_CAUSE_CALL_REJECTED}, { 22, CC_CAUSE_NUMBER_CHANGED},
+	{ 26, CC_CAUSE_NON_SELECTED_USER_CLEARING}, { 27, CC_CAUSE_DESTINATION_OUT_OF_ORDER},
+	{ 28, CC_CAUSE_INVALID_NUMBER_FORMAT}, { 29, CC_CAUSE_FACILITY_REJECTED},
+	{ 30, CC_CAUSE_RESPONSE_TO_STATUS_ENQUIRY}, { 31, CC_CAUSE_NORMAL_UNSPECIFIED},
+	{ 34, CC_CAUSE_NO_CIRCUIT_CHANNEL_AVAILABLE}, { 38, CC_CAUSE_NETWORK_OUT_OF_ORDER},
+	{ 41, CC_CAUSE_TEMPORARY_FAILURE}, { 42, CC_CAUSE_SWITCHING_EQUIPMENT_CONGESTION},
+	{ 43, CC_CAUSE_ACCESS_INFORMATION_DISCARDED}, { 44, CC_CAUSE_REQUESTED_CIRCUIT_CHANNEL_NOT_AVAILABLE},
+	{ 47, CC_CAUSE_RESOURCES_UNAVAILABLE_UNSPECIFIED}, { 49, CC_CAUSE_QUALITY_OF_SERVICE_UNAVAILABLE},
+	{ 50, CC_CAUSE_REQUESTED_FACILITY_NOT_SUBSCRIBED}, { 55, CC_CAUSE_INCOMING_CALL_BARRED_WITHIN_CUG},
+	{ 57, CC_CAUSE_BEARER_CAPABILITY_NOT_AUTHORISED}, { 58, CC_CAUSE_BEARER_CAPABILITY_NOT_PRESENTLY_AVAILABLE},
+	{ 63, CC_CAUSE_SERVICE_OR_OPTION_NOT_AVAILABLE}, { 65, CC_CAUSE_BEARER_SERVICE_NOT_IMPLEMENTED},
+	{ 68, CC_CAUSE_ACM_GEQ_ACMMAX}, { 69, CC_CAUSE_REQUESTED_FACILITY_NOT_IMPLEMENTED},
+	{ 70, CC_CAUSE_ONLY_RESTRICTED_DIGITAL_INFO_BC_AVAILABLE}, { 79, CC_CAUSE_SERVICE_OR_OPTION_NOT_IMPLEMENTED},
+	{ 81, CC_CAUSE_INVALID_TRANSACTION_ID_VALUE}, { 87, CC_CAUSE_USER_NOT_MEMBER_OF_CUG},
+	{ 88, CC_CAUSE_INCOMPATIBLE_DESTINATION}, { 91, CC_CAUSE_INVALID_TRANSIT_NETWORK_SELECTION},
+	{ 95, CC_CAUSE_SEMANTICALLY_INCORRECT_MESSAGE}, { 96, CC_CAUSE_INVALID_MANDATORY_INFORMATION},
+	{ 97, CC_CAUSE_MESSAGE_TYPE_NON_EXISTENT}, { 98, CC_CAUSE_MESSAGE_TYPE_NOT_COMPATIBLE_WITH_PROT_STATE},
+	{ 99, CC_CAUSE_IE_NON_EXISTENT_OR_NOT_IMPLEMENTED}, { 100, CC_CAUSE_CONDITIONAL_IE_ERROR},
+	{ 101, CC_CAUSE_MESSAGE_NOT_COMPATIBLE_WITH_PROTOCOL_STATE}, { 102, CC_CAUSE_RECOVERY_ON_TIMER_EXPIRY},
+	{ 111, CC_CAUSE_PROTOCOL_ERROR_UNSPECIFIED}, {127, CC_CAUSE_INTERWORKING_UNSPECIFIED},
 };
 
-/*Forward Declarations*/
-static void on_response_imc_call_default(TcorePending *p,
-	guint data_len, const void *data, void *user_data);
+static enum tcore_call_status _call_status(unsigned int status)
+{
+	dbg("Entry");
 
-static TelReturn __call_list_get(CoreObject *co, gboolean flag);
+	switch (status) {
+	case 0:
+		return TCORE_CALL_STATUS_ACTIVE;
 
-static void __on_response_imc_call_end_cause(TcorePending *p,
-	guint data_len, const void *data, void *user_data);
+	case 1:
+		return TCORE_CALL_STATUS_HELD;
 
-static TelCallType __call_type(int type)
+	case 2:
+		return TCORE_CALL_STATUS_DIALING;
+
+	case 3:
+		return TCORE_CALL_STATUS_ALERT;
+
+	case 4:
+		return TCORE_CALL_STATUS_INCOMING;
+
+	case 5:
+		return TCORE_CALL_STATUS_WAITING;
+
+	case 6:         // DISCONNECTED state  // FALL THROUGH
+	default:
+		return TCORE_CALL_STATUS_IDLE;
+	}
+}
+
+static gboolean _call_is_in_mpty(int mpty)
+{
+	dbg("Entry");
+
+	switch (mpty) {
+	case 0:
+		return FALSE;
+
+	case 1:
+		return TRUE;
+
+	default:
+		break;
+	}
+
+	return FALSE;
+}
+
+static enum tcore_call_type call_type(int type)
 {
 	dbg("Entry");
 
 	switch (type) {
 	case 0:
-		return TEL_CALL_TYPE_VOICE;
+		return TCORE_CALL_TYPE_VOICE;
 
 	case 1:
-		return TEL_CALL_TYPE_VIDEO;
+		return TCORE_CALL_TYPE_VIDEO;
 
 	default:
-		err("invalid call type, returning default call type as voice");
-		return TEL_CALL_TYPE_VOICE;
+		break;
 	}
+
+	return TCORE_CALL_TYPE_VOICE;
 }
 
-static TelCallState __call_state(int state)
+static int _compare_call_end_cause(int networkcause)
+{
+	unsigned int count;
+
+	for (count = 0; count < sizeof(call_end_cause_table) / sizeof(call_end_cause_info); count++) {
+		if (call_end_cause_table[count].network_cause == networkcause)
+			return (call_end_cause_table[count].tapi_cause);
+	}
+	return CC_CAUSE_NORMAL_CALL_CLEARING;
+	dbg("Exit");
+}
+
+static gboolean on_notification_call_clip_info(CoreObject *o, const void *data, void *user_data)
 {
 	dbg("Entry");
 
-	switch (state) {
-	case 0:
-		return TEL_CALL_STATE_ACTIVE;
+	// TODO
 
-	case 1:
-		return TEL_CALL_STATE_HELD;
-
-	case 2:
-		return TEL_CALL_STATE_DIALING;
-
-	case 3:
-		return TEL_CALL_STATE_ALERT;
-
-	case 4:
-	case 5:
-		return TEL_CALL_STATE_INCOMING;
-
-	default:
-		return TEL_CALL_STATE_IDLE;
-	}
+	return TRUE;
 }
 
-static void __call_branch_by_status(CoreObject *co, CallObject *call_obj,
-	TelCallState call_state)
-{
-	unsigned int call_id;
-	TelCallType call_type;
-	TelCallState state;
-	TcoreNotification command = TCORE_NOTIFICATION_UNKNOWN;
-	dbg("Call State[%d]", call_state);
-
-	if (tcore_call_object_get_state(call_obj, &state) == FALSE) {
-		err("unable to get call status");
-		return;
-	}
-
-	if (call_state == state) {
-		dbg("current call state and existing call state are same");
-		return;
-	}
-
-	if (tcore_call_object_get_call_type(call_obj, &call_type) == FALSE) {
-		err("unable to get call type");
-		return;
-	}
-
-	if (tcore_call_object_get_id(call_obj, &call_id) == FALSE) {
-		err("unable to get call id");
-		return;
-	}
-
-	/* Set Status */
-	tcore_call_object_set_state(call_obj, call_state);
-
-	if (call_type == TEL_CALL_TYPE_VOICE) {
-		/* voice call notification */
-		switch (call_state) {
-		case TEL_CALL_STATE_ACTIVE:
-			command = TCORE_NOTIFICATION_CALL_STATUS_ACTIVE;
-		break;
-
-		case TEL_CALL_STATE_HELD:
-			command = TCORE_NOTIFICATION_CALL_STATUS_HELD;
-		break;
-
-		case TEL_CALL_STATE_DIALING:
-			command = TCORE_NOTIFICATION_CALL_STATUS_DIALING;
-		break;
-
-		case TEL_CALL_STATE_ALERT:
-			command = TCORE_NOTIFICATION_CALL_STATUS_ALERT;
-		break;
-
-		case TEL_CALL_STATE_INCOMING:
-		case TEL_CALL_STATE_WAITING: {
-			TelCallIncomingInfo incoming = {0,};
-
-			incoming.call_id = call_id;
-			tcore_call_object_get_cli_validity(call_obj, &incoming.cli_validity);
-			tcore_call_object_get_number(call_obj, incoming.number);
-			tcore_call_object_get_cni_validity(call_obj, &incoming.cni_validity);
-			tcore_call_object_get_name(call_obj, incoming.name);
-			tcore_call_object_get_mt_forward(call_obj, &incoming.forward);
-			tcore_call_object_get_active_line(call_obj, &incoming.active_line);
-
-			/* Send notification */
-			tcore_object_send_notification(co,
-				TCORE_NOTIFICATION_CALL_STATUS_INCOMING,
-				sizeof(TelCallIncomingInfo), &incoming);
-			return;
-		}
-
-		case TEL_CALL_STATE_IDLE: {
-			/* Send AT+CEER command*/
-			ImcRespCbData *resp_cb_data = NULL;
-			TelReturn ret;
-
-			/* Response callback data */
-			resp_cb_data = imc_create_resp_cb_data(NULL, NULL, &call_id, sizeof(call_id));
-
-			/* Send Request to modem */
-			ret = tcore_at_prepare_and_send_request(co,
-				"AT+CEER", "+CEER:",
-				TCORE_AT_COMMAND_TYPE_SINGLELINE,
-				NULL,
-				__on_response_imc_call_end_cause, resp_cb_data,
-				on_send_imc_request, NULL);
-			if (ret != TEL_RETURN_SUCCESS) {
-				warn("Failed to send request");
-				TelCallStatusIdleNoti idle;
-
-				idle.call_id = call_id;
-				idle.cause = TEL_CALL_END_CAUSE_NONE;
-
-				/* Send notification */
-				tcore_object_send_notification(co,
-					TCORE_NOTIFICATION_CALL_STATUS_IDLE,
-					sizeof(TelCallStatusIdleNoti), &idle);
-
-				imc_destroy_resp_cb_data(resp_cb_data);
-			}
-
-			/* Free Call object */
-			tcore_call_object_free(co, call_obj);
-			return;
-		}
-		}
-
-	}
-	else if (call_type == TEL_CALL_TYPE_VIDEO) {
-		/* video call notification */
-		switch (call_state) {
-		case TEL_CALL_STATE_ACTIVE:
-			command = TCORE_NOTIFICATION_VIDEO_CALL_STATUS_ACTIVE;
-		break;
-
-		case TEL_CALL_STATE_HELD:
-			err("invalid state");
-		break;
-
-		case TEL_CALL_STATE_DIALING:
-			command = TCORE_NOTIFICATION_VIDEO_CALL_STATUS_DIALING;
-		break;
-
-		case TEL_CALL_STATE_ALERT:
-			command = TCORE_NOTIFICATION_VIDEO_CALL_STATUS_ALERT;
-		break;
-
-		case TEL_CALL_STATE_INCOMING:
-		case TEL_CALL_STATE_WAITING:
-			command = TCORE_NOTIFICATION_VIDEO_CALL_STATUS_INCOMING;
-		break;
-
-		case TEL_CALL_STATE_IDLE: {
-			TelCallStatusIdleNoti idle;
-
-			idle.call_id = call_id;
-			idle.cause = TEL_CALL_END_CAUSE_NONE;
-
-			/* Send notification */
-			tcore_object_send_notification(co,
-				TCORE_NOTIFICATION_VIDEO_CALL_STATUS_IDLE,
-				sizeof(TelCallStatusIdleNoti), &idle);
-
-			/* Free Call object */
-			tcore_call_object_free(co, call_obj);
-			return;
-		}
-		}
-	} else {
-		err("Unknown Call type: [%d]", call_type);
-	}
-
-	if (command != TCORE_NOTIFICATION_UNKNOWN)
-		tcore_object_send_notification(co, command, sizeof(call_id), &call_id);
-}
-
-static void __handle_call_list_get(CoreObject *co, gboolean flag, void *data)
-{
-	int call_id;
-	int direction;
-	int call_type;
-	int state;
-	int mpty;
-	int ton = -1;
-	GSList *tokens = NULL;
-	char *resp = NULL;
-	char *line;
-	char *num = NULL;
-	int num_type;
-	char number[TEL_CALL_CALLING_NUMBER_LEN_MAX +1] = {0,};
-	GSList *lines = data;
-	CallObject *call_obj = NULL;
-
-	 while (lines != NULL) {
-		line = (char *)lines->data;
-		/* point to next node */
-		lines = lines->next;
-		/* free previous tokens*/
-		tcore_at_tok_free(tokens);
-
-		tokens = tcore_at_tok_new(line);
-
-		/* <id1> */
-		resp = g_slist_nth_data(tokens, 0);
-		if (NULL == resp) {
-			err("Invalid call_id");
-			continue;
-		}
-		call_id = atoi(resp);
-
-		/* <dir> */
-		resp = g_slist_nth_data(tokens, 1);
-		if (NULL == resp) {
-			err("Invalid direction");
-			continue;
-		}
-		direction = (atoi(resp) == 0) ? 1 : 0;
-
-		/* <stat> */
-		resp = g_slist_nth_data(tokens, 2);
-		if (NULL == resp) {
-			err("Invalid state");
-			continue;
-		}
-		state = __call_state(atoi(resp));
-
-		/* <mode> */
-		resp = g_slist_nth_data(tokens, 3);
-		if (NULL == resp) {
-			err("Invalid call_type");
-			continue;
-		}
-		call_type = __call_type(atoi(resp));
-
-		/* <mpty> */
-		resp = g_slist_nth_data(tokens, 4);
-		if (NULL == resp) {
-			err("Invalid mpty");
-			continue;
-		}
-		mpty = atoi(resp);
-
-		/* <number> */
-		resp = g_slist_nth_data(tokens, 5);
-		if (NULL == resp) {
-			err("Number is NULL");
-		} else {
-			/* Strike off double quotes */
-			num = tcore_at_tok_extract(resp);
-			dbg("Number: [%s]", num);
-
-			/* <type> */
-			resp = g_slist_nth_data(tokens, 6);
-			if (!resp) {
-				err("Invalid num type");
-			} else {
-				num_type = atoi(resp);
-				/* check number is international or national. */
-				ton = ((num_type) >> 4) & 0x07;
-				if (ton == 1 && num[0] != '+') {
-					/* international number */
-					number[0] = '+';
-					memcpy(&number[1], num, strlen(num));
-				} else {
-					memcpy(number, num, strlen(num));
-				}
-			}
-			g_free(num);
-		}
-
-		dbg("Call ID: [%d] Direction: [%s] Call Type: [%d] Multi-party: [%s] "
-			"Number: [%s] TON: [%d] State: [%d]",
-			call_id, (direction ? "Outgoing" : "Incoming"), call_type,
-			(mpty ? "YES" : "NO"), number, ton, state);
-
-		call_obj = tcore_call_object_find_by_id(co, call_id);
-		if (NULL == call_obj) {
-			call_obj = tcore_call_object_new(co, call_id);
-			if (NULL == call_obj) {
-				err("unable to create call object");
-				continue;
-			}
-		}
-
-		/* Set Call parameters */
-		tcore_call_object_set_type(call_obj, call_type);
-		tcore_call_object_set_direction(call_obj, direction);
-		tcore_call_object_set_multiparty_state(call_obj, mpty);
-		tcore_call_object_set_cli_info(call_obj, TEL_CALL_CLI_VALIDITY_VALID, number);
-		tcore_call_object_set_active_line(call_obj, TEL_CALL_ACTIVE_LINE1);
-		if (flag == TRUE)
-			__call_branch_by_status(co, call_obj, state);
-		else
-			tcore_call_object_set_state(call_obj, state);
-	}
-}
-
-/* internal notification operation */
-static void __on_notification_imc_call_incoming(CoreObject *co, unsigned int call_id,
-	void *user_data)
-{
-	GSList *list = NULL;
-	CallObject *call_obj = NULL;
-	dbg("entry");
-
-	/* check call with incoming status already exist */
-	list = tcore_call_object_find_by_status(co, TEL_CALL_STATE_INCOMING);
-	if (list != NULL) {
-		err("Incoming call already exist! Skip...");
-		g_slist_free(list);
-		return;
-	}
-
-	call_obj = tcore_call_object_find_by_id(co, call_id);
-	if (call_obj != NULL) {
-		err("Call object for Call ID [%d] already exist! Skip...", call_id);
-		return;
-	}
-
-	/* Create new Call object */
-	call_obj = tcore_call_object_new(co, (unsigned int)call_id);
-	if (NULL == call_obj) {
-		err("Failed to create Call object");
-		return;
-	}
-
-	/* Make request to get current Call list */
-	__call_list_get(co, TRUE);
-}
-
-static void __on_notification_imc_call_status(CoreObject *co, unsigned int call_id,
-	unsigned int call_state, void *user_data)
-{
-	CallObject *call_obj = NULL;
-	TelCallState state;
-
-	state = __call_state(call_state);
-	dbg("state [%d]", state);
-
-	switch (state) {
-	case TEL_CALL_STATE_ACTIVE: {
-		find_call_object(co, call_id, call_obj);
-		/* Send notification to application */
-		__call_branch_by_status(co, call_obj, state);
-	}
-	break;
-
-	case TEL_CALL_STATE_HELD: {
-		find_call_object(co, call_id, call_obj);
-		/* Send notification to application */
-		__call_branch_by_status(co, call_obj, state);
-	}
-	break;
-
-	case TEL_CALL_STATE_DIALING: {
-		call_obj = tcore_call_object_find_by_id(co, call_id);
-		if (!call_obj) {
-			call_obj = tcore_call_object_new(co, call_id);
-			if (!call_obj) {
-				err("unable to create call object");
-				return;
-			}
-		}
-		/* Make request to get current call list.Update CallObject with <number>
-		 * and send notification to application */
-		__call_list_get(co, TRUE);
-	}
-	break;
-
-	case TEL_CALL_STATE_ALERT: {
-		find_call_object(co, call_id, call_obj);
-		/* Send notification to application */
-		__call_branch_by_status(co, call_obj, TEL_CALL_STATE_ALERT);
-	}
-	break;
-
-	case TEL_CALL_STATE_IDLE: {
-		find_call_object(co, call_id, call_obj);
-		/* Send notification to application */
-		__call_branch_by_status(co, call_obj, state);
-	}
-	break;
-
-	default:
-		err("invalid call status");
-		break;
-	}
-}
-
-/*internal response operation */
-static void __on_response_imc_call_list_get(TcorePending *p, guint data_len, const void *data,
-	void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	GSList *lines = NULL;
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	gboolean *flag = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
-	int count;
-	dbg("entry");
-
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
-
-	if (at_resp && at_resp->success) {
-		if (NULL == at_resp->lines) {
-			err("invalid response received");
-			return;
-		}
-
-		lines = (GSList *) at_resp->lines;
-		count = g_slist_length(lines);
-		dbg("Total records : %d", count);
-		if (0 == count) {
-			err("Call count is zero");
-			return;
-		}
-		result = TEL_CALL_RESULT_SUCCESS;
-		dbg("RESPONSE OK");
-
-		/* parse +CLCC notification parameter */
-		__handle_call_list_get(co, *flag, lines);
-
-	} else {
-		err("RESPONSE NOK");
-	}
-}
-
-/*internal request operation */
-static TelReturn __send_call_request(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data, gchar *at_cmd, gchar *func_name)
-{
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret;
-
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, func_name,
-			strlen(func_name) + 1);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_call_default, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, func_name);
-
-	/* Free resources */
-	g_free(at_cmd);
-	return ret;
-}
-
- /*
- * Operation -  Get current call list.
- *
- * Request -
- * AT-Command: AT+CLCC
- *
- * Response -
- * Success:
- *[+CLCC: <id1>, <dir>, <stat>, <mode>,<mpty>[,<number>,<type>[,<alpha>[,<priority>]]]
- *
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn __call_list_get(CoreObject *co, gboolean flag)
-{
-	ImcRespCbData *resp_cb_data;
-	TelReturn ret = TEL_RETURN_FAILURE;
-	dbg("Entry");
-
-	if (NULL == co) {
-		err("Core Object is NULL");
-		return ret;
-	}
-
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(NULL, NULL, &flag, sizeof(gboolean));
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-		"AT+CLCC","+CLCC",
-		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		NULL,
-		__on_response_imc_call_list_get, resp_cb_data,
-		on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Get current call list");
-
-	return ret;
-}
-
-static TelCallResult __convert_imc_extended_err_tel_call_result(gint error)
-{
-	/*
-	 * CEER error codes
-	 * 1   - unassigned (unallocated) number.
-	 * 28  - invalid number format (incomplete number).
-	 * 96  - invalid mandatory information.
-	 * 258 - Invalid parameters.
-	 * 371 - Invalid mandatory info.
-	 * 257 - Out of memory.
-	 * 279 - FDN Failed.
-	 * 42  - switching equipment congestion
-	 * 287 - MM network failure unspecified.
-	 * 380 - Congestion.
-	 */
-	dbg("CEER Error: [%d]", error);
-
-	switch (error) {
-	case 1:
-	case 28:
-	case 96:
-	case 258:
-	case 371:
-		return TEL_CALL_RESULT_INVALID_PARAMETER;
-	case 257:
-		return TEL_CALL_RESULT_MEMORY_FAILURE;
-	case 279:
-		return TEL_CALL_RESULT_FDN_RESTRICTED;
-	case 42:
-	case 287:
-	case 380:
-		return TEL_CALL_RESULT_NETWORK_BUSY;
-	default:
-		return TEL_CALL_RESULT_FAILURE;
-	}
-}
-
-static TelCallEndCause __convert_imc_extended_err_call_end_cause(gint error)
-{
-	/*
-	 * CEER error codes
-	 * 1  - unassigned (unallocated) number.
-	 * 3  -  No route to destination.
-	 * 16 - operator determined barring.
-	 * 17 - user busy.
-	 * 18 - no user responding.
-	 * 19 -  user alerting, no answer.
-	 * 21 - call rejected.
-	 * 22 - number changed
-	 * 27 - destination out of order.
-	 * 28 - invalid number format (incomplete number).
-	 * 29 - facility rejected
-	 * 34 - no circuit / channel available.
-	 * 38 - network out of order
-	 * 41 - temporary failure
-	 * 44 - requested circuit / channel not available.
-	 * 50 - requested facility not subscribed
-	 * 68 - ACM equal to or greater than ACMmax
-	 */
-	dbg("Call end-cause: [%d]", error);
-	switch (error) {
-	case 1:
-		return TEL_CALL_END_CAUSE_UNASSIGNED_NUMBER;
-	case 3:
-		return TEL_CALL_END_CAUSE_NO_ROUTE_TO_DEST;
-	case 8:
-		return TEL_CALL_END_CAUSE_OPERATOR_DETERMINED_BARRING;
-	case 16:
-		return TEL_CALL_END_CAUSE_NORMAL_CALL_CLEARING;
-	case 17:
-		return TEL_CALL_END_CAUSE_USER_BUSY;
-	case 18:
-		return TEL_CALL_END_CAUSE_NO_USER_RESPONDING;
-	case 19:
-		return TEL_CALL_END_CAUSE_USER_ALERTING_NO_ANSWER;
-	case 21:
-		return TEL_CALL_END_CAUSE_CALL_REJECTED;
-	case 22:
-		return TEL_CALL_END_CAUSE_NUMBER_CHANGED;
-	case 27:
-		return TEL_CALL_END_CAUSE_DESTINATION_OUT_OF_ORDER;
-	case 28:
-		return TEL_CALL_END_CAUSE_INVALID_NUMBER_FORMAT;
-	case 29:
-		return TEL_CALL_END_CAUSE_FACILITY_REJECTED;
-	case 34:
-		return TEL_CALL_END_CAUSE_NO_CIRCUIT_CHANNEL_AVAILABLE;
-	case 38:
-		return TEL_CALL_END_CAUSE_NETWORK_OUT_OF_ORDER;
-	case 41:
-		return TEL_CALL_END_CAUSE_TEMPORARY_FAILURE;
-	case 42:
-		return TEL_CALL_END_CAUSE_SWITCHING_EQUIPMENT_CONGESTION;
-	case 44:
-		return TEL_CALL_END_CAUSE_REQUESTED_CIRCUIT_CHANNEL_NOT_AVAILABLE;
-	case 50:
-		return TEL_CALL_END_CAUSE_REQUESTED_FACILITY_NOT_SUBSCRIBED;
-	case 68:
-		return TEL_CALL_END_CAUSE_ACM_GEQ_ACMMAX;
-	case 63:
-	case 79:
-		return TEL_CALL_END_CAUSE_SERVICE_OPTION_OUT_OF_ORDER;
-	default:
-		return TEL_CALL_END_CAUSE_FAILED;
-	}
-}
-
-static TelCallResult __convert_imc_xdrv_result_tel_call_result(gint xdrv_err)
-{
-	 /*
-	  * 0  - Command was executed without any error.
-	  * 1  - One of the parameters is out of range.
-	  * 2  - The function doesn’t exist for this driver.
-	  * 3  - The group is not supported.
-	  * 4  - The internal state of the driver is not allowing to process the command.
-	  * 5  - The driver interface function for the command is not available.
-	  * 6  - The corresponding driver for the command retuns an error.
-	  * 7  - Timeout occured when expecting response from the corresponding driver.
-	  * 8  - The driver is not supported for this product.
-	  * 12 - No of parameteres passed for the command is mismatch with the rquirements.
-	  * 13 - The given command to xdrv is invalid.
-	  * 14 - Any internal error in xdrv like out of memory.
-	  */
-
-	dbg("XDRV result: [%d]", xdrv_err);
-	switch (xdrv_err) {
-	case 1:
-	case 12:
-	case 13:
-		return  TEL_CALL_RESULT_INVALID_PARAMETER;
-	case 14:
-		return TEL_CALL_RESULT_MEMORY_FAILURE;
-	default:
-		return TEL_CALL_RESULT_OPERATION_NOT_SUPPORTED;
-	}
-}
-
-/* Notification */
-
-/*
- * Operation -  call status notification from network.
- * notification message format:
- * +XCALLSTAT: <call_id><stat>
- * where
- * <call_id>
- * indicates the call identification (GSM02.30 4.5.5.1)
- * <stat>
- * 0 active
- * 1 hold
- * 2 dialling (MO call)
- * 3 alerting (MO call; ringing for the remote party)
- * 4 ringing (MT call)
- * 5 waiting (MT call)
- * 6 disconnected
- * 7 connected (indicates the completion of a call setup first time
- *	for MT and MO calls this is reported in addition to state active)
- */
-static gboolean on_notification_imc_call_status(CoreObject *co, const void *data,
-	void *user_data)
+static gboolean on_notification_call_info(CoreObject *o, const void *data, void *user_data)
 {
 	GSList *tokens = NULL;
 	GSList *lines = NULL;
 	const char *line = NULL;
-	char *state = NULL, *call_handle = NULL;
-	unsigned int status, call_id;
+	char *stat;
+	int status;
 
 	dbg("Entry");
 
 	lines = (GSList *) data;
-	if (lines == NULL) {
-		err("Invalid response received");
-		return TRUE;
+	if (1 != g_slist_length(lines)) {
+		err("Unsolicited message, BUT multiple lines present");
+		goto OUT;
 	}
+
 	line = (char *) (lines->data);
 	tokens = tcore_at_tok_new(line);
 
-	call_handle = g_slist_nth_data(tokens, 0);
-	if (NULL == call_handle) {
-		err("call id missing from %XCALLSTAT indication");
-		goto OUT;
-	}
-	call_id = atoi(call_handle);
-	state = g_slist_nth_data(tokens, 1);
-	if (NULL == state) {
-		err("call state is missing from %XCALLSTAT indication");
-		goto OUT;
-	}
-	status = atoi(state);
-	dbg("call id[%d], status[%d]", call_id, status);
+	stat = g_slist_nth_data(tokens, 1);
+	if (!stat) {
+		dbg("Stat is missing from %XCALLSTAT indiaction");
+	} else {
+		status = atoi(stat);
 
-	switch (status) {
-	case STATUS_INCOMING:
-	case STATUS_WAITING:
-		__on_notification_imc_call_incoming(co, call_id, user_data);
-		break;
+		switch (status) {
+		case STATUS_INCOMING:
+			dbg("calling on_notification_call_incoming");
+			on_notification_call_incoming(o, line, user_data);
+			break;
 
-	case STATUS_CONNECTED:     /* ignore Connected state. */
-		dbg("ignore connected state");
-		break;
+		case STATUS_WAITING:
+			dbg("calling on_notification_call_waiting");
+			on_notification_call_waiting(o, line, user_data);
+			break;
 
-	default:
-		__on_notification_imc_call_status(co, call_id, status, user_data);
-		break;
+		case STATUS_CONNECTED:     /*igonre Connected state. */
+			dbg("Connected state");
+			break;
+
+		default:
+			dbg("calling on_notification_call_status");
+			on_notification_call_status(o, line, user_data);
+			break;
+		}
 	}
-OUT:
+
 	// Free tokens
 	tcore_at_tok_free(tokens);
-	return TRUE;
-}
 
-/*
- * Operation -  SS network initiated notification.
- *
- * notification message format:
- * +CSSU: <code2>[<index> [,<number>,<type>]]
- * <code2>
- * (it is manufacturer specific, which of these codes are supported):
- * 0 this is a forwarded call (MT call setup)
- * 1 this is a CUG call (<index> present) (MT call setup)
- * 2 call has been put on hold (during a voice call)
- * 3 call has been retrieved (during a voice call)
- * 4 multiparty call entered (during a voice call)
- * 5 Call has been released - not a SS notification (during a voice call)
- * 6 forward check SS message received (can be received whenever)
- * 7 call is being connected (alerting) with the remote party in alerting state
- *   in explicit call transfer operation
- *   (during a voice call)
- * 8 call has been connected with the other remote party in explicit call transfer
- *   operation (during a voice call or MT call setup)
- * 9 this is a deflected call (MT call setup)
- * 10 additional incoming call forwarded
- * <index>
- * refer Closed user group +CCUG
- * <number>
- *  string type phone of format specified by <type>
- * <type>
- * type of address octet in integer format.
- */
-static gboolean on_notification_imc_call_ss_cssu_info(CoreObject *co, const void *event_data,
-	void *user_data)
-{
-	GSList *tokens = NULL;
-	TcoreNotification command = TCORE_NOTIFICATION_UNKNOWN;
-	char *resp = NULL;
-	char *cmd = 0;
-	int index = 0;
-	int code2 = -1;
-	char *number = NULL;
-
-	dbg("entry");
-
-	if (1 != g_slist_length((GSList *) event_data)) {
-		err("unsolicited msg but multiple line");
-		return TRUE;
-	}
-
-	cmd = (char *) ((GSList *) event_data)->data;
-	dbg("ss notification message[%s]", cmd);
-
-	tokens = tcore_at_tok_new(cmd);
-
-	/* parse <code2> */
-	resp = g_slist_nth_data(tokens, 0);
-	if (NULL == resp) {
-		err("Code2 is missing from +CSSU indication");
-		tcore_at_tok_free(tokens);
-		return TRUE;
-	}
-
-	code2 = atoi(resp);
-
-	/* parse [ <index>, <number> <type>] */
-	if ((resp = g_slist_nth_data(tokens, 1)))
-		index = atoi(resp);
-
-	if ((resp = g_slist_nth_data(tokens, 2))) {
-		/* Strike off double quotes */
-		number = tcore_at_tok_extract(resp);
-	}
-
-	dbg("+CSSU: <code2> = %d <index> = %d <number> = %s ", code2, index, number);
-
-	/* <code2> - other values will be ignored */
-	switch (code2) {
-	case 0:
-		command = TCORE_NOTIFICATION_CALL_INFO_MT_FORWARDED;
-		break;
-	case 2:
-		command = TCORE_NOTIFICATION_CALL_INFO_HELD;
-		break;
-	case 3:
-		command = TCORE_NOTIFICATION_CALL_INFO_ACTIVE;
-		break;
-	case 4:
-		command = TCORE_NOTIFICATION_CALL_INFO_JOINED;
-		break;
-	case 7:
-	case 8:
-		command = TCORE_NOTIFICATION_CALL_INFO_TRANSFERED;
-		break;
-	case 9:
-		command = TCORE_NOTIFICATION_CALL_INFO_MT_DEFLECTED;
-		break;
-	default:
-		dbg("Unsupported +CSSU notification : %d", code2);
-		break;
-	}
-
-	if (command != TCORE_NOTIFICATION_UNKNOWN)
-		tcore_object_send_notification(co, command, 0, NULL);
-	tcore_at_tok_free(tokens);
-	g_free(number);
-
-	return TRUE;
-}
-
-/*
-* Operation -  SS network initiated notification.
-* notification message format:
-* +CSSI : <code1>[,<index>]
-* where
-* <code1>
-* 0 unconditional call forwarding is active
-* 1 some of the conditional call forwarding are active
-* 2 call has been forwarded
-* 3 call is waiting
-* 4 this is a CUG call (also <index> present)
-* 5 outgoing calls are barred
-* 6 incoming calls are barred
-* 7 CLIR suppression rejected
-* 8 call has been deflected
-
-* <index>
-* refer Closed user group +CCUG.
-*/
-static gboolean on_notification_imc_call_ss_cssi_info(CoreObject *co, const void *event_data,
-	void *user_data)
-{
-	GSList *tokens = NULL;
-	TcoreNotification command = TCORE_NOTIFICATION_UNKNOWN;
-	char *resp = NULL;
-	char *cmd = 0;
-	int index = 0;
-	int code1 = -1;
-
-	dbg("entry");
-
-	if (1 != g_slist_length((GSList *) event_data)) {
-		err("unsolicited msg but multiple line");
-		return TRUE;
-	}
-	cmd = (char *) ((GSList *) event_data)->data;
-	dbg("ss notification message[%s]", cmd);
-
-	tokens = tcore_at_tok_new(cmd);
-	/* parse <code1> */
-	resp = g_slist_nth_data(tokens, 0);
-	if (NULL == resp) {
-		err("<code1> is missing from %CSSI indication");
-		tcore_at_tok_free(tokens);
-		return TRUE;
-	}
-
-	code1 = atoi(resp);
-
-	/* parse [ <index>] */
-	if ((resp = g_slist_nth_data(tokens, 1)))
-		index = atoi(resp);
-
-	dbg("+CSSI: <code1> = %d <index> = %d ", code1, index);
-
-	/* <code1> - other values will be ignored */
-	switch (code1) {
-	case 0:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_FORWARD_UNCONDITIONAL;
-		break;
-	case 1:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_FORWARD_CONDITIONAL;
-		break;
-	case 2:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_FORWARDED;
-		break;
-	case 3:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_WAITING;
-		break;
-	case 5:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_BARRED_OUTGOING;
-		break;
-	case 6:
-		command = TCORE_NOTIFICATION_CALL_INFO_MO_BARRED_INCOMING;
-		break;
-	case 8:
-		command  = TCORE_NOTIFICATION_CALL_INFO_MO_DEFLECTED;
-		break;
-	default:
-		dbg("Unsupported +CSSI notification : %d", code1);
-		break;
-	}
-
-	if (command != TCORE_NOTIFICATION_UNKNOWN)
-		tcore_object_send_notification(co, command, 0, NULL);
-	tcore_at_tok_free(tokens);
-
-	return TRUE;
-}
-
-static gboolean on_notification_imc_call_clip_info(CoreObject *co, const void *data,
-	void *user_data)
-{
-	dbg("entry");
-	/* TODO - handle +CLIP notification*/
-	return TRUE;
-}
-
-/* Response */
-static void __on_response_imc_call_handle_error_report(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	GSList *tokens = NULL;
-	dbg("entry");
-
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
-
-	if (at_resp && at_resp->success) {
-		GSList *resp_data = NULL;
-		gchar *resp_str;
-		gint error;
-
-		resp_data = at_resp->lines;
-		if (!resp_data) {
-			err("invalid response data received");
-			goto OUT;
-		}
-
-		tokens = tcore_at_tok_new(resp_data->data);
-		resp_str = g_slist_nth_data(tokens, 0);
-		if (!resp_str) {
-			err("In extended error report - <category> missing");
-			goto OUT;
-		}
-		dbg("category[%s]", resp_str);
-
-		resp_str = g_slist_nth_data(tokens, 1);
-		if (!resp_str) {
-			err("In extended error report - <cause> missing");
-			goto OUT;
-		}
-		error = atoi(resp_str);
-		dbg("Cause: [%d] description: [%s]", error, g_slist_nth_data(tokens, 2));
-
-		result = __convert_imc_extended_err_tel_call_result(error);
-		dbg("result: [%d]", result);
-	} else {
-		err("Response - [NOK]");
-	}
 OUT:
-
-	dbg("%s: [%s]", IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data),
-		 (result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
-
-	/* Free tokens*/
-	tcore_at_tok_free(tokens);
+	dbg("Exit");
+	return TRUE;
 }
 
-static void __on_response_imc_call_end_cause(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static gboolean _call_request_message(TcorePending *pending,
+									  CoreObject *o,
+									  UserRequest *ur,
+									  void *on_resp,
+									  void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	TelCallStatusIdleNoti idle;
-	TcoreNotification command;
-	TelCallEndCause cause = TEL_CALL_END_CAUSE_NONE;
-	guint *call_id;
-	GSList *tokens = NULL;
+	TcoreHal *hal = NULL;
+	TReturn ret;
 
-	dbg("entry");
+	dbg("Entry");
 
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
-	call_id = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
+	tcore_pending_set_priority(pending, TCORE_PENDING_PRIORITY_DEFAULT);
 
-	if (at_resp && at_resp->success) {
-		GSList *resp_data = NULL;
-		gchar *resp_str;
-		gint error;
-
-		resp_data = at_resp->lines;
-		if (!resp_data) {
-			err("invalid response data received");
-			goto OUT;
-		}
-		tokens = tcore_at_tok_new(resp_data->data);
-		resp_str = g_slist_nth_data(tokens, 0);
-		if (!resp_str) {
-			err("In extended error report - <category> missing");
-			goto OUT;
-		}
-		dbg("category[%s]", resp_str);
-		resp_str = g_slist_nth_data(tokens, 1);
-		if (!resp_str) {
-			err("In extended error report - <cause> missing");
-			goto OUT;
-		}
-		error = atoi(resp_str);
-		dbg("cause: [%d] description: [%s]", error, g_slist_nth_data(tokens, 2));
-
-		cause = __convert_imc_extended_err_call_end_cause(error);
-		dbg("cause: [%d]", cause);
-
-	} else {
-		err("RESPONSE - [NOK]");
+	if (on_resp) {
+		tcore_pending_set_response_callback(pending, on_resp, user_data);
 	}
-OUT:
-	command = TCORE_NOTIFICATION_CALL_STATUS_IDLE;
-	idle.call_id = *call_id;
+	tcore_pending_set_send_callback(pending, on_confirmation_call_message_send, NULL);
 
-	idle.cause = cause;
-
-	/* Send notification */
-	tcore_object_send_notification(co, command,
-		sizeof(TelCallStatusIdleNoti), &idle);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
-
-	/* Free tokens*/
-	tcore_at_tok_free(tokens);
-}
-static void on_response_imc_call_default(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	dbg("entry");
-
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
-
-	if (at_resp && at_resp->success) {
-		result = TEL_CALL_RESULT_SUCCESS;
+	if (ur) {
+		tcore_pending_link_user_request(pending, ur);
 	} else {
-		TelReturn ret;
-		if(at_resp){
-			err("ERROR[%s]", at_resp->final_response);
-		}
+		err("User Request is NULL, is this internal request??");
+	}
 
-		/* Send Request to modem to get extended error report*/
-		ret = tcore_at_prepare_and_send_request(co,
-			"AT+CEER", "+CEER:",
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			NULL,
-			__on_response_imc_call_handle_error_report, resp_cb_data,
-			on_send_imc_request, NULL);
+	// HAL
+	hal = tcore_object_get_hal(o);
+	// Send request to HAL
+	ret = tcore_hal_send_request(hal, pending);
+	if (TCORE_RETURN_SUCCESS != ret) {
+		err("Request send failed");
+		return FALSE;
+	}
 
+	dbg("Exit");
+	return TRUE;
+}
 
-		if (ret == TEL_RETURN_SUCCESS)
+static void _call_status_idle(TcorePlugin *p, CallObject *co)
+{
+	CoreObject *core_obj = NULL;
+	char *cmd_str = NULL;
+	TcorePending *pending = NULL;
+	TcoreATRequest *req = NULL;
+	gboolean ret = FALSE;
+	UserRequest *ur;
+
+	dbg("Entry");
+	core_obj = tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL);
+	dbg("Call ID [%d], Call Status [%d]", tcore_call_object_get_id(co), tcore_call_object_get_status(co));
+
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_IDLE) {
+		// get call end cause.
+		cmd_str = g_strdup_printf("%s", "AT+XCEER");
+		dbg("Request command string: %s", cmd_str);
+
+		// Create new Pending request
+		pending = tcore_pending_new(core_obj, 0);
+
+		// Create new AT-Command request
+		req = tcore_at_request_new(cmd_str, "+XCEER", TCORE_AT_SINGLELINE);
+		dbg("Command: %s, prefix(if any): %s, Command length: %d", req->cmd, req->prefix, strlen(req->cmd));
+		// Free command string
+		g_free(cmd_str);
+
+		// Set request data (AT command) to Pending request
+		tcore_pending_set_request_data(pending, 0, req);
+
+		ur = tcore_user_request_new(NULL, NULL);
+		// Send request
+		ret = _call_request_message(pending, core_obj, ur, _on_confirmation_call_end_cause, co);
+
+		if (!ret) {
+			err("Failed to send AT-Command request");
+			// free only UserRequest.
+			if (ur) {
+				tcore_user_request_free(ur);
+				ur = NULL;
+			}
 			return;
+		}
+	} else {
+		err("Call object was not free");
+		tcore_call_object_free(core_obj, co);
 	}
-
-	dbg("%s: [%s]", IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data),
-		 (result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	/* Free callback data */
-	imc_destroy_resp_cb_data(resp_cb_data);
+	dbg("Exit");
+	return;
 }
 
-static void on_response_imc_call_set_volume_info(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
+static void _call_status_dialing(TcorePlugin *p, CallObject *co)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
+	struct tnoti_call_status_dialing data;
+
+	dbg("Entry");
+
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_DIALING) {
+		data.type = tcore_call_object_get_type(co);
+		dbg("data.type : [%d]", data.type);
+
+		data.id = tcore_call_object_get_id(co);
+		dbg("data.id : [%d]", data.id);
+
+		// Set Status
+		tcore_call_object_set_status(co, TCORE_CALL_STATUS_DIALING);
+
+		// Send notification to TAPI
+		tcore_server_send_notification(tcore_plugin_ref_server(p),
+									   tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL),
+									   TNOTI_CALL_STATUS_DIALING,
+									   sizeof(struct tnoti_call_status_dialing),
+									   (void *) &data);
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_status_alert(TcorePlugin *p, CallObject *co)
+{
+	struct tnoti_call_status_alert data;
+
+	dbg("Entry");
+
+	// Alerting has just 1 data 'CALL ID'
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_ALERT) {
+		data.type = tcore_call_object_get_type(co);
+		dbg("data.type : [%d]", data.type);
+
+		data.id = tcore_call_object_get_id(co);
+		dbg("data.id : [%d]", data.id);
+
+		// Set Status
+		tcore_call_object_set_status(co, TCORE_CALL_STATUS_ALERT);
+
+		// Send notification to TAPI
+		tcore_server_send_notification(tcore_plugin_ref_server(p),
+									   tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL),
+									   TNOTI_CALL_STATUS_ALERT,
+									   sizeof(struct tnoti_call_status_alert),
+									   (void *) &data);
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_status_active(TcorePlugin *p, CallObject *co)
+{
+	struct tnoti_call_status_active data;
+
+	dbg("Entry");
+
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_ACTIVE) {
+		data.type = tcore_call_object_get_type(co);
+		dbg("data.type : [%d]", data.type);
+
+		data.id = tcore_call_object_get_id(co);
+		dbg("data.id : [%d]", data.id);
+
+		// Set Status
+		tcore_call_object_set_status(co, TCORE_CALL_STATUS_ACTIVE);
+
+		// Send notification to TAPI
+		tcore_server_send_notification(tcore_plugin_ref_server(p),
+									   tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL),
+									   TNOTI_CALL_STATUS_ACTIVE,
+									   sizeof(struct tnoti_call_status_active),
+									   (void *) &data);
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_status_held(TcorePlugin *p, CallObject *co)
+{
+	struct tnoti_call_status_held data;
+
+	dbg("Entry");
+
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_HELD) {
+		data.type = tcore_call_object_get_type(co);
+		dbg("data.type : [%d]", data.type);
+
+		data.id = tcore_call_object_get_id(co);
+		dbg("data.id : [%d]", data.id);
+
+		// Set Status
+		tcore_call_object_set_status(co, TCORE_CALL_STATUS_HELD);
+
+		// Send notification to TAPI
+		tcore_server_send_notification(tcore_plugin_ref_server(p),
+									   tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL),
+									   TNOTI_CALL_STATUS_HELD,
+									   sizeof(struct tnoti_call_status_held),
+									   (void *) &data);
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_status_incoming(TcorePlugin *p, CallObject *co)
+{
+	struct tnoti_call_status_incoming data;
+
+	dbg("Entry");
+
+	if (tcore_call_object_get_status(co) != TCORE_CALL_STATUS_INCOMING) {
+		tcore_call_object_set_status(co, TCORE_CALL_STATUS_INCOMING);
+
+		data.type = tcore_call_object_get_type(co);
+		dbg("data.type : [%d]", data.type);
+
+		data.id = tcore_call_object_get_id(co);
+		dbg("data.id : [%d]", data.id);
+
+		data.cli.mode = tcore_call_object_get_cli_mode(co);
+		dbg("data.cli.mode : [%d]", data.cli.mode);
+
+		tcore_call_object_get_number(co, data.cli.number);
+		dbg("data.cli.number : [%s]", data.cli.number);
+
+		data.cna.mode = tcore_call_object_get_cna_mode(co);
+		dbg("data.cna.mode : [%d]", data.cna.mode);
+
+		tcore_call_object_get_name(co, data.cna.name);
+		dbg("data.cna.name : [%s]", data.cna.name);
+
+		data.forward = FALSE; // this is tmp code
+
+		data.active_line = tcore_call_object_get_active_line(co);
+		dbg("data.active_line : [%d]", data.active_line);
+
+		// Send notification to TAPI
+		tcore_server_send_notification(tcore_plugin_ref_server(p),
+									   tcore_plugin_ref_core_object(p, CORE_OBJECT_TYPE_CALL),
+									   TNOTI_CALL_STATUS_INCOMING,
+									   sizeof(struct tnoti_call_status_incoming),
+									   (void *) &data);
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_status_waiting(TcorePlugin *p, CallObject *co)
+{
+	dbg("Entry");
+	_call_status_incoming(p, co);
+
+	dbg("Exit");
+	return;
+}
+
+static void _call_branch_by_status(TcorePlugin *p, CallObject *co, unsigned int status)
+{
+	dbg("Entry");
+
+	dbg("Call Status is %d", status);
+	switch (status) {
+	case TCORE_CALL_STATUS_IDLE:
+		_call_status_idle(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_ACTIVE:
+		_call_status_active(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_HELD:
+		_call_status_held(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_DIALING:
+		_call_status_dialing(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_ALERT:
+		_call_status_alert(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_INCOMING:
+		_call_status_incoming(p, co);
+		break;
+
+	case TCORE_CALL_STATUS_WAITING:
+		_call_status_waiting(p, co);
+		break;
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static TReturn _call_list_get(CoreObject *o, gboolean *event_flag)
+{
+	UserRequest *ur = NULL;
+	TcorePending *pending = NULL;
+	char *cmd_str = NULL;
+	TcoreATRequest *req = NULL;
+	gboolean ret = FALSE;
+
+	dbg("Entry");
+	if (!o) {
+		err("Core Object is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	// Create new User Request
+	ur = tcore_user_request_new(NULL, NULL);
+
+	// Command string
+	cmd_str = g_strdup("AT+CLCC");
+
+	// Create new Pending Request
+	pending = tcore_pending_new(o, 0);
+	req = tcore_at_request_new(cmd_str, "+CLCC", TCORE_AT_MULTILINE);
+
+	g_free(cmd_str);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+
+	ret = _call_request_message(pending, o, ur, on_response_call_list_get, event_flag);
+	if (!ret) {
+		err("AT request (%s) sending failed", req->cmd);
+		// free only UserRequest.
+		if (ur) {
+			tcore_user_request_free(ur);
+			ur = NULL;
+		}
+		return TCORE_RETURN_FAILURE;
+	}
+
+	dbg("AT request sent success");
+	return TCORE_RETURN_SUCCESS;
+}
+
+// CONFIRMATION
+static void on_confirmation_call_message_send(TcorePending *p, gboolean result, void *user_data)
+{
+	dbg("Entry");
+
+	if (result == FALSE) {  // Fail
+		dbg("SEND FAIL");
+	} else {
+		dbg("SEND OK");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void call_prepare_and_send_pending_request(CoreObject *co, const char *at_cmd, const char *prefix, enum tcore_at_command_type at_cmd_type, TcorePendingResponseCallback callback)
+{
+	TcoreATRequest *req = NULL;
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	TReturn ret;
+
+	hal = tcore_object_get_hal(co);
+	dbg("hal: %p", hal);
+
+	pending = tcore_pending_new(co, 0);
+	if (!pending)
+		dbg("Pending is NULL");
+	req = tcore_at_request_new(at_cmd, prefix, at_cmd_type);
+
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	tcore_pending_set_response_callback(pending, callback, NULL);
+	tcore_pending_set_send_callback(pending, on_confirmation_call_message_send, NULL);
+	ret = tcore_hal_send_request(hal, pending);
+	if (ret != TCORE_RETURN_SUCCESS)
+		err("Failed to process request");
+}
+
+static void on_confirmation_call_outgoing(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
 	GSList *tokens = NULL;
-	GSList *line = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_dial resp;
+	enum telephony_call_error error;
+	dbg("Entry");
+
+	ur = tcore_pending_ref_user_request(p);
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			dbg("RESPONSE NOT OK");
+
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		// Send Response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_DIAL, sizeof(struct tresp_call_dial), &resp);
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_call_accept(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_answer resp;
+	enum telephony_call_error error;
+	dbg("Entry");
+
+	ur = tcore_pending_ref_user_request(p);
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			dbg("RESPONSE NOT OK");
+
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+
+		// Send Response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_ANSWER, sizeof(struct tresp_call_answer), &resp);
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+
+static void on_confirmation_call_reject(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_answer resp;
+	enum telephony_call_error error;
+
+	dbg("Entry");
+
+	ur = tcore_pending_ref_user_request(p);
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			dbg("RESPONSE NOT OK");
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+
+		// Send Response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_ANSWER, sizeof(struct tresp_call_answer), &resp);
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_call_replace(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_answer resp;
+	enum telephony_call_error error;
+
+	dbg("Entry");
+	ur = tcore_pending_ref_user_request(p);
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			dbg("RESPONSE NOT OK");
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+
+		// Send Response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_ANSWER, sizeof(struct tresp_call_answer), &resp);
+	} else {
+		dbg("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_call_hold_and_accept(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	CoreObject *o = NULL;
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_answer resp;
+	enum telephony_call_error error;
+
+	dbg("Entry");
+
+	o = tcore_pending_ref_core_object(p);
+	ur = tcore_pending_ref_user_request(p);
+	resp.id = tcore_call_object_get_id((CallObject *) user_data);
+
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			err("RESPONSE NOT OK");
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		// Send response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_ANSWER, sizeof(struct tresp_call_answer), &resp);
+		if (!resp.err) {
+			GSList *list = 0;
+			CallObject *co = NULL;
+
+			// Active Call
+			list = tcore_call_object_find_by_status(o, TCORE_CALL_STATUS_ACTIVE);
+			if (!list) {
+				err("Can't find active Call");
+				return;
+			}
+
+			co = (CallObject *) list->data;
+			if (!co) {
+				err("Can't get active Call object");
+				return;
+			}
+
+			// Set Call Status
+			tcore_call_object_set_status(co, TCORE_CALL_STATUS_HELD);
+			dbg("Call status is set to HELD");
+		}
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _on_confirmation_call_release(TcorePending *p, int data_len, const void *data, void *user_data, int type)
+{
+	UserRequest *ur = NULL;
+	struct tresp_call_end resp;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	enum telephony_call_error error;
+	const TcoreATResponse *response = data;
+
+	dbg("Entry");
+	ur = tcore_pending_ref_user_request(p);
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			err("RESPONSE NOT OK");
+
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("Unspecified error cause OR string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				err("Error: [%d]", error);
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+			tcore_at_tok_free(tokens);
+		}
+
+		resp.type = type;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("resp.type = %d  resp.id= %d", resp.type, resp.id);
+
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_END, sizeof(struct tresp_call_end), &resp);
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+// RESPONSE
+static void on_confirmation_call_endall(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	// skip response handling - actual result will be handled in on_confirmation_call_release_all
+	const TcoreATResponse *response = data;
+
+	dbg("Entry");
+
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+	} else {
+		err("RESPONSE NOT OK");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+
+static void on_confirmation_call_release_all(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call_release(p, data_len, data, user_data, CALL_END_TYPE_ALL);
+
+	return;
+}
+
+
+static void on_confirmation_call_release_specific(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call_release(p, data_len, data, user_data, CALL_END_TYPE_DEFAULT);
+
+	return;
+}
+
+static void on_confirmation_call_release_all_active(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call_release(p, data_len, data, user_data, CALL_END_TYPE_ACTIVE_ALL);
+
+	return;
+}
+
+static void on_confirmation_call_release_all_held(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call_release(p, data_len, data, user_data, CALL_END_TYPE_HOLD_ALL);
+
+	return;
+}
+
+static void _on_confirmation_call(TcorePending *p, int data_len, const void *data, void *user_data, int type)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = NULL;
+	enum telephony_call_error error;
+
+	dbg("Entry");
+	ur = tcore_pending_ref_user_request(p);
+	response = (TcoreATResponse *) data;
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+		error = CALL_ERROR_NONE;
+	} else {
+		err("RESPONSE NOT OK");
+
+		line = (const char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+
+		if (g_slist_length(tokens) < 1) {
+			err("Unspecified error cause OR string corrupted");
+			error = CALL_ERROR_SERVICE_UNAVAIL;
+		} else {
+			error = atoi(g_slist_nth_data(tokens, 0));
+
+			// TODO: CMEE error mapping is required.
+			error = CALL_ERROR_SERVICE_UNAVAIL;
+		}
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	}
+
+	dbg("Response Call type -%d", type);
+	switch (type) {
+	case TRESP_CALL_HOLD:
+	{
+		struct tresp_call_hold resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call hold response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_HOLD, sizeof(struct tresp_call_hold), &resp);
+	}
+	break;
+
+	case TRESP_CALL_ACTIVE:
+	{
+		struct tresp_call_active resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call active response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_ACTIVE, sizeof(struct tresp_call_active), &resp);
+	}
+	break;
+
+	case TRESP_CALL_JOIN:
+	{
+		struct tresp_call_join resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call join response");
+
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_JOIN, sizeof(struct tresp_call_join), &resp);
+	}
+	break;
+
+	case TRESP_CALL_SPLIT:
+	{
+		struct tresp_call_split resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call split response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_SPLIT, sizeof(struct tresp_call_split), &resp);
+	}
+	break;
+
+	case TRESP_CALL_DEFLECT:
+	{
+		struct tresp_call_deflect resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call deflect response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_DEFLECT, sizeof(struct tresp_call_deflect), &resp);
+	}
+
+	break;
+
+	case TRESP_CALL_TRANSFER:
+	{
+		struct tresp_call_transfer resp;
+
+		resp.err = error;
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("call transfer response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_TRANSFER, sizeof(struct tresp_call_transfer), &resp);
+	}
+	break;
+
+	case TRESP_CALL_START_CONT_DTMF:
+	{
+		struct tresp_call_dtmf resp;
+
+		resp.err = error;
+		dbg("call dtmf response");
+		// Send reponse to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_START_CONT_DTMF, sizeof(struct tresp_call_dtmf), &resp);
+	}
+	break;
+
+	default:
+	{
+		dbg("type not supported");
+		return;
+	}
+	}
+
+	if ((type == TRESP_CALL_HOLD) || (type == TRESP_CALL_ACTIVE) || (type == TRESP_CALL_JOIN)
+		|| (type == TRESP_CALL_SPLIT)) {
+		if (!error) {
+			CoreObject *core_obj = NULL;
+			gboolean *eflag = g_new0(gboolean, 1);
+
+			core_obj = tcore_pending_ref_core_object(p);
+			*eflag = FALSE;
+
+			dbg("Calling _call_list_get");
+			_call_list_get(core_obj, eflag);
+		}
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_call_hold(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_HOLD);
+
+	return;
+}
+
+static void on_confirmation_call_active(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_ACTIVE);
+
+	return;
+}
+
+static void on_confirmation_call_join(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_JOIN);
+
+	return;
+}
+
+static void on_confirmation_call_split(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_SPLIT);
+
+	return;
+}
+
+static void on_confirmation_call_deflect(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_DEFLECT);
+
+	return;
+}
+
+static void on_confirmation_call_transfer(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_TRANSFER);
+
+	return;
+}
+
+static void on_confirmation_call_dtmf(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	dbg("Entry");
+	_on_confirmation_call(p, data_len, data, user_data, TRESP_CALL_START_CONT_DTMF);
+
+	return;
+}
+
+#if 0
+static void _on_confirmation_dtmf_tone_duration(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	enum telephony_call_error error;
+
+	dbg("Entry");
+
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+		error = CALL_ERROR_NONE;
+	} else {
+		err("RESPONSE NOT OK");
+		line = (const char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+		if (g_slist_length(tokens) < 1) {
+			err("err cause not specified or string corrupted");
+			error = CALL_ERROR_SERVICE_UNAVAIL;
+		} else {
+			error = atoi(g_slist_nth_data(tokens, 0));
+			// TODO: CMEE error mapping is required.
+		}
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	}
+
+	dbg("Set dtmf tone duration response - %d", error);
+	return;
+}
+#endif
+
+static void on_confirmation_call_swap(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	CoreObject *core_obj = NULL;
+	UserRequest *ur = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_swap resp;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+
+	dbg("Entry");
+	core_obj = tcore_pending_ref_core_object(p);
+	ur = tcore_pending_ref_user_request(p);
+
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			resp.err = CALL_ERROR_NONE;
+		} else {
+			err("RESPONSE NOT OK");
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 1) {
+				err("err cause not specified or string corrupted");
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			} else {
+				resp.err = atoi(g_slist_nth_data(tokens, 0));
+
+				// TODO: CMEE error mapping is required.
+				resp.err = CALL_ERROR_SERVICE_UNAVAIL;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		resp.id = tcore_call_object_get_id((CallObject *) user_data);
+		dbg("resp.id = %d", resp.id);
+
+		// Send response to TAPI
+		tcore_user_request_send_response(ur, TRESP_CALL_SWAP, sizeof(struct tresp_call_swap), &resp);
+
+		if (!resp.err) {
+			GSList *active = NULL;
+			GSList *held = NULL;
+			CallObject *co = NULL;
+			gboolean *eflag = NULL;
+
+			held = tcore_call_object_find_by_status(core_obj, TCORE_CALL_STATUS_HELD);
+			if (!held) {
+				err("Can't find held Call");
+				return;
+			}
+
+			active = tcore_call_object_find_by_status(core_obj, TCORE_CALL_STATUS_ACTIVE);
+			if (!active) {
+				dbg("Can't find active Call");
+				return;
+			}
+
+			while (held) {
+				co = (CallObject *) held->data;
+				if (!co) {
+					err("Can't get held Call object");
+					return;
+				}
+
+				resp.id = tcore_call_object_get_id(co);
+
+				// Send response to TAPI
+				tcore_user_request_send_response(ur, TRESP_CALL_ACTIVE, sizeof(struct tresp_call_active), &resp);
+
+				held = g_slist_next(held);
+			}
+
+			while (active) {
+				co = (CallObject *) active->data;
+				if (!co) {
+					err("[ error ] can't get active call object");
+					return;
+				}
+
+				resp.id = tcore_call_object_get_id(co);
+
+				// Send response to TAPI
+				tcore_user_request_send_response(ur, TRESP_CALL_HOLD, sizeof(struct tresp_call_hold), &resp);
+				active = g_slist_next(active);
+			}
+
+			eflag = g_new0(gboolean, 1);
+			*eflag = FALSE;
+
+			dbg("calling _call_list_get");
+			_call_list_get(core_obj, eflag);
+		}
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_set_sound_path(TcorePending *p, int data_len,
+						const void *data,
+						void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	struct tnoti_call_sound_path *snd_path = user_data;
+	struct tresp_call_set_sound_path resp_set_sound_path;
+	UserRequest *ur = tcore_pending_ref_user_request(p);
+	TcorePlugin *plugin = tcore_pending_ref_plugin(p);
+	CoreObject *co_call;
+
+	if (ur == NULL) {
+		err("User Request is NULL");
+		g_free(user_data);
+		return;
+	}
+
+	if (resp->success <= 0) {
+
+		dbg("RESPONSE NOT OK");
+		resp_set_sound_path.err = TRUE;
+
+		goto out;
+	}
+
+	dbg("RESPONSE OK");
+	resp_set_sound_path.err = FALSE;
+
+	co_call = tcore_plugin_ref_core_object(plugin, CORE_OBJECT_TYPE_CALL);
+
+	/* Notify control plugin about sound path */
+	tcore_server_send_notification(tcore_plugin_ref_server(plugin),
+					co_call, TNOTI_CALL_SOUND_PATH,
+					sizeof(struct tnoti_call_sound_path),
+					snd_path);
+
+out:
+	/* Answer TAPI request */
+	tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH,
+				sizeof(resp_set_sound_path),
+				&resp_set_sound_path);
+
+	g_free(user_data);
+}
+
+static void on_confirmation_call_set_source_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
 	char *resp_str = NULL;
+	struct tresp_call_set_sound_path resp;
 	gboolean error;
 
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	dbg("Enter");
+	dbg("Entry");
+	ur = tcore_pending_ref_user_request(p);
 
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
+	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
+	if (!response) {
+		err("Input data is NULL");
+		return;
+	}
 
-	if (at_resp && at_resp->success) {
-		line = at_resp->lines;
-		tokens = tcore_at_tok_new(line->data);
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
 
+		line = (const char *) (((GSList *) response->lines)->data);
+		tokens = tcore_at_tok_new(line);
+
+		resp_str = g_slist_nth_data(tokens, 0);
 		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id  missing");
+			err("group_id is missing");
+			resp.err = TRUE;
 			goto OUT;
 		}
 
 		if (!g_slist_nth_data(tokens, 1)) {
-			err(" function_id  missing");
+			err(" function_id is missing");
+			resp.err = TRUE;
 			goto OUT;
 		}
 
 		resp_str = g_slist_nth_data(tokens, 2);
-		if (!resp_str) {
-			err("xdrv result missing");
-			goto OUT;
-		} else {
-			struct imc_set_volume_info *volume_info;
-			gchar *vol = "";
-			gchar *at_cmd;
-			TelReturn ret;
 
+		if (resp_str) {
 			error = atoi(resp_str);
-			if (error) {
-				err("RESPONSE NOK");
-				result = __convert_imc_xdrv_result_tel_call_result(error);
-				goto OUT;
+			if (0 == error) {
+				dbg("Response is Success");
+				resp.err = FALSE;
+			} else {
+				resp.err = TRUE;
 			}
-
-			/* Fetch volume_info from resp_cb_data */
-			volume_info = (struct imc_set_volume_info *)
-					IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
-			dbg("volume info index[%d]", volume_info->next_index);
-
-			if (xdrv_set_volume[volume_info->next_index] == NULL) {
-				/*Processing of xdrv commands  completed */
-				dbg("RESPONSE OK");
-				result = TEL_CALL_RESULT_SUCCESS;
-				goto OUT;
-			} else if (volume_info->next_index == 3) {
-				switch ((volume_info->volume) / 10) {
-				case 0 :
-					vol = "0";
-				break;
-				case 1 :
-					vol = "40";
-				break;
-				case 2 :
-					vol = "46";
-				break;
-				case 3 :
-					vol = "52";
-				break;
-				case 4 :
-					vol = "58";
-				break;
-				case 5 :
-					vol = "64";
-				break;
-				case 6 :
-					vol = "70";
-				break;
-				case 7 :
-					vol = "76";
-				break;
-				case 8 :
-					vol = "82";
-				break;
-				case 9 :
-				default :
-					vol = "88";
-				}
-			}
-
-			at_cmd = g_strdup_printf("%s%s",
-					xdrv_set_volume[volume_info->next_index], vol);
-
-			/* Increment index to point to next xdrv command */
-			volume_info->next_index += 1;
-
-			/* Send Request to modem */
-			ret = tcore_at_prepare_and_send_request(co,
-					at_cmd, "+XDRV",
-					TCORE_AT_COMMAND_TYPE_SINGLELINE,
-					NULL,
-					on_response_imc_call_set_volume_info,
-					resp_cb_data, on_send_imc_request, NULL);
-			IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_volume_info");
-			g_free(at_cmd);
-
-			return;
 		}
+OUT:
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	} else {
+		dbg("RESPONSE NOT OK");
+
+		line = (const char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+
+		if (g_slist_length(tokens) < 1) {
+			err("err cause not specified or string corrupted");
+			resp.err = TRUE;
+		} else {
+			error = atoi(g_slist_nth_data(tokens, 0));
+
+			// TODO: CMEE error mapping is required.
+			resp.err = TRUE;
+		}
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
 	}
 
-OUT :
-	dbg("Set Volume Info: [%s]",
-			(result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	imc_destroy_resp_cb_data(resp_cb_data);
-	tcore_at_tok_free(tokens);
-}
-
-static void on_response_imc_call_set_sound_path(TcorePending *p,
-	guint data_len, const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
-	GSList *tokens = NULL;
-	GSList *line = NULL;
-	char *resp_str = NULL;
-	gboolean error;
-	gint xdrv_func_id = -1;
-
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	dbg("Enter");
-
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
-
-	if (at_resp && at_resp->success) {
-		line = at_resp->lines;
-		tokens = tcore_at_tok_new(line->data);
-		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id  missing");
-			goto OUT;
+	if (ur) {
+		if ( resp.err ) {  // Send only failed notification . success notification send when destination device is set.
+			// Send notification to TAPI
+			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH, sizeof(struct tresp_call_set_sound_path), &resp);
+			setsoundpath = TRUE;
 		}
-
-		if (!(resp_str = g_slist_nth_data(tokens, 1))) {
-			err("function_id  missing");
-			goto OUT;
-		}
-		xdrv_func_id = atoi(resp_str);
-
-		if (!(resp_str = g_slist_nth_data(tokens, 2))) {
-			err("RESPONSE NOK");
-			goto OUT;
-		}
-		error = atoi(resp_str);
-		if (error) {
-			err("RESPONSE NOK");
-			result = __convert_imc_xdrv_result_tel_call_result(error);
-			goto OUT;
-		}
-
-		if (xdrv_func_id == 4) {
-			/* Send next command to configure destination device type */
-			gchar *at_cmd;
-			TelReturn ret;
-			gint *device_type = IMC_GET_DATA_FROM_RESP_CB_DATA(resp_cb_data);
-
-			at_cmd = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",
-						*device_type);
-
-			ret = tcore_at_prepare_and_send_request(co,
-					at_cmd, "+XDRV",
-					TCORE_AT_COMMAND_TYPE_SINGLELINE,
-					NULL,
-					on_response_imc_call_set_sound_path, resp_cb_data,
-					on_send_imc_request, NULL);
-			IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_sound_path");
-			g_free(at_cmd);
-
-			return;
-		}
-		dbg("RESPONSE OK");
-		result = TEL_CALL_RESULT_SUCCESS;
+	} else {
+		err("User Request is NULL");
 	}
 
-OUT :
-	dbg("Set Sound Path: [%s]",
-			(result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-
-	tcore_at_tok_free(tokens);
-
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	imc_destroy_resp_cb_data(resp_cb_data);
+	dbg("Exit");
+	return;
 }
 
-static void on_response_set_sound_path(TcorePending *p, guint data_len,
-					const void *data, void *user_data)
+static void on_confirmation_call_set_destination_sound_path(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	ImcRespCbData *resp_cb_data = user_data;
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	CoreObject *co_call = tcore_pending_ref_core_object(p);
-
-	if (at_resp && at_resp->success)
-			result = TEL_CALL_RESULT_SUCCESS;
-
-	if(resp_cb_data->cb)
-		resp_cb_data->cb(co_call, (gint)result, NULL, resp_cb_data->cb_data);
-
-	imc_destroy_resp_cb_data(resp_cb_data);
-}
-
-static void on_response_imc_call_set_mute(TcorePending *p, guint data_len,
-	const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co = tcore_pending_ref_core_object(p);
-	ImcRespCbData *resp_cb_data = user_data;
+	UserRequest *ur = NULL;
 	GSList *tokens = NULL;
 	const char *line = NULL;
 	char *resp_str = NULL;
+	struct tresp_call_set_sound_path resp;
+	const TcoreATResponse *response = data;
 	gboolean error;
 
-	TelCallResult result = TEL_CALL_RESULT_FAILURE;
-	dbg("Enter");
+	dbg("Entry");
 
-	tcore_check_return_assert(co != NULL);
-	tcore_check_return_assert(resp_cb_data != NULL);
+	ur = tcore_pending_ref_user_request(p);
+	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
 
-	if (at_resp && at_resp->success) {
-		line = (((GSList *)at_resp->lines)->data);
+	if (!response) {
+		err("Input data is NULL");
+		return;
+	}
+
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+
+			line = (const char *) (((GSList *) response->lines)->data);
+			tokens = tcore_at_tok_new(line);
+
+			resp_str = g_slist_nth_data(tokens, 0);
+			if (!g_slist_nth_data(tokens, 0)) {
+				dbg("group_id is missing");
+				resp.err = TRUE;
+				goto OUT;
+			}
+
+			if (!g_slist_nth_data(tokens, 1)) {
+				dbg("function_id is missing");
+				resp.err = TRUE;
+				goto OUT;
+			}
+
+			resp_str = g_slist_nth_data(tokens, 2);
+			if (resp_str) {
+				error = atoi(resp_str);
+				if (0 == error) {
+					dbg("Response is Success");
+					resp.err = FALSE;
+				} else {
+					resp.err = TRUE;
+				}
+			}
+
+OUT:
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		} else {
+			dbg("RESPONSE NOT OK");
+
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("err cause not specified or string corrupted");
+				resp.err = TRUE;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+				// TODO: CMEE error mapping is required.
+				resp.err = TRUE;
+			}
+
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		}
+
+		if (setsoundpath == TRUE) {
+			setsoundpath = FALSE;
+		} else {
+			// Send response to TAPI
+			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_PATH, sizeof(struct tresp_call_set_sound_path), &resp);
+		}
+	} else {
+		dbg("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void on_confirmation_call_set_source_sound_volume_level(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	const TcoreATResponse *response = data;
+	char *resp_str = NULL;
+	struct tresp_call_set_sound_volume_level resp;
+	gboolean error;
+
+	ur = tcore_pending_ref_user_request(p);
+	dbg("Entry");
+	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
+	if (!response) {
+		err("Input data is NULL");
+		return;
+	}
+
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+
+		line = (const char *) (((GSList *) response->lines)->data);
 		tokens = tcore_at_tok_new(line);
 
+		resp_str = g_slist_nth_data(tokens, 0);
 		if (!g_slist_nth_data(tokens, 0)) {
-			err("group_id  missing");
+			err("group_id is missing");
+			resp.err = TRUE;
 			goto OUT;
 		}
 
 		if (!g_slist_nth_data(tokens, 1)) {
-			err("function_id  missing");
+			err("function_id is missing");
+			resp.err = TRUE;
 			goto OUT;
 		}
 
-		if (!(resp_str = g_slist_nth_data(tokens, 2))) {
-			err("xdrv_result missing");
-			goto OUT;
+		resp_str = g_slist_nth_data(tokens, 2);
+		if (resp_str) {
+			error = atoi(resp_str);
+
+			if (0 == error) {
+				dbg("Response is Success ");
+				resp.err = FALSE;
+			} else {
+				resp.err = TRUE;
+			}
 		}
 
-		error = atoi(resp_str);
-		if (error) {
-			err(" RESPONSE NOK [%d]", error);
-			result = __convert_imc_xdrv_result_tel_call_result(error);
-			goto OUT;
+OUT:
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	} else {
+		dbg("RESPONSE NOT OK");
+
+		line = (const char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+
+		if (g_slist_length(tokens) < 1) {
+			err("err cause not specified or string corrupted");
+			resp.err = TRUE;
+		} else {
+			error = atoi(g_slist_nth_data(tokens, 0));
+
+			// TODO: CMEE error mapping is required.
+			resp.err = TRUE;
 		}
-		result = TEL_CALL_RESULT_SUCCESS;
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
 	}
 
-OUT :
-	dbg("Set Mute: [%s]",
-			(result == TEL_CALL_RESULT_SUCCESS ? "SUCCESS" : "FAIL"));
-	tcore_at_tok_free(tokens);
+	if (ur) {
+		if (resp.err && soundvolume == FALSE) {  // Send only failed notification . success notification send when destination device is set.
+			// Send reposne to TAPI
+			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_VOLUME_LEVEL, sizeof(struct tresp_call_set_sound_volume_level), &resp);
+			soundvolume = TRUE;
+		}
+	} else {
+		err("User Request is NULL");
+	}
 
-	/* Invoke callback */
-	if (resp_cb_data->cb)
-		resp_cb_data->cb(co, (gint)result, NULL, resp_cb_data->cb_data);
-
-	imc_destroy_resp_cb_data(resp_cb_data);
+	dbg("Exit");
+	return;
 }
 
 
- /* Request */
- /*
- * Operation - dial
- *
- * Request -
- * AT-Command: ATD <num> [I] [G] [;]
- * <num> - dialed number
- * [I][i] - CLI presentation(supression or invocation)
- * [G] - control the CUG supplementary service information for this call.
- *
- * Response -
- * Success:
- * OK or CONNECT
- * Failure:
- * "ERROR"
- * "NO ANSWER"
- * "NO CARRIER"
- * "BUSY"
- * "NO DIALTONE"
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_dial(CoreObject *co, const TelCallDial *dial_info,
-		TcoreObjectResponseCallback cb, void *cb_data)
+static void on_confirmation_call_set_destination_sound_volume_level(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	gchar *at_cmd;
-	const gchar *clir;
-	gchar *num;
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	char *resp_str = NULL;
+	const TcoreATResponse *response = data;
+	struct tresp_call_set_sound_volume_level resp;
+	gboolean error;
 
-	dbg("entry");
+	dbg("Entry");
 
-	if (dial_info->call_type == TEL_CALL_TYPE_VIDEO) {
-		err("Video call is not supported in imc modem");
-		 return TEL_RETURN_OPERATION_NOT_SUPPORTED;
+	ur = tcore_pending_ref_user_request(p);
+
+	// +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
+	if (!response) {
+		err("Input data is NULL");
+		return;
 	}
 
-	if (!strncmp(dial_info->number, "*31#", 4)) {
+	if (ur) {
+		if (response->success > 0) {
+			dbg("RESPONSE OK");
+			line = (const char *) (((GSList *) response->lines)->data);
+			tokens = tcore_at_tok_new(line);
+			resp_str = g_slist_nth_data(tokens, 0);
+
+			if (!g_slist_nth_data(tokens, 0)) {
+				err("group_id is missing");
+				resp.err = TRUE;
+				goto OUT;
+			}
+
+			if (!g_slist_nth_data(tokens, 1)) {
+				err("function_id is missing");
+				resp.err = TRUE;
+				goto OUT;
+			}
+
+			resp_str = g_slist_nth_data(tokens, 2);
+
+			if (resp_str) {
+				error = atoi(resp_str);
+
+				if (0 == error) {
+					dbg("Response is Success");
+					resp.err = FALSE;
+				} else {
+					resp.err = TRUE;
+				}
+			}
+
+OUT:
+			// Free tokens
+			tcore_at_tok_free(tokens);
+		} else {
+			dbg("RESPONSE NOT OK");
+
+			line = (const char *) response->final_response;
+			tokens = tcore_at_tok_new(line);
+
+			if (g_slist_length(tokens) < 1) {
+				err("err cause not specified or string corrupted");
+				resp.err = TRUE;
+			} else {
+				error = atoi(g_slist_nth_data(tokens, 0));
+
+				// TODO: CMEE error mapping is required.
+				resp.err = TRUE;
+			}
+
+			tcore_at_tok_free(tokens);
+		}
+
+		if (soundvolume == TRUE) {
+			soundvolume = FALSE;
+		} else {
+			// Send reposne to TAPI
+			tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_VOLUME_LEVEL, sizeof(struct tresp_call_set_sound_volume_level), &resp);
+		}
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+
+static void on_confirmation_call_set_sound_mute_status(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	UserRequest *ur = NULL;
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	char *resp_str = NULL;
+	struct tresp_call_set_sound_mute_status resp;
+	const TcoreATResponse *response = data;
+	gboolean error;
+
+	dbg("Entry");
+
+	ur = tcore_pending_ref_user_request(p);
+
+	if (!response) {
+		err("Input data is NULL");
+		return;
+	}
+
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+
+		line = (const char *) (((GSList *) response->lines)->data);
+		tokens = tcore_at_tok_new(line);
+		resp_str = g_slist_nth_data(tokens, 0);
+
+		if (!g_slist_nth_data(tokens, 0)) {
+			err("group_id is missing");
+			resp.err = TRUE;
+			goto OUT;
+		}
+
+		if (!g_slist_nth_data(tokens, 1)) {
+			err(" function_id is missing");
+			resp.err = TRUE;
+			goto OUT;
+		}
+
+		resp_str = g_slist_nth_data(tokens, 2);
+
+		if (resp_str) {
+			error = atoi(resp_str);
+			if (0 == error) {
+				dbg("Response is Success");
+				resp.err = FALSE;
+			} else {
+				resp.err = TRUE;
+			}
+		}
+OUT:
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	} else {
+		dbg("RESPONSE NOT OK");
+
+		line = (const char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+
+		if (g_slist_length(tokens) < 1) {
+			err("err cause not specified or string corrupted");
+			resp.err = TRUE;
+		} else {
+			error = atoi(g_slist_nth_data(tokens, 0));
+
+			// TODO: CMEE error mapping is required.
+			resp.err = TRUE;
+		}
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	}
+
+	if (ur) {
+		tcore_user_request_send_response(ur, TRESP_CALL_SET_SOUND_MUTE_STATUS, sizeof(struct tresp_call_set_sound_mute_status), &resp);
+	} else {
+		err("User Request is NULL");
+	}
+
+	dbg("Exit");
+	return;
+}
+
+// RESPONSE
+static void on_response_call_list_get(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	TcorePlugin *plugin = NULL;
+	CoreObject *core_obj = NULL;
+	CallObject *co = NULL;
+	struct clcc_call_t *call_list = NULL;
+	gboolean *event_flag = (gboolean *) user_data;
+	const TcoreATResponse *response = data;
+	GSList *resp_data = NULL;
+	char *line = NULL;
+
+	int cllc_info = 0, countCalls = 0, countValidCalls = 0;
+	int error = 0;
+
+	dbg("Entry");
+
+	plugin = tcore_pending_ref_plugin(p);
+	core_obj = tcore_pending_ref_core_object(p);
+
+	if (response->success > 0) {
+		dbg("RESPONCE OK");
+		if (response->lines) {
+			resp_data = (GSList *) response->lines;
+			countCalls = g_slist_length(resp_data);
+			dbg("Total records : %d", countCalls);
+		}
+
+		if (0 == countCalls) {
+			err("Call count is zero");
+			if (event_flag) {
+				g_free(event_flag);
+				event_flag = NULL;
+			}
+			return;
+		}
+
+		call_list = g_new0(struct clcc_call_t, countCalls);
+
+		for (countValidCalls = 0; resp_data != NULL; resp_data = resp_data->next, countValidCalls++, cllc_info++) {
+			line = (char *) (resp_data->data);
+
+			error = _callFromCLCCLine(line, call_list + countValidCalls);
+			if (0 != error) {
+				continue;
+			}
+
+			co = tcore_call_object_find_by_id(core_obj, call_list[cllc_info].info.id);
+			if (!co) {
+				co = tcore_call_object_new(core_obj, call_list[cllc_info].info.id);
+				if (!co) {
+					err("error : tcore_call_object_new [ id : %d ]", call_list[cllc_info].info.id);
+					continue;
+				}
+			}
+
+			// Call set parameters
+			tcore_call_object_set_type(co, call_type(call_list[cllc_info].info.type));
+			tcore_call_object_set_direction(co, call_list[cllc_info].info.direction);
+			tcore_call_object_set_multiparty_state(co, _call_is_in_mpty(call_list[cllc_info].info.mpty));
+			tcore_call_object_set_cli_info(co, CALL_CLI_MODE_DEFAULT, 0, call_list[cllc_info].number, strlen(call_list[cllc_info].number));
+			tcore_call_object_set_active_line(co, 0);
+
+			if (*event_flag) {
+				dbg("Call status before calling _call_branch_by_status() : (%d)", call_list[cllc_info].info.status);
+				_call_branch_by_status(plugin, co, call_list[cllc_info].info.status);
+			} else {
+				// Set Status
+				tcore_call_object_set_status(co, call_list[cllc_info].info.status);
+
+				dbg("Call id : (%d)", call_list[cllc_info].info.id);
+				dbg("Call direction : (%d)", call_list[cllc_info].info.direction);
+				dbg("Call type : (%d)", call_list[cllc_info].info.type);
+				dbg("Call mpty : (%d)", call_list[cllc_info].info.mpty);
+				dbg("Call number : (%s)", call_list[cllc_info].number);
+				dbg("Call status : (%d)", call_list[cllc_info].info.status);
+			}
+		}
+
+		// Free Call list
+		g_free(call_list);
+	}
+
+	// Free User data
+	if (event_flag) {
+	g_free(event_flag);
+		event_flag = NULL;
+	}
+
+	dbg("Exit");
+	return;
+}
+
+static void _on_confirmation_call_end_cause(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	TcorePlugin *plugin = NULL;
+	CoreObject *core_obj = NULL;
+	CallObject *co = (CallObject *) user_data;
+	const TcoreATResponse *response = data;
+	const char *line = NULL;
+	struct tnoti_call_status_idle call_status;
+	GSList *tokens = NULL;
+	char *resp_str;
+	int error;
+
+	dbg("Entry");
+	plugin = tcore_pending_ref_plugin(p);
+	core_obj = tcore_pending_ref_core_object(p);
+
+	if (response->success > 0) {
+		dbg("RESPONSE OK");
+		line = (const char *) (((GSList *) response->lines)->data);
+		tokens = tcore_at_tok_new(line);
+		resp_str = g_slist_nth_data(tokens, 0);
+		if (!resp_str) {
+			err("call end cause - report value missing");
+		} else {
+			resp_str = g_slist_nth_data(tokens, 1);
+			if (!resp_str) {
+				err("call end cause value missing");
+			}
+			error = atoi(resp_str);
+			dbg("call end cause - %d", error);
+			call_status.cause = _compare_call_end_cause(error);
+			dbg("TAPI call end cause - %d", call_status.cause);
+		}
+
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	} else {
+		err("RESPONSE NOT OK");
+		line = (char *) response->final_response;
+		tokens = tcore_at_tok_new(line);
+		if (g_slist_length(tokens) < 1) {
+			err("err cause not specified or string corrupted");
+		} else {
+			err(" err cause  value: %d", atoi(g_slist_nth_data(tokens, 0)));
+		}
+		call_status.cause = CC_CAUSE_NORMAL_CALL_CLEARING;
+		// Free tokens
+		tcore_at_tok_free(tokens);
+	}
+
+	call_status.type = tcore_call_object_get_type(co);
+	dbg("data.type : [%d]", call_status.type);
+
+	call_status.id = tcore_call_object_get_id(co);
+	dbg("data.id : [%d]", call_status.id);
+
+	// Set Status
+	tcore_call_object_set_status(co, TCORE_CALL_STATUS_IDLE);
+
+	// Send Notification to TAPI
+	tcore_server_send_notification(tcore_plugin_ref_server(plugin),
+								   core_obj,
+								   TNOTI_CALL_STATUS_IDLE,
+								   sizeof(struct tnoti_call_status_idle),
+								   (void *) &call_status);
+
+	// Free Call object
+	tcore_call_object_free(core_obj, co);
+}
+
+static int _callFromCLCCLine(char *line, struct clcc_call_t *p_call)
+{
+	// +CLCC: 1,0,2,0,0,"18005551212",145
+	// [+CLCC: <id1>, <dir>, <stat>, <mode>,<mpty>[,<number>,<type>[,<alpha>[,<priority>]]]
+	int state;
+	int mode;
+	int isMT;
+	char *num = NULL;
+	unsigned int num_type;
+	GSList *tokens = NULL;
+	char *resp = NULL;
+
+	dbg("Entry");
+
+	tokens = tcore_at_tok_new(line);
+	// parse <id>
+	resp = g_slist_nth_data(tokens, 0);
+	if (!resp) {
+		err("InValid ID");
+		goto ERROR;
+	}
+	p_call->info.id = atoi(resp);
+	dbg("id : [%d]\n", p_call->info.id);
+
+	// parse <dir>
+	resp = g_slist_nth_data(tokens, 1);
+	if (!resp) {
+		err("InValid Dir");
+		goto ERROR;
+	}
+	isMT = atoi(resp);
+	if (0 == isMT) {
+		p_call->info.direction = TCORE_CALL_DIRECTION_OUTGOING;
+	} else {
+		p_call->info.direction = TCORE_CALL_DIRECTION_INCOMING;
+	}
+	dbg("Direction : [ %d ]\n", p_call->info.direction);
+
+	// parse <stat>
+	resp = g_slist_nth_data(tokens, 2);
+	if (!resp) {
+		err("InValid Stat");
+		goto ERROR;
+	}
+	state = atoi(resp);
+	dbg("Call state : %d", state);
+	switch (state) {
+	case 0:     // active
+		p_call->info.status = TCORE_CALL_STATUS_ACTIVE;
+		break;
+
+	case 1:
+		p_call->info.status = TCORE_CALL_STATUS_HELD;
+		break;
+
+	case 2:
+		p_call->info.status = TCORE_CALL_STATUS_DIALING;
+		break;
+
+	case 3:
+		p_call->info.status = TCORE_CALL_STATUS_ALERT;
+		break;
+
+	case 4:
+		p_call->info.status = TCORE_CALL_STATUS_INCOMING;
+		break;
+
+	case 5:
+		p_call->info.status = TCORE_CALL_STATUS_WAITING;
+		break;
+	}
+	dbg("Status : [%d]\n", p_call->info.status);
+
+	// parse <mode>
+	resp = g_slist_nth_data(tokens, 3);
+	if (!resp) {
+		err("InValid Mode");
+		goto ERROR;
+	}
+	mode = atoi(resp);
+	switch (mode) {
+	case 0:
+		p_call->info.type = TCORE_CALL_TYPE_VOICE;
+		break;
+
+	case 1:
+		p_call->info.type = TCORE_CALL_TYPE_VIDEO;
+		break;
+
+	default:        // only Voice/VT call is supported in CS. treat other unknown calls as error
+		dbg("invalid type : [%d]\n", mode);
+		goto ERROR;
+	}
+	dbg("Call type : [%d]\n", p_call->info.type);
+
+	// parse <mpty>
+	resp = g_slist_nth_data(tokens, 4);
+	if (!resp) {
+		err("InValid Mpty");
+		goto ERROR;
+	}
+
+	p_call->info.mpty = atoi(resp);
+	dbg("Mpty : [ %d ]\n", p_call->info.mpty);
+
+	// parse <num>
+	resp = g_slist_nth_data(tokens, 5);
+	dbg("Incoming number - %s and its len  - %d", resp, strlen(resp));
+
+	// tolerate null here
+	if (!resp) {
+		err("Number is NULL");
+		goto ERROR;
+	}
+	// Strike off double quotes
+	num = util_removeQuotes(resp);
+	dbg("num  after removing quotes - %s", num);
+
+	p_call->info.num_len = strlen(resp);
+	dbg("num_len : [0x%x]\n", p_call->info.num_len);
+
+	// parse <num type>
+	resp = g_slist_nth_data(tokens, 6);
+	if (!resp) {
+		dbg("InValid Num type");
+		goto ERROR;
+	}
+	p_call->info.num_type = atoi(resp);
+	dbg("BCD num type: [0x%x]\n", p_call->info.num_type);
+
+	// check number is international or national.
+	num_type = ((p_call->info.num_type) >> 4) & 0x07;
+	dbg("called party's type of number : [0x%x]\n", num_type);
+
+	if (num_type == 1 && num[0] != '+') {
+		// international number
+		p_call->number[0] = '+';
+		memcpy(&(p_call->number[1]), num, strlen(num));
+	} else {
+		memcpy(&(p_call->number), num, strlen(num));
+	}
+	dbg("incoming number - %s", p_call->number);
+
+	g_free(num);
+	num = NULL;
+	// Free tokens
+	tcore_at_tok_free(tokens);
+
+	dbg("Exit");
+	return 0;
+
+ERROR:
+	err("Invalid CLCC line");
+
+	g_free(num);
+
+	// Free tokens
+	tcore_at_tok_free(tokens);
+	err("Exit");
+	return -1;
+}
+
+// NOTIFICATION
+static void on_notification_call_waiting(CoreObject *o, const void *data, void *user_data)
+{
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	char *pId;
+	int call_id;
+	gboolean *eflag;
+	GSList *pList = NULL;
+	CallObject *co = NULL, *dupco = NULL;
+
+	dbg("function entrance");
+	// check call with waiting status already exist
+	pList = tcore_call_object_find_by_status(o, TCORE_CALL_STATUS_WAITING);
+
+	if (pList != NULL) {
+		dbg("[error]Waiting call already exist. skip");
+		return;
+	}
+	// check call with incoming status already exist
+	pList = tcore_call_object_find_by_status(o, TCORE_CALL_STATUS_INCOMING);
+
+	if (pList != NULL) {
+		dbg("[error]incoming call already exist. skip");
+		return;
+	}
+	line = (char *) data;
+	tokens = tcore_at_tok_new(line);
+
+	pId = g_slist_nth_data(tokens, 0);
+	if (!pId) {
+		dbg("[error]:Call id is missing from +XCALLSTAT indication");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+
+	call_id = atoi(pId);
+	dupco = tcore_call_object_find_by_id(o, call_id);
+	if (dupco != NULL) {
+		dbg("co with same id already exist. skip");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+	co = tcore_call_object_new(o, call_id);
+	if (!co) {
+		dbg("[ error ] co is NULL");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+
+	tcore_at_tok_free(tokens);
+
+	eflag = g_new0(gboolean, 1);
+	*eflag = TRUE;
+	dbg("calling _call_list_get");
+	_call_list_get(o, eflag);
+}
+
+static void on_notification_call_incoming(CoreObject *o, const void *data, void *user_data)
+{
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	char *pId;
+	int call_id;
+	gboolean *eflag;
+	GSList *pList = NULL;
+	CallObject *co = NULL, *dupco = NULL;
+
+	dbg("function entrance");
+	// check call with incoming status already exist
+	pList = tcore_call_object_find_by_status(o, TCORE_CALL_STATUS_INCOMING);
+
+	if (pList != NULL) {
+		dbg("incoming call already exist. skip");
+		return;
+	}
+
+	line = (char *) data;
+	tokens = tcore_at_tok_new(line);
+
+	pId = g_slist_nth_data(tokens, 0);
+	if (!pId) {
+		dbg("Error:Call id is missing from %XCALLSTAT indication");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+
+	call_id = atoi(pId);
+
+	dupco = tcore_call_object_find_by_id(o, call_id);
+	if (dupco != NULL) {
+		dbg("co with same id already exist. skip");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+
+	co = tcore_call_object_new(o, call_id);
+	if (!co) {
+		dbg("[ error ] co is NULL");
+		tcore_at_tok_free(tokens);
+		return;
+	}
+
+	dbg("freeing  at token");
+	tcore_at_tok_free(tokens);
+
+	eflag = g_new0(gboolean, 1);
+	*eflag = TRUE;
+
+	dbg("calling  _call_list_get");
+	_call_list_get(o, eflag);
+}
+
+static void on_notification_call_status(CoreObject *o, const void *data, void *user_data)
+{
+	char *cmd = NULL;
+	TcorePlugin *plugin = NULL;
+	CallObject *co = NULL;
+	int id = -1;
+	int status = 0;
+	int type = 0;
+	char *stat = NULL;
+	char *pCallId = NULL;
+	GSList *tokens = NULL;
+	gboolean *eflag = NULL;
+	enum tcore_call_status co_status;
+
+	dbg("function entrance");
+	plugin = tcore_object_ref_plugin(o);
+	cmd = (char *) data;
+	tokens = tcore_at_tok_new(cmd);
+
+	// parse <Call Id>
+	pCallId = g_slist_nth_data(tokens, 0);
+	if (!pCallId) {
+		dbg("CallId is missing from %XCALLSTAT indication");
+		tcore_at_tok_free(tokens);
+		return;
+	} else {
+		id = atoi(pCallId);
+		dbg("call id = %d", id);
+		// parse <Stat>
+		if ((stat = g_slist_nth_data(tokens, 1))) {
+			status = atoi(stat);
+		}
+		dbg("call status = %d", status);
+	}
+
+	tcore_at_tok_free(tokens);
+	co_status = _call_status(status);
+
+	dbg("co_status = %d", co_status);
+	switch (co_status) {
+	case CALL_STATUS_ACTIVE:
+	{
+		dbg("call(%d) status : [ ACTIVE ]", id);
+		co = tcore_call_object_find_by_id(o, id);
+		if (!co) {
+			dbg("co is NULL");
+			return;
+		}
+		_call_status_active(plugin, co);
+	}
+	break;
+
+	case CALL_STATUS_HELD:
+		dbg("call(%d) status : [ held ]", id);
+		break;
+
+	case CALL_STATUS_DIALING:
+	{
+		dbg("call(%d) status : [ dialing ]", id);
+		co = tcore_call_object_find_by_id(o, id);
+		if (!co) {
+			co = tcore_call_object_new(o, id);
+			if (!co) {
+				dbg("error : tcore_call_object_new [ id : %d ]", id);
+				return;
+			}
+		}
+
+		tcore_call_object_set_type(co, call_type(type));
+		tcore_call_object_set_direction(co, TCORE_CALL_DIRECTION_OUTGOING);
+		_call_status_dialing(plugin, co);
+	}
+	break;
+
+	case CALL_STATUS_ALERT:
+	{
+		dbg("call(%d) status : [ alert ]", id);
+		co = tcore_call_object_find_by_id(o, id);
+		if (!co) {
+			dbg("co is NULL");
+			return;
+		}
+		// Store dialed number information into Call object.
+		eflag = g_new0(gboolean, 1);
+		*eflag = TRUE;
+		dbg("calling _call_list_get");
+		_call_list_get(o, eflag);
+	}
+	break;
+
+	case CALL_STATUS_INCOMING:
+	case CALL_STATUS_WAITING:
+		dbg("call(%d) status : [ incoming ]", id);
+		break;
+
+	case CALL_STATUS_IDLE:
+	{
+		dbg("call(%d) status : [ release ]", id);
+
+		co = tcore_call_object_find_by_id(o, id);
+		if (!co) {
+			dbg("co is NULL");
+			return;
+		}
+
+		plugin = tcore_object_ref_plugin(o);
+		if (!plugin) {
+			dbg("plugin is NULL");
+			return;
+		}
+		_call_status_idle(plugin, co);
+	}
+	break;
+
+	default:
+		dbg("invalid call status", id);
+		break;
+	}
+}
+
+static TReturn imc_call_outgoing(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_dial *data = 0;
+	char *cmd_str;
+	const char *clir, *num;
+	TcorePending *pending;
+	TcoreATRequest *req;
+	gboolean ret;
+
+	dbg("Entry");
+
+	data = (struct treq_call_dial *) tcore_user_request_ref_data(ur, 0);
+	if (data->type == CALL_TYPE_VIDEO) {
+		dbg("invalid call type");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	if (!strncmp(data->number, "*31#", 4)) {
 		dbg("clir suppression");
 		clir = "i";
-		num = (gchar *)&(dial_info->number[4]);
-	} else if (!strncmp(dial_info->number, "#31#", 4)) {
+		num = data->number + 4;
+	} else if (!strncmp(data->number, "#31#", 4)) {
 		dbg("clir invocation");
 		clir = "I";
-		num = (gchar *)&(dial_info->number[4]);
+		num = data->number + 4;
 	} else {
 		int cli = 0;
 
 		dbg("no clir string in number");
 
-		/* it will be removed when setting application use tapi_ss_set_cli()
-		 * instead of his own vconfkey. (0 : By network, 1 : Show, 2 : Hide)
-		 */
 		vconf_get_int("db/ciss/show_my_number", &cli);
+
 		if (cli == 2){
 			dbg("clir invocation from setting application");
 			clir = "I";
@@ -1513,717 +2554,877 @@ static TelReturn imc_call_dial(CoreObject *co, const TelCallDial *dial_info,
 			dbg("set clir state to default");
 			clir = "";
 		}
-		num = (gchar *)dial_info->number;
+		num = data->number;
 	}
 
-	/* AT-Command */
-	at_cmd = g_strdup_printf("ATD%s%s;", num, clir);
-	dbg(" at command : %s", at_cmd);
+	dbg("data->number = %s", num);
 
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_dial");
-}
+	cmd_str = g_strdup_printf("ATD%s%s;", num, clir);
 
-/*
- * Operation - Answer/Reject/Replace/hold(current call) & accept incoming call.
- *
- * Request -
- *
- * 1. AT-Command: ATA
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- *
- * 2. AT-Command: AT+CHLD=[<n>]
- * <n>
- * 0 - (deafult)release all held calls or set User Determined User Busy for a waiting/incoming
- * call; if both exists then only the waiting call will be rejected.
- * 1 -  release all active calls and accepts the other (held or waiting)
- * Note: In the scenario: An active call, a waiting call and held call, when the active call is
- * terminated, we will make the Waiting call as active.
- * 2 - 	place all active calls (if exist) on hold and accepts the other call (held or waiting/in-coming).
- * If only one call exists which is active, place it on hold and if only held call exists make it active call.
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- * For more informatiion refer 3GPP TS 27.007.
- */
-static TelReturn imc_call_answer(CoreObject *co, TelCallAnswerType ans_type,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
+	dbg("request command : %s", cmd_str);
 
-	if (ans_type == TEL_CALL_ANSWER_ACCEPT) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "ATA");
-	}else if (ans_type == TEL_CALL_ANSWER_REJECT) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=0");
-	} else if (ans_type == TEL_CALL_ANSWER_REPLACE) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=1");
-	} else if (ans_type == TEL_CALL_ANSWER_HOLD_AND_ACCEPT) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=2");
-	}else {
-		err("Unsupported call answer type");
-		return TEL_RETURN_FAILURE;
+	pending = tcore_pending_new(o, 0);
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	tcore_pending_set_request_data(pending, 0, req);
+	ret = _call_request_message(pending, o, ur, on_confirmation_call_outgoing, NULL);
+
+	g_free(cmd_str);
+
+	if (ret == FALSE) {
+		dbg("AT request(%s) sent failed", req->cmd);
+		return TCORE_RETURN_FAILURE;
 	}
 
-	dbg("at command : %s", at_cmd);
+	dbg("AT request(%s) sent success", req->cmd);
 
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_answer");
+	dbg("Exit");
+
+	return TCORE_RETURN_SUCCESS;
 }
 
-/*
- * Operation - release all calls/release specific call/release all active
- * call/release all held calls.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * <n>
- * 0  - (defualt)release all held calls or set User Determined User -
- *       Busy for a waiting/incoming.
- * call; if both exists then only the waiting call will be rejected.
- * 1  - release all active calls and accepts the other (held or waiting).
- * 1x - release a specific call (x specific call number as indicated by call id).
- * 8  -	release all calls.
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_end(CoreObject *co, const TelCallEnd *end_info,
-	TcoreObjectResponseCallback cb, void *cb_data)
+static TReturn imc_call_answer(CoreObject *o, UserRequest *ur)
 {
-	gchar *at_cmd;
-	dbg("entry");
+	char *cmd_str = NULL;
+	CallObject *co = NULL;
+	struct treq_call_answer *data = 0;
+	TcorePending *pending = NULL;
+	TcoreATRequest *req;
+	gboolean ret = FALSE;
 
-	if (end_info->end_type == TEL_CALL_END_ALL) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=8");
-	}else if (end_info->end_type == TEL_CALL_END) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s%d", "AT+CHLD=1",end_info->call_id);
-	} else if (end_info->end_type == TEL_CALL_END_ACTIVE_ALL) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=1");
-	} else if (end_info->end_type == TEL_CALL_END_HOLD_ALL) {
-		/* AT-Command */
-		at_cmd = g_strdup_printf("%s", "AT+CHLD=0");
-	}else {
-		err("Unsupported call end type");
-		return TEL_RETURN_FAILURE;
+	dbg("function entrance");
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
 	}
 
-	dbg("at command : %s", at_cmd);
+	data = (struct treq_call_answer *) tcore_user_request_ref_data(ur, 0);
+	co = tcore_call_object_find_by_id(o, data->id);
+	if (data->type == CALL_ANSWER_TYPE_ACCEPT) {
+		dbg(" request type CALL_ANSWER_TYPE_ACCEPT");
 
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_end");
+		cmd_str = g_strdup_printf("%s", "ATA");
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+		dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+		tcore_pending_set_request_data(pending, 0, req);
+		ret = _call_request_message(pending, o, ur, on_confirmation_call_accept, co);
+		g_free(cmd_str);
+
+		if (!ret) {
+			dbg("AT request(%s) sent failed", req->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
+	} else {
+		switch (data->type) {
+		case CALL_ANSWER_TYPE_REJECT:
+		{
+			dbg("call answer reject");
+			tcore_call_control_answer_reject(o, ur, on_confirmation_call_reject, co);
+		}
+		break;
+
+		case CALL_ANSWER_TYPE_REPLACE:
+		{
+			dbg("call answer replace");
+			tcore_call_control_answer_replace(o, ur, on_confirmation_call_replace, co);
+		}
+		break;
+
+		case CALL_ANSWER_TYPE_HOLD_ACCEPT:
+		{
+			dbg("call answer hold and accept");
+			tcore_call_control_answer_hold_and_accept(o, ur, on_confirmation_call_hold_and_accept, co);
+		}
+		break;
+
+		default:
+			dbg("[ error ] wrong answer type [ %d ]", data->type);
+			return TCORE_RETURN_FAILURE;
+		}
+	}
+
+	return TCORE_RETURN_SUCCESS;
 }
 
-/*
- * Operation - send dtmf.
- *
- * Request -
- * 1. AT-Command: AT+VTS=<DTMF>,{<DTMF>,<duration>}.
- * where
- * <DTMF>:
- * is a single ASCII character in the set 0-9, #, *, A-D. Even it will support string DTMF.
- * <duration>:
- * integer in range 0-255, meaning 1/10(10 millisec) seconds multiples. The string parameter
- * of the command consists of combinations of the following separated by commas:
- * NOTE : There is a limit of 50 dtmf tones can be requested through a single VTS command.
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_send_dtmf(CoreObject *co, const char *dtmf_str,
-	TcoreObjectResponseCallback cb,  void *cb_data)
+static TReturn imc_call_release(CoreObject *o, UserRequest *ur)
 {
-	gchar *at_cmd;
-	char *tmp_dtmf = NULL, *dtmf;
-	unsigned int count;
+	CallObject *co = NULL;
+	struct treq_call_end *data = 0;
+	UserRequest *ur_dup = NULL;
+	char *chld0_cmd = NULL;
+	char *chld1_cmd = NULL;
+	TcorePending *pending = NULL, *pending1 = NULL;
+	TcoreATRequest *req, *req1;
+	gboolean ret = FALSE;
 
-	dbg("entry");
+	dbg("function entrance");
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+	data = (struct treq_call_end *) tcore_user_request_ref_data(ur, 0);
+	co = tcore_call_object_find_by_id(o, data->id);
 
-	//(void) _set_dtmf_tone_duration(o, dup);
+	dbg("type of release call = %d", data->type);
 
-	/* DTMF digits + comma for each dtmf digit */
-	tmp_dtmf = tcore_malloc0((strlen(dtmf_str) * 2) + 1);
-	tcore_check_return_value_assert(tmp_dtmf != NULL, TEL_RETURN_FAILURE);
-	/* Save initial pointer */
-	dtmf = tmp_dtmf;
+	if (data->type == CALL_END_TYPE_ALL) {
+		// releaseAll do not exist on legacy request. send CHLD=0, CHLD=1 in sequence
+		chld0_cmd = g_strdup("AT+CHLD=0");
+		chld1_cmd = g_strdup("AT+CHLD=1");
 
-	for (count = 0; count < strlen(dtmf_str); count++) {
-		*tmp_dtmf = dtmf_str[count];
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new(chld0_cmd, NULL, TCORE_AT_NO_RESULT);
+
+		dbg("input command is %s", chld0_cmd);
+		dbg("req-cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+
+		tcore_pending_set_request_data(pending, 0, req);
+		ur_dup = tcore_user_request_new(NULL, NULL);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_call_endall, NULL);
+		g_free(chld0_cmd);
+
+		if (!ret) {
+			dbg("AT request %s has failed ", req->cmd);
+			if (ur_dup) {
+				tcore_user_request_free(ur_dup);
+				ur_dup = NULL;
+			}
+			g_free(chld1_cmd);
+			return TCORE_RETURN_FAILURE;
+		}
+
+		pending1 = tcore_pending_new(o, 0);
+		req1 = tcore_at_request_new(chld1_cmd, NULL, TCORE_AT_NO_RESULT);
+
+		dbg("input command is %s", chld1_cmd);
+		dbg("req-cmd : %s, prefix(if any) :%s, cmd_len : %d", req1->cmd, req1->prefix, strlen(req1->cmd));
+
+		tcore_pending_set_request_data(pending1, 0, req1);
+		ret = _call_request_message(pending1, o, ur, on_confirmation_call_release_all, co);
+		g_free(chld1_cmd);
+
+		if (!ret) {
+			dbg("AT request %s has failed ", req->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
+	} else {
+		switch (data->type) {
+		case CALL_END_TYPE_DEFAULT:
+		{
+			int id = 0;
+			id = tcore_call_object_get_id(co);
+
+			dbg("call end call id [%d]", id);
+			tcore_call_control_end_specific(o, ur, id, on_confirmation_call_release_specific, co);
+		}
+		break;
+
+		case CALL_END_TYPE_ACTIVE_ALL:
+		{
+			dbg("call end all active");
+			tcore_call_control_end_all_active(o, ur, on_confirmation_call_release_all_active, co);
+		}
+		break;
+
+		case CALL_END_TYPE_HOLD_ALL:
+		{
+			dbg("call end all held");
+			tcore_call_control_end_all_held(o, ur, on_confirmation_call_release_all_held, co);
+		}
+		break;
+
+		default:
+			dbg("[ error ] wrong end type [ %d ]", data->type);
+			return TCORE_RETURN_FAILURE;
+		}
+	}
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_hold(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_hold *hold = 0;
+	CallObject *co = NULL;
+
+	dbg("function entrance");
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	hold = (struct treq_call_hold *) tcore_user_request_ref_data(ur, 0);
+	dbg("call id : [ %d ]", hold->id);
+
+	co = tcore_call_object_find_by_id(o, hold->id);
+	tcore_call_control_hold(o, ur, on_confirmation_call_hold, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_active(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_active *active = 0;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	active = (struct treq_call_active *) tcore_user_request_ref_data(ur, 0);
+	dbg("call id : [ %d ]", active->id);
+
+	co = tcore_call_object_find_by_id(o, active->id);
+	tcore_call_control_active(o, ur, on_confirmation_call_active, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_swap(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_swap *swap = NULL;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	swap = (struct treq_call_swap *) tcore_user_request_ref_data(ur, 0);
+	dbg("call id : [ %d ]", swap->id);
+
+	co = tcore_call_object_find_by_id(o, swap->id);
+	tcore_call_control_swap(o, ur, on_confirmation_call_swap, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_join(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_join *join = 0;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	join = (struct treq_call_join *) tcore_user_request_ref_data(ur, 0);
+	dbg("call id : [ %d ]", join->id);
+
+	co = tcore_call_object_find_by_id(o, join->id);
+	tcore_call_control_join(o, ur, on_confirmation_call_join, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_split(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_split *split = 0;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	split = (struct treq_call_split *) tcore_user_request_ref_data(ur, 0);
+	co = tcore_call_object_find_by_id(o, split->id);
+	dbg("call id : [ %d ]", split->id);
+
+	tcore_call_control_split(o, ur, split->id, on_confirmation_call_split, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_deflect(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_deflect *deflect = 0;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	deflect = (struct treq_call_deflect *) tcore_user_request_ref_data(ur, 0);
+	co = tcore_call_object_find_by_number(o, deflect->number);
+	dbg("deflect number: [ %s ]", deflect->number);
+
+	tcore_call_control_deflect(o, ur, deflect->number, on_confirmation_call_deflect, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_transfer(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_transfer *transfer = 0;
+	CallObject *co = NULL;
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	transfer = (struct treq_call_transfer *) tcore_user_request_ref_data(ur, 0);
+	dbg("call id : [ %d ]", transfer->id);
+
+	co = tcore_call_object_find_by_id(o, transfer->id);
+	tcore_call_control_transfer(o, ur, on_confirmation_call_transfer, co);
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_start_cont_dtmf(CoreObject *o, UserRequest *ur)
+{
+	char *cmd_str = NULL;
+	gboolean ret = FALSE;
+	TcoreATRequest *req;
+	struct treq_call_start_cont_dtmf *dtmf = 0;
+	char *dtmfstr = NULL, *tmp_dtmf = NULL;
+	TcorePending *pending = NULL;
+	//unsigned int dtmf_count;
+
+	dbg("Function enter");
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	dtmf = (struct treq_call_start_cont_dtmf *) tcore_user_request_ref_data(ur, 0);
+	dtmfstr = g_malloc0((MAX_CALL_DTMF_DIGITS_LEN * 2) + 1);    // DTMF digits + comma for each dtmf digit.
+
+	if (dtmfstr == NULL) {
+		dbg("Memory allocation failed");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	tmp_dtmf = dtmfstr;
+
+#if 1
+	*tmp_dtmf = dtmf->dtmf_digit;
+#else
+	for (dtmf_count = 0; dtmf_count < (unsigned int)strlen((const char *)dtmf->dtmf_digit); dtmf_count++) {
+		*tmp_dtmf = dtmf->dtmf_digit;
 		tmp_dtmf++;
 
 		*tmp_dtmf = COMMA;
 		tmp_dtmf++;
 	}
 
-	/* last digit is having COMMA , overwrite it with '\0'*/
+	// last digit is having COMMA , overwrite it with '\0' .
 	*(--tmp_dtmf) = '\0';
+#endif
+	dbg("Input DTMF string(%s)", dtmfstr);
 
-	/* (AT+VTS = <d1>,<d2>,<d3>,<d4>,<d5>,<d6>, ..... <d32> */
-	at_cmd = g_strdup_printf("AT+VTS=%s", dtmf);
-	dbg("at command : %s", at_cmd);
+	// AT+VTS = <d1>,<d2>,<d3>,<d4>,<d5>,<d6>, ..... <d32>
+	cmd_str = g_strdup_printf("AT+VTS=%s", dtmfstr);
+	dbg("request command : %s", cmd_str);
 
-	tcore_free(dtmf);
+	pending = tcore_pending_new(o, 0);
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_send_dtmf");
-}
+	tcore_pending_set_request_data(pending, 0, req);
+	ret = _call_request_message(pending, o, ur, on_confirmation_call_dtmf, NULL);
+	g_free(dtmfstr);
+	g_free(cmd_str);
 
-/*
- * Operation - call hold.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 2 - place all active calls (if exist) on hold and accepts the other call (held or waiting/incoming).
- * If only one call exists which is active, place it on hold and if only held call exists
- * make it active call
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_hold(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s", "AT+CHLD=2");
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_hold");
-}
-
-/*
- * Operation - call active.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 2 - place all active calls (if exist) on hold and accepts the other call (held or waiting/incoming).
- * If only one call exists which is active, place it on hold and if only held call exists
- * make it active call
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_active(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s", "AT+CHLD=2");
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_active");
-}
-
-/*
- * Operation - call swap.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 2 - place all active calls (if exist) on hold and accepts the other call (held or waiting/incoming).
- * If only one call exists which is active, place it on hold and if only held call exists
- * make it active call
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_swap(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s", "AT+CHLD=2");
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_swap");
-}
-
-/*
- * Operation - call join.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 3 - adds a held call to the conversation
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_join(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s", "AT+CHLD=3");
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_join");
-}
-
-/*
- * Operation - call split.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 2x - place all active calls on hold except call x with which communication is supported
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_split(CoreObject *co, unsigned int call_id,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s%d", "AT+CHLD=2", call_id);
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_split");
-}
-
-/*
- * Operation - call transfer.
- *
- * Request -
- * 1. AT-Command: AT+CHLD=[<n>]
- * Where
- * <n>
- * 4 connects the two calls and disconnects the subscriber from both calls (Explicit Call Transfer)
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_transfer(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("%s", "AT+CHLD=4");
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_transfer");
-}
-
-/*
- * Operation - call deflect.
- *
- * Request -
- * 1. AT-Command: AT+CTFR= <number>[,<type>]
- * Where
- * number>
- * string type phone number
- * <type>
- * type of address octet in integer format. It is optional parameter.
- *
- * Response -
- * Success:
- * OK
- * Failure:
- * +CME ERROR: <error>
- */
-static TelReturn imc_call_deflect(CoreObject *co, const char *deflect_to,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	gchar *at_cmd;
-	dbg("entry");
-
-	at_cmd = g_strdup_printf("AT+CTFR=%s", deflect_to);
-	dbg("at command : %s", at_cmd);
-
-	return __send_call_request(co, cb, cb_data, at_cmd, "imc_call_deflect");
-}
-
-static TelReturn imc_call_set_active_line(CoreObject *co, TelCallActiveLine active_line,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	dbg("entry");
-
-	dbg("exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
-}
-
-static TelReturn imc_call_get_active_line(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
-{
-	dbg("entry");
-
-	dbg("exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
-}
-
-/*
- * Operation - Set voule info.
- *
- * Request -
- * AT-Command: AT+XDRV=<group_id>,<function_id>[,<param_n>]
- * The first command parameter defines the involved driver group.
- * The second command parameter defines a certain function in the selected driver group.
- * Other parameters are dependent on the first two parameters.
- * Nearly all parameters are integer values, also if they are represented by literals.
- * Only very few are strings or
- * hex data strings.
- *
- * Response -
- * +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
- * The first response parameter defines the involved driver group.
- * The second response parameter defines the current function in the selected driver group.
- * The third response parameter defines the xdrv_result of the operation.
- * Additional response parameters dependent on the first two parameters.
- */
-static TelReturn imc_call_set_volume_info(CoreObject *co, const TelCallVolumeInfo *volume_info,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	ImcRespCbData *resp_cb_data = NULL;
-	gchar *at_cmd;
-	TelReturn ret;
-	struct imc_set_volume_info cb_volume_info;
-
-	dbg("entry");
-
-	cb_volume_info.next_index = 1;
-	cb_volume_info.volume = volume_info->volume;
-
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data,
-				&cb_volume_info, sizeof(struct imc_set_volume_info));
-
-	at_cmd = g_strdup_printf("%s", xdrv_set_volume[0]);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+XDRV",
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			NULL,
-			on_response_imc_call_set_volume_info, resp_cb_data,
-			on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_volume_info");
-
-	g_free(at_cmd);
-	return ret;
-}
-
-
-static TelReturn imc_call_get_volume_info(CoreObject *co, TelCallSoundDevice sound_device,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	dbg("Entry");
-
-	dbg("Exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
-}
-
-/*
- * Operation - Set sound path.
- *
- * Request -
- * AT-Command: AT+XDRV=<group_id>,<function_id>[,<param_n>]
- * The first command parameter defines the involved driver group.
- * The second command parameter defines a certain function in the selected driver group.
- * Other parameters are dependent on the first two parameters.
- * Nearly all parameters are integer values, also if they are represented by literals.
- * Only very few are strings or
- * hex data strings.
- *
- * Response -
- * +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
- * The first response parameter defines the involved driver group.
- * The second response parameter defines the current function in the selected driver group.
- * The third response parameter defines the xdrv_result of the operation.
- * Additional response parameters dependent on the first two parameters.
- */
-
-static TelReturn imc_call_set_sound_path(CoreObject *co, const TelCallSoundPathInfo *sound_path_info,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	ImcRespCbData *resp_cb_data = NULL;
-	TelReturn ret;
-	gchar *at_cmd;
-	gint device_type = -1;
-	TcorePlugin *plugin = tcore_object_ref_plugin(co);
-	const char *cp_name = tcore_server_get_cp_name_by_plugin(plugin);
-
-	dbg("audio device type - 0x%x", sound_path_info->path);
-
-	switch (sound_path_info->path) {
-		case TEL_SOUND_PATH_HANDSET:
-			device_type = 1;
-			break;
-		case TEL_SOUND_PATH_HEADSET:
-			device_type = 2;
-			break;
-		case TEL_SOUND_PATH_HEADSET_3_5PI:
-			device_type = 3;
-			break;
-		case TEL_SOUND_PATH_SPK_PHONE:
-			device_type = 4;
-			break;
-		case TEL_SOUND_PATH_HANDSFREE:
-			device_type = 5;
-			break;
-		case TEL_SOUND_PATH_HEADSET_HAC:
-			device_type = 6;
-			break;
-		case TEL_SOUND_PATH_BLUETOOTH:
-		case TEL_SOUND_PATH_STEREO_BLUETOOTH:
-			device_type = 7;
-			break;
-		case TEL_SOUND_PATH_BT_NSEC_OFF:
-		case TEL_SOUND_PATH_MIC1:
-		case TEL_SOUND_PATH_MIC2:
-		default:
-			dbg("unsupported device type");
-			return TEL_RETURN_INVALID_PARAMETER;
+	if (!ret) {
+		dbg("AT request sent failed");
+		return TCORE_RETURN_FAILURE;
 	}
 
-	if (g_str_has_prefix(cp_name, "imcmodem")) {
-		/* Response callback data */
-		resp_cb_data = imc_create_resp_cb_data(cb, cb_data, &device_type, sizeof(gint));
+	return TCORE_RETURN_SUCCESS;
+}
 
-		at_cmd = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d", device_type);
+static TReturn imc_call_set_sound_path(CoreObject *o, UserRequest *ur)
+{
+	UserRequest *ur_dup = NULL;
+	TcorePending *pending = NULL, *pending1 = NULL;
+	TcoreATRequest *req, *req1;
+	char *cmd_str = NULL, *cmd_str1 = NULL;
+	int device_type = -1;
+	struct treq_call_set_sound_path *sound_path = 0;
+	gboolean ret = FALSE;
+	TcorePlugin *plugin = tcore_object_ref_plugin(o);
+	const char *cp_name = tcore_server_get_cp_name_by_plugin(plugin);
 
-		ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+XDRV",
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			NULL,
-			on_response_imc_call_set_sound_path, resp_cb_data,
-			on_send_imc_request, NULL);
-		IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
-		g_free(at_cmd);
-	} else {
-		/* Response callback data */
-		resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
+	dbg("function entrance");
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+	sound_path = (struct treq_call_set_sound_path *) tcore_user_request_ref_data(ur, 0);
+	if (sound_path == NULL) {
+		dbg("invaling user request");
+		return TCORE_RETURN_FAILURE;
+	}
+	dbg("audio device type - 0x%x", sound_path->path);
+	switch (sound_path->path) {
+	case CALL_SOUND_PATH_HANDSET:
+		device_type = 1;
+		break;
+
+	case CALL_SOUND_PATH_HEADSET:
+		device_type = 2;
+		break;
+
+	case CALL_SOUND_PATH_HEADSET_3_5PI:
+		device_type = 3;
+		break;
+
+	case CALL_SOUND_PATH_SPEAKER:
+		device_type = 4;
+		break;
+
+	case CALL_SOUND_PATH_HANDFREE:
+		device_type = 5;
+		break;
+
+	case CALL_SOUND_PATH_HEADSET_HAC:
+		device_type = 6;
+		break;
+
+	case CALL_SOUND_PATH_BLUETOOTH:
+	case CALL_SOUND_PATH_STEREO_BLUETOOTH:
+		device_type = 7;
+		break;
+
+	case CALL_SOUND_PATH_BT_NSEC_OFF:
+	case CALL_SOUND_PATH_MIC1:
+	case CALL_SOUND_PATH_MIC2:
+	default:
+		dbg("unsupported device type");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	if (g_str_has_prefix(cp_name, "mfld_blackbay") == TRUE) {
+		struct tnoti_call_sound_path *tnoti_snd_path;
+
+		tnoti_snd_path = g_try_new0(struct tnoti_call_sound_path, 1);
+		if (!tnoti_snd_path)
+			return TCORE_RETURN_ENOMEM;
+
+		tnoti_snd_path->path = sound_path->path;
 
 		/* Configure modem I2S1 to 8khz, mono, PCM if routing to bluetooth */
-		if (sound_path_info->path == TEL_SOUND_PATH_BLUETOOTH ||
-				sound_path_info->path == TEL_SOUND_PATH_STEREO_BLUETOOTH) {
-			tcore_at_prepare_and_send_request(co,
-					"AT+XDRV=40,4,3,0,1,0,0,0,0,0,0,0,21",
-					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-					NULL, NULL, NULL, NULL, NULL);
-
-			tcore_at_prepare_and_send_request(co,
-					"AT+XDRV=40,5,2,0,1,0,0,0,0,0,0,0,22",
-					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-					NULL, NULL, NULL, NULL, NULL);
-		} else {
-			tcore_at_prepare_and_send_request(co,
-					"AT+XDRV=40,4,3,0,1,0,8,0,1,0,2,0,21",
-					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-					NULL, NULL, NULL, NULL, NULL);
-
-			tcore_at_prepare_and_send_request(co,
-					"AT+XDRV=40,5,2,0,1,0,8,0,1,0,2,0,22",
-					NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-					NULL, NULL, NULL, NULL, NULL);
+		if (sound_path->path == CALL_SOUND_PATH_BLUETOOTH || sound_path->path == CALL_SOUND_PATH_STEREO_BLUETOOTH) {
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,3,0,1,0,0,0,0,0,0,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,2,0,1,0,0,0,0,0,0,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+		}
+		else {
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,3,0,1,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+			call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,2,0,1,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
 		}
 
 		/* Configure modem I2S2 and do the modem routing */
-		tcore_at_prepare_and_send_request(co,
-				"AT+XDRV=40,4,4,0,0,0,8,0,1,0,2,0,21",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co,
-				"AT+XDRV=40,5,3,0,0,0,8,0,1,0,2,0,22",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,0,4",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,3,0",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,4,2",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,5,2",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,4,4,0,0,0,8,0,1,0,2,0,21", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,5,3,0,0,0,8,0,1,0,2,0,22", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,0,4", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,3,0", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,4,2", NULL, TCORE_AT_NO_RESULT, NULL);
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,6,5,2", NULL, TCORE_AT_NO_RESULT, NULL);
 
 		/* amc enable */
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,2,4",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
-		tcore_at_prepare_and_send_request(co, "AT+XDRV=40,2,3",
-				NULL, TCORE_AT_COMMAND_TYPE_NO_RESULT,
-				NULL, NULL, NULL, NULL, NULL);
-
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,2,4", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S2_RX
+		call_prepare_and_send_pending_request(o, "AT+XDRV=40,2,3", NULL, TCORE_AT_NO_RESULT, NULL); //AMC_I2S1_RX
 		/* amc route: AMC_RADIO_RX => AMC_I2S1_TX */
-		ret = tcore_at_prepare_and_send_request(co, "AT+XDRV=40,6,0,2",
-				"+XDRV", TCORE_AT_COMMAND_TYPE_SINGLELINE, NULL,
-				on_response_set_sound_path, resp_cb_data, NULL, NULL);
 
-		IMC_CHECK_REQUEST_RET(ret, NULL, "imc_call_set_sound_path");
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new("AT+XDRV=40,6,0,2", "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+		tcore_pending_set_request_data(pending, 0, req);
+		ur_dup = tcore_user_request_ref(ur);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_set_sound_path, tnoti_snd_path);
+
+	} else {
+
+		cmd_str = g_strdup_printf("AT+XDRV=40,4,3,0,0,0,0,0,1,0,1,0,%d",device_type); // source type.
+		pending = tcore_pending_new(o, 0);
+		req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for source type  : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+		tcore_pending_set_request_data(pending, 0, req);
+		ur_dup = tcore_user_request_ref(ur);
+		ret = _call_request_message(pending, o, ur_dup, on_confirmation_call_set_source_sound_path, NULL);
+		g_free(cmd_str);
+
+		if (!ret) {
+			dbg("At request(%s) sent failed", req->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
+
+		cmd_str1 = g_strdup_printf("AT+XDRV=40,5,2,0,0,0,0,0,1,0,1,0,%d",device_type); // destination type
+		pending1 = tcore_pending_new(o, 0);
+		req1 = tcore_at_request_new(cmd_str1, "+XDRV", TCORE_AT_SINGLELINE);
+		dbg("XDRV req-cmd for destination type : %s, prefix(if any) :%s, cmd_len : %d", req1->cmd, req1->prefix, strlen(req1->cmd));
+		tcore_pending_set_request_data(pending1, 0, req1);
+		ret = _call_request_message(pending1, o, ur, on_confirmation_call_set_destination_sound_path, NULL);
+		g_free(cmd_str1);
+
+		if (!ret) {
+			dbg("AT request %s has failed ", req1->cmd);
+			return TCORE_RETURN_FAILURE;
+		}
 	}
 
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_set_sound_volume_level(CoreObject *o, UserRequest *ur)
+{
+	UserRequest *src_ur = NULL;
+	UserRequest *dest_ur = NULL;
+	TcorePending *src_pending = NULL;
+	TcorePending *dest_pending = NULL;
+	TcoreATRequest *src_req = NULL;
+	TcoreATRequest *dest_req = NULL;
+	char *cmd_str = NULL, *volume_level = NULL;
+	gboolean ret = FALSE;
+	struct treq_call_set_sound_volume_level *data = NULL;
+
+	dbg("Entry");
+
+	if (FALSE == tcore_hal_get_power_state(tcore_object_get_hal(o))) {
+		dbg("cp not ready/n");
+		return TCORE_RETURN_ENOSYS;
+	}
+
+	data = (struct treq_call_set_sound_volume_level *) tcore_user_request_ref_data(ur, 0);
+
+	// Hard-coded values for MIC & Speakers
+	// Source volume
+	dbg("Set Source volume");
+
+	cmd_str = g_strdup_printf("%s", "AT+XDRV=40,7,3,88");   // Source type
+	dbg("Request command string: %s", cmd_str);
+
+	// Create new Pending request
+	src_pending = tcore_pending_new(o, 0);
+
+	// Create new AT-Command request
+	src_req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", src_req->cmd, src_req->prefix, strlen(src_req->cmd));
+
+	// Free Command string
+	g_free(cmd_str);
+
+	tcore_pending_set_request_data(src_pending, 0, src_req);
+	src_ur = tcore_user_request_ref(ur);
+
+	// Send request
+	ret = _call_request_message(src_pending, o, src_ur, on_confirmation_call_set_source_sound_volume_level, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	cmd_str = g_strdup_printf("%s", "AT+XDRV=40,7,0,88");   // Destination type
+	dbg("Request command string: %s", cmd_str);
+
+	// Create new Pending request
+	src_pending = tcore_pending_new(o, 0);
+
+	// Create new AT-Command request
+	src_req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", src_req->cmd, src_req->prefix, strlen(src_req->cmd));
+
+	// Free Command string
+	g_free(cmd_str);
+
+	tcore_pending_set_request_data(src_pending, 0, src_req);
+
+	src_ur = tcore_user_request_ref(ur);
+
+	// Send request
+	ret = _call_request_message(src_pending, o, src_ur, on_confirmation_call_set_source_sound_volume_level, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	// Destination volume
+	dbg("Set Source volume");
+
+	cmd_str = g_strdup_printf("%s", "AT+XDRV=40,8,0,88");   // Source type
+	dbg("Request command string: %s", cmd_str);
+
+	// Create new Pending request
+	dest_pending = tcore_pending_new(o, 0);
+
+	// Create new AT-Command request
+	dest_req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", dest_req->cmd, dest_req->prefix, strlen(dest_req->cmd));
+
+	// Free Command string
+	g_free(cmd_str);
+
+	tcore_pending_set_request_data(dest_pending, 0, dest_req);
+	dest_ur = tcore_user_request_ref(ur);
+
+	// Send request
+	ret = _call_request_message(dest_pending, o, dest_ur, on_confirmation_call_set_source_sound_volume_level, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	dbg("Input volume level - %d", data->volume);
+	switch (data->volume) {
+	case CALL_SOUND_MUTE:
+		volume_level = "0";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_1:
+		volume_level = "40";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_2:
+		volume_level = "46";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_3:
+		volume_level = "52";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_4:
+		volume_level = "58";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_5:
+		volume_level = "64";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_6:
+		volume_level = "70";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_7:
+		volume_level = "76";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_8:
+		volume_level = "82";
+		break;
+
+	case CALL_SOUND_VOLUME_LEVEL_9:
+	default:
+		volume_level = "88";
+		break;
+	}
+	cmd_str = g_strdup_printf("%s%s", "AT+XDRV=40,8,2,", volume_level);   // Destination type
+	dbg("Request command string: %s", cmd_str);
+
+	// Create new Pending request
+	dest_pending = tcore_pending_new(o, 0);
+
+	// Create new AT-Command request
+	dest_req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", dest_req->cmd, dest_req->prefix, strlen(dest_req->cmd));
+
+	// Free Command string
+	g_free(cmd_str);
+
+	tcore_pending_set_request_data(dest_pending, 0, dest_req);
+
+	// Send request
+	ret = _call_request_message(dest_pending, o, ur, on_confirmation_call_set_destination_sound_volume_level, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_set_sound_mute_status(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_set_sound_mute_status *data = NULL;
+	char *cmd_str = NULL;
+	TReturn ret;
+	TcorePending *pending = NULL;
+	TcoreATRequest *req = NULL;
+
+	dbg("function entrance");
+
+	data = (struct treq_call_set_sound_mute_status *) tcore_user_request_ref_data(ur, 0);
+
+	if (data->status == CALL_SOUND_MUTE_STATUS_ON)
+		cmd_str = g_strdup_printf("%s", "AT+XDRV=40,8,0,0,0");
+	else if (data->status == CALL_SOUND_MUTE_STATUS_OFF)
+		cmd_str = g_strdup_printf("%s", "AT+XDRV=40,8,0,0,88");
+
+	dbg("Request command : [%s]", cmd_str);
+
+	pending = tcore_pending_new(o, 0);
+
+	req = tcore_at_request_new(cmd_str, "+XDRV", TCORE_AT_SINGLELINE);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	g_free(cmd_str);
+
+	// Set request data (AT command) to Pending request
+	tcore_pending_set_request_data(pending, 0, req);
+
+	// Send request
+	ret = _call_request_message(pending, o, ur, on_confirmation_call_set_sound_mute_status, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		return TCORE_RETURN_FAILURE;
+	}
+
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
+}
+
+static TReturn imc_call_set_preferred_voice_subscription(CoreObject *o, UserRequest *ur)
+{
+	struct treq_call_set_preferred_voice_subscription *req_data = NULL;
+	Server *server;
+	Storage *strg = NULL;
+	TReturn ret = TCORE_RETURN_FAILURE;
+
+	dbg("Entry");
+
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(o));
+	strg = tcore_server_find_storage(server, "vconf");
+
+	req_data = (struct treq_call_set_preferred_voice_subscription *) tcore_user_request_ref_data(ur, NULL);
+	dbg("Preferred Subscription: [%d]", req_data->preferred_subs);
+
+	/* Update VCONF through Storage - req_data->preferred_subs is aligned to VCONFKEY values */
+	if (tcore_storage_set_int(strg, STORAGE_KEY_TELEPHONY_PREFERRED_VOICE_SUBSCRIPTION, req_data->preferred_subs)) {
+		struct tresp_call_set_preferred_voice_subscription resp_data = {0, };
+
+		/* Send Response */
+		resp_data.err = CALL_ERROR_NONE;
+		ret = tcore_user_request_send_response(ur,
+			TRESP_CALL_SET_PREFERRED_VOICE_SUBSCRIPTION,
+			sizeof(struct tresp_call_set_preferred_voice_subscription), &resp_data);
+		}
+
+	dbg("ret: [0x%x]", ret);
 	return ret;
 }
 
-/*
- * Operation - Set/Unset mute status.
- *
- * Request -
- * AT-Command: AT+XDRV=<group_id>,<function_id>[,<param_n>]
- * The first command parameter defines the involved driver group.
- * The second command parameter defines a certain function in the selected driver group.
- * Other parameters are dependent on the first two parameters.
- * Nearly all parameters are integer values, also if they are represented by literals.
- * Only very few are strings or
- * hex data strings.
- *
- * Response -
- * +XDRV: <group_id>,<function_id>,<xdrv_result>[,<response_n>]
- * The first response parameter defines the involved driver group.
- * The second response parameter defines the current function in the selected driver group.
- * The third response parameter defines the xdrv_result of the operation.
- * Additional response parameters dependent on the first two parameters.
- */
-static TelReturn imc_call_set_mute(CoreObject *co, gboolean mute, TcoreObjectResponseCallback cb,
-	void *cb_data)
+static TReturn imc_call_get_preferred_voice_subscription(CoreObject *o, UserRequest *ur)
 {
-	ImcRespCbData *resp_cb_data = NULL;
-	gchar *at_cmd;
-	TelReturn ret;
+	struct tresp_call_get_preferred_voice_subscription resp_data = {0, };
+	TReturn ret = TCORE_RETURN_FAILURE;
+	Server *server;
+	Storage *strg = NULL;
 
-	dbg("entry");
+	dbg("Entry");
 
-	/* Response callback data */
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(o));
+	strg = tcore_server_find_storage(server, "vconf");
 
-	/* AT - Command */
-	if (mute)
-		at_cmd = g_strdup_printf("%s", "AT+XDRV=40,8,0,0,0");  /*MUTE*/
-	else
-		at_cmd = g_strdup_printf("%s", "AT+XDRV=40,8,0,0,88"); /*UNMUTE*/
+	/* VCONFKEY is aligned to resp_data->preferred_subs type */
+	resp_data.preferred_subs = tcore_storage_get_int(strg, STORAGE_KEY_TELEPHONY_PREFERRED_VOICE_SUBSCRIPTION);
+	dbg("Preferred Subscription: [%d]", resp_data.preferred_subs);
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-			at_cmd, "+XDRV",
-			TCORE_AT_COMMAND_TYPE_SINGLELINE,
-			NULL,
-			on_response_imc_call_set_mute, resp_cb_data,
-			on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "imc_call_set_mute");
+	resp_data.err = CALL_ERROR_NONE;
+	/* Send Response */
+	ret = tcore_user_request_send_response(ur,
+		TRESP_CALL_GET_PREFERRED_VOICE_SUBSCRIPTION,
+		sizeof(struct tresp_call_get_preferred_voice_subscription), &resp_data);
 
-	g_free(at_cmd);
-
+	dbg("ret: [0x%x]", ret);
 	return ret;
 }
 
-static TelReturn imc_call_get_mute_status(CoreObject *co, TcoreObjectResponseCallback cb,
-	void *cb_data)
+#if 0
+static TReturn _set_dtmf_tone_duration(CoreObject *o, UserRequest *ur)
 {
-	dbg("entry");
+	char *cmd_str = NULL;
+	TcorePending *pending = NULL;
+	TcoreATRequest *req = NULL;
+	gboolean ret = FALSE;
 
-	dbg("exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
+	dbg("Entry");
+
+	cmd_str = g_strdup_printf("%s", "AT+VTD=3"); // ~300 mili secs. +VTD= n, where  n = (0 - 255) * 1/10 secs.
+	dbg("Request command string: %s", cmd_str);
+
+	// Create new Pending request
+	pending = tcore_pending_new(o, 0);
+
+	// Create new AT-Command request
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	dbg("Command: %s, prefix(if any): %s, Command length: %d", req->cmd, req->prefix, strlen(req->cmd));
+
+	// Free command string */
+	g_free(cmd_str);
+
+	// Set request data (AT command) to Pending request
+	tcore_pending_set_request_data(pending, 0, req);
+
+	// Send request
+	ret = _call_request_message(pending, o, ur, _on_confirmation_dtmf_tone_duration, NULL);
+	if (!ret) {
+		err("Failed to send AT-Command request");
+		if (ur) {
+			tcore_user_request_free(ur);
+			ur = NULL;
+		}
+		return TCORE_RETURN_FAILURE;
+	}
+
+	dbg("Exit");
+	return TCORE_RETURN_SUCCESS;
 }
+#endif
 
-
-static TelReturn imc_call_set_sound_recording(CoreObject *co, TelCallSoundRecording sound_rec,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	dbg("entry");
-
-	dbg("exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
-}
-
-static TelReturn imc_call_set_sound_equalization(CoreObject *co, const TelCallSoundEqualization *sound_eq,
-	TcoreObjectResponseCallback cb, void *cb_data)
-{
-	dbg("entry");
-
-	dbg("exit");
-	return TEL_RETURN_OPERATION_NOT_SUPPORTED;
-}
-
-/* Call Operations */
-static TcoreCallOps imc_call_ops = {
-	.dial = imc_call_dial,
+// Call Operations
+static struct tcore_call_operations call_ops = {
+	.dial = imc_call_outgoing,
 	.answer = imc_call_answer,
-	.end = imc_call_end,
-	.send_dtmf = imc_call_send_dtmf,
+	.end = imc_call_release,
 	.hold = imc_call_hold,
 	.active = imc_call_active,
 	.swap = imc_call_swap,
 	.join = imc_call_join,
 	.split = imc_call_split,
-	.transfer = imc_call_transfer,
 	.deflect = imc_call_deflect,
-	.set_active_line = imc_call_set_active_line,
-	.get_active_line = imc_call_get_active_line,
-	.set_volume_info = imc_call_set_volume_info,
-	.get_volume_info = imc_call_get_volume_info,
+	.transfer = imc_call_transfer,
+	.start_cont_dtmf = imc_call_start_cont_dtmf,
+	.stop_cont_dtmf = NULL,
 	.set_sound_path = imc_call_set_sound_path,
-	.set_mute = imc_call_set_mute,
-	.get_mute_status = imc_call_get_mute_status,
-	.set_sound_recording = imc_call_set_sound_recording,
-	.set_sound_equalization = imc_call_set_sound_equalization,
+	.set_sound_volume_level = imc_call_set_sound_volume_level,
+	.get_sound_volume_level = NULL,
+	.set_sound_mute_status = imc_call_set_sound_mute_status,
+	.get_sound_mute_status = NULL,
+	.set_sound_equalization = NULL,
+	.set_sound_noise_reduction = NULL,
+	.set_preferred_voice_subscription = imc_call_set_preferred_voice_subscription,
+	.get_preferred_voice_subscription = imc_call_get_preferred_voice_subscription,
 };
 
-gboolean imc_call_init(TcorePlugin *p, CoreObject *co)
+gboolean imc_call_init(TcorePlugin *cp, CoreObject *co_call)
 {
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_call_set_ops(co, &imc_call_ops);
+	tcore_call_set_ops(co_call, &call_ops);
 
 	/* Add Callbacks */
-	tcore_object_add_callback(co, "+XCALLSTAT", on_notification_imc_call_status, NULL);
-	tcore_object_add_callback(co, "+CLIP", on_notification_imc_call_clip_info, NULL);
-	tcore_object_add_callback(co, "+CSSU", on_notification_imc_call_ss_cssu_info, NULL);
-	tcore_object_add_callback(co, "+CSSI", on_notification_imc_call_ss_cssi_info, NULL);
+	tcore_object_add_callback(co_call, "+XCALLSTAT", on_notification_call_info, NULL);
+	tcore_object_add_callback(co_call, "+CLIP", on_notification_call_clip_info, NULL);
+
+	dbg("Exit");
 
 	return TRUE;
 }
 
-void imc_call_exit(TcorePlugin *p, CoreObject *co)
+void imc_call_exit(TcorePlugin *cp, CoreObject *co_call)
 {
 	dbg("Exit");
 }

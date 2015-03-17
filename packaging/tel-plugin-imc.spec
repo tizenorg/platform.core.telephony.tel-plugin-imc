@@ -1,70 +1,63 @@
-#sbs-git:slp/pkgs/t/tel-plugin-imc
-%define major 3
-%define minor 0
-%define patchlevel 1
+%define major 0
+%define minor 1
+%define patchlevel 69
 
-Name:		tel-plugin-imc
-Summary:	imc plugin for telephony
-Version:        %{major}.%{minor}.%{patchlevel}
-Release:        1
-Group:		Development/Libraries
-License:	Apache-2.0
-Source0:	tel-plugin-imc-%{version}.tar.gz
-Source1001: 	tel-plugin-imc.manifest
-Requires(post):	/sbin/ldconfig
-Requires(postun):/sbin/ldconfig
-BuildRequires:	cmake
-BuildRequires:	pkgconfig(glib-2.0)
-BuildRequires:	pkgconfig(tcore)
-BuildRequires:	pkgconfig(tel-headers)
-BuildRequires:	pkgconfig(db-util)
-BuildRequires:	pkgconfig(libxml-2.0)
-BuildRequires:  pkgconfig(libtzplatform-config)
-BuildRequires:	pkgconfig(vconf)
+
+Name:             tel-plugin-imc
+Version:          %{major}.%{minor}.%{patchlevel}
+Release:          1
+License:          Apache-2.0
+Summary:          imc-plugin for Telephony
+Group:            Development/Libraries
+Source0:          tel-plugin-imc-%{version}.tar.gz
+BuildRequires:    cmake
+BuildRequires:    pkgconfig(glib-2.0)
+BuildRequires:    pkgconfig(dlog)
+BuildRequires:    pkgconfig(tcore)
+BuildRequires:    pkgconfig(db-util)
+BuildRequires:    pkgconfig(vconf)
+BuildRequires:    pkgconfig(libxml-2.0)
+Requires(post):   /sbin/ldconfig
+Requires(postun): /sbin/ldconfig
 
 %description
 IMC plugin for telephony
 
 %prep
 %setup -q
-cp %{SOURCE1001} .
 
 %build
 %cmake .
-make %{?jobs:-j%jobs}
+make %{?_smp_mflags}
 
 %post
 /sbin/ldconfig
-mkdir -p %{TZ_SYS_DB}
+mkdir -p /opt/dbspace
 
-if [ ! -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db ]
+if [ ! -f /opt/dbspace/.mcc_mnc_oper_list.db ]
 then
-	sqlite3 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db < /tmp/mcc_mnc_oper_list.sql
+	sqlite3 /opt/dbspace/.mcc_mnc_oper_list.db < /tmp/mcc_mnc_oper_list.sql
 fi
 
 rm -f /tmp/mcc_mnc_oper_list.sql
 
-if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db ]
+if [ -f /opt/dbspace/.mcc_mnc_oper_list.db ]
 then
-	chmod 600 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db
-	chsmack -a 'System' %{TZ_SYS_DB}/.mcc_mnc_oper_list.db
+	chmod 600 /opt/dbspace/.mcc_mnc_oper_list.db
 fi
-if [ -f %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal ]
+if [ -f /opt/dbspace/.mcc_mnc_oper_list.db-journal ]
 then
-	chmod 644 %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal
-	chsmack -a 'System' %{TZ_SYS_DB}/.mcc_mnc_oper_list.db-journal
+	chmod 644 /opt/dbspace/.mcc_mnc_oper_list.db-journal
 fi
 
 %postun -p /sbin/ldconfig
 
 %install
-rm -rf %{buildroot}
 %make_install
 mkdir -p %{buildroot}/usr/share/license
 cp LICENSE %{buildroot}/usr/share/license/%{name}
 
 %files
-%manifest %{name}.manifest
 
 %defattr(-,root,root,-)
 

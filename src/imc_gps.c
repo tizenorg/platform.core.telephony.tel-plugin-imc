@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: sharanayya mathapati <sharan.m@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,38 +28,35 @@
 #include <glib.h>
 
 #include <tcore.h>
-#include <server.h>
-#include <plugin.h>
-#include <core_object.h>
 #include <hal.h>
+#include <core_object.h>
+#include <plugin.h>
 #include <queue.h>
-#include <storage.h>
+#include <co_gps.h>
+#include <user_request.h>
+#include <util.h>
+#include <server.h>
 #include <at.h>
-#include <type/notification.h>
-
-
 #include <libxml/xmlreader.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
-#include <tzplatform_config.h>
-#include <co_gps.h>
-
-#include "imc_gps.h"
 #include "imc_common.h"
+#include "imc_gps.h"
 
 
-#define POSITION_NODE	"pos"
-#define POSITION_NODE_ATTR_XSI	"xsi:noNamespaceSchemaLocation"
-#define POSITION_NODE_ATTR_VAL_XSI	"pos.xsd"
-#define POSITION_NODE_ATTR_XMLNS	"xmlns:xsi"
-#define POSITION_NODE_ATTR_VAL_XMLNS	"http://www.w3.org/2001/XMLSchema-instance"
+#define FILE_NAME   "/opt/home/root/sample.xml"
+#define POSITION_NODE   "pos"
+#define POSITION_NODE_ATTR_XSI  "xsi:noNamespaceSchemaLocation"
+#define POSITION_NODE_ATTR_VAL_XSI  "pos.xsd"
+#define POSITION_NODE_ATTR_XMLNS    "xmlns:xsi"
+#define POSITION_NODE_ATTR_VAL_XMLNS    "http://www.w3.org/2001/XMLSchema-instance"
 
 #define MAX_NUM_OF_GPS_REF_TIME_ELEMENT 12 // max number of gps satalite
-#define MAX_NUM_OF_GPS_NAV_ELEMENT	16 // max num of navigation gps element.
-#define MAX_NUM_OF_GPS_ALMANC_ELEMENTS	64 // Max num of almanc elements.
+#define MAX_NUM_OF_GPS_NAV_ELEMENT  16 // max num of navigation gps element.
+#define MAX_NUM_OF_GPS_ALMANC_ELEMENTS  64 // Max num of almanc elements.
 
-#define NUM_OF_ELEMENTS(array)	(sizeof(array) / sizeof(*(array)))
+#define NUM_OF_ELEMENTS(array)  (sizeof(array) / sizeof(*(array)))
 
 static char node_name[128]; // max len of xml node
 static char node_value[128]; // max len of xml node value.
@@ -122,7 +121,7 @@ typedef struct {
 	unsigned long int gpsTow;
 	unsigned long int gpsWeek;
 	unsigned char nrOfSats;
-	union { 					// Not supported.
+	union {                     // Not supported.
 		gps_gsm_time_t gsm_time;
 		gps_utran_time_t UtranTime;
 	} networkTimeInfo;
@@ -181,35 +180,35 @@ typedef struct {
 } __attribute__((packed)) gps_navi_subframe_rsv_t;
 
 typedef struct {
-	unsigned char ephemCodeOnL2;				   // 0~3
-	unsigned char ephemUra; 				  // 0~15
-	unsigned char ephemSvHealth;				   // 0~63
-	unsigned short ephemIodc;			   // 0~1023
-	unsigned char ephemL2PFlag; 				  // 0~1
+	unsigned char ephemCodeOnL2;                   // 0~3
+	unsigned char ephemUra;                   // 0~15
+	unsigned char ephemSvHealth;                   // 0~63
+	unsigned short ephemIodc;              // 0~1023
+	unsigned char ephemL2PFlag;                   // 0~1
 	gps_navi_subframe_rsv_t NavigationSubFrameRsv;
-	signed char ephemTgd;				  // -128~127
-	unsigned short ephemToc;			  // 0~37799
-	signed char ephemAf2;				  // -128~12
-	signed short ephemAf1;					  // -32768~32767
-	signed long int ephemAf0;				  // -2097152~2097151
-	signed short ephemCrs;					  // -32768~32767
-	signed short ephemDeltaN;					 // -32768~32767
-	signed long int ephemM0;				 // -2147483648~2147483647
-	signed short ephemCuc;					  // -32768~32767
-	unsigned long int ephemE;				// 0~4294967295
-	signed short ephemCus;					  // -32768~32767
-	unsigned long int ephemAPowrHalf;				// 0~4294967295
-	unsigned short ephemToe;			  // 0~37799
-	signed char ephemFitFlag;				  // 0~1
-	unsigned char ephemAoda;				   // 0~31
-	signed short ephemCic;					  // -32768~32767
-	signed long int ephemOmegaA0;				  // -2147483648~2147483647
-	signed short ephemCis;					  // -32768~32767
-	signed long int ephemI0;				 // -2147483648~2147483647
-	signed short ephemCrc;					  // -32768~32767
-	signed long int ephemW; 				// -2147483648~2147483647
-	signed long int ephemOmegaADot; 				// -8388608~8388607
-	signed short ephemIDot; 				   // -8192~8191
+	signed char ephemTgd;                 // -128~127
+	unsigned short ephemToc;              // 0~37799
+	signed char ephemAf2;                 // -128~12
+	signed short ephemAf1;                    // -32768~32767
+	signed long int ephemAf0;                 // -2097152~2097151
+	signed short ephemCrs;                    // -32768~32767
+	signed short ephemDeltaN;                    // -32768~32767
+	signed long int ephemM0;                 // -2147483648~2147483647
+	signed short ephemCuc;                    // -32768~32767
+	unsigned long int ephemE;               // 0~4294967295
+	signed short ephemCus;                    // -32768~32767
+	unsigned long int ephemAPowrHalf;               // 0~4294967295
+	unsigned short ephemToe;              // 0~37799
+	signed char ephemFitFlag;                 // 0~1
+	unsigned char ephemAoda;                   // 0~31
+	signed short ephemCic;                    // -32768~32767
+	signed long int ephemOmegaA0;                 // -2147483648~2147483647
+	signed short ephemCis;                    // -32768~32767
+	signed long int ephemI0;                 // -2147483648~2147483647
+	signed short ephemCrc;                    // -32768~32767
+	signed long int ephemW;                 // -2147483648~2147483647
+	signed long int ephemOmegaADot;                 // -8388608~8388607
+	signed short ephemIDot;                    // -8192~8191
 } __attribute__((packed)) gps_navi_ephe_t;
 
 typedef enum {
@@ -259,16 +258,16 @@ typedef struct {
 	signed char dataId; // only for 3G, 0~3, if this value is -1, it means this value is invalid
 	unsigned char satId;
 	unsigned short almanacE; // 0~65536
-	unsigned char almanacToa;	// 0~255
-	signed short almanacKsii;	 // -32768~3276
-	signed short almanacOmegaDot;	 // -32768~3276
-	unsigned char almanacSvHealth;	 // 0~255
+	unsigned char almanacToa;   // 0~255
+	signed short almanacKsii;    // -32768~3276
+	signed short almanacOmegaDot;    // -32768~3276
+	unsigned char almanacSvHealth;   // 0~255
 	unsigned long int almanacAPowerHalf; // 0~16777215
 	signed long int almanacOmega0; // -8388608~8388607
 	signed long int almanacW; // -8388608~8388607
 	signed long int almanacM0; // -8388608~8388607
-	signed short almanacAf0;	// -1024~1023
-	signed short almanacAf1;	// -1024~1023
+	signed short almanacAf0;    // -1024~1023
+	signed short almanacAf1;    // -1024~1023
 } __attribute__((packed)) gps_almanac_sat_info_t;
 
 typedef struct {
@@ -298,10 +297,10 @@ typedef struct {
 
 typedef struct {
 	unsigned long int gpsTow;
-	union	{
+	union   {
 		gps_gsm_time_t gsm_time;
 		gps_acq_utran_time_t AcqUtranTime;
-	} acquisitionTimeInfo;						// --- not supported.
+	} acquisitionTimeInfo;                      // --- not supported.
 	unsigned long int numberOfSat;
 	gps_acq_sat_info_t lcsAcquisitionSatInfo[16];
 } __attribute__((packed)) gps_acq_assist_t;
@@ -554,12 +553,53 @@ static t_element elements[] = {
 	{"acqu_assist", ACQU_ASSIST},
 };
 
+
+/**************************************************************************
+*							Local Function Prototypes
+**************************************************************************/
+
+static inline int _modem_sat_status_info_2_tel_sat_info(char *sat_info);
+
+static inline int _modem_acqa_assit_doppler_2_tel_doppler(char *doppler_info);
+
+static int _gps_element_compare(char *element[], char *element_str, int nelem);
+
+static enum gps_assist_element_type _get_element_type(char *element_str);
+
+static void _parse_ref_time_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist, gboolean GPS_TOW_assist, int count);
+
+static void _parse_location_parameters(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist);
+
+static void _parse_dgps_correction_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist);
+
+static void _parse_ionospheric_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist);
+
+static void _parse_utc_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist);
+
+static void _parse_almanc_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist, gboolean alm_elem, int count);
+
+static void _parse_acqu_assist_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist);
+
+static void _parse_nav_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist, gboolean ephem_and_clock, int element_count);
+
+static void _set_coordinate(xmlNodePtr node, gps_ellipsoid_po_t *point, int isalt, int altitude);
+
+static void _set_loc_info_ellipse_elements(xmlNodePtr node, void *elliplse, int is_unc_ellipse);
+
+static xmlChar* _generate_confirm_measure_pos_xml_text(gps_measure_position_confirm_t *gps_measure_position_confirm);
+
+static gboolean on_notification_gps_measure_position_from_modem(CoreObject *o, char *file_name, void *user_data);
+
+/**************************************************************************
+*							Local Function Definitions
+ **************************************************************************/
+
 static inline int _modem_sat_status_info_2_tel_sat_info(char *sat_info)
 {
 	int count;
 
 	for (count = 0; count < (int) (sizeof(sat_status_info_table) / sizeof(sat_status_info_t)); count++) {
-		if (g_strcmp0(sat_status_info_table[count].psat_status, sat_info) == 0)
+		if (strcmp(sat_status_info_table[count].psat_status, sat_info) == 0)
 			return (sat_status_info_table[count].stat_status);
 	}
 	return (-1);
@@ -570,7 +610,7 @@ static inline int _modem_acqa_assit_doppler_2_tel_doppler(char *doppler_info)
 	int count;
 
 	for (count = 0; count < (int) (sizeof(doppler_status_info_table) / sizeof(doppler_status_info_t)); count++) {
-		if (g_strcmp0(doppler_status_info_table[count].pdoppler_status, doppler_info) == 0)
+		if (strcmp(doppler_status_info_table[count].pdoppler_status, doppler_info) == 0)
 			return (doppler_status_info_table[count].doppler_status);
 	}
 	return (-1);
@@ -581,23 +621,25 @@ static int _gps_element_compare(char *element[], char *element_str, int nelem)
 	int count;
 
 	for (count = 0; count < nelem; count++) {
-		if (g_strcmp0(element[count], element_str) == 0)
+		if (strcmp(element[count], element_str) == 0)
 			return count;
 	}
 
 	return -1;
 }
 
+
 static enum gps_assist_element_type _get_element_type(char *element_str)
 {
 	unsigned int index;
 
 	for (index = 0; index < sizeof(elements) / sizeof(t_element); index++) {
-		if (g_strcmp0(elements[index].name, element_str) == 0)
+		if (strcmp(elements[index].name, element_str) == 0)
 			return elements[index].type;
 	}
 	return -1;
 }
+
 static void _parse_ref_time_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist, gboolean GPS_TOW_assist, int count)
 {
 	int node_count;
@@ -606,7 +648,7 @@ static void _parse_ref_time_gps_elements(char *element_str, char *element_value,
 
 	dbg("Enter");
 	if (count < 0 || count >= MAX_NUM_OF_GPS_REF_TIME_ELEMENT) {
-		err("invalid count");
+		dbg("invalid count");
 		return;
 	}
 	nelem = (int) NUM_OF_ELEMENTS(element);
@@ -666,7 +708,7 @@ static void _parse_ref_time_gps_elements(char *element_str, char *element_value,
 		break;
 
 		default:
-			err("Invalid  gps element");
+			dbg("Invalid  gps element");
 		}
 	}
 }
@@ -691,7 +733,7 @@ static void _parse_location_parameters(char *element_str, char *element_value, g
 	case 0:
 	{
 		// gpsdata_assist.ref_loc.latitude_data.north = atoi(element_str_text);
-		// dbg("gpsdata_assist.ref_loc.latitude_data.north	- %d\n",gpsdata_assist.ref_loc.latitude_data.north);
+		// dbg("gpsdata_assist.ref_loc.latitude_data.north  - %d\n",gpsdata_assist.ref_loc.latitude_data.north);
 	}
 	break;
 
@@ -705,13 +747,13 @@ static void _parse_location_parameters(char *element_str, char *element_value, g
 	case 2:
 	{
 		// gpsdata_assist.ref_loc.altitude_data.height_above_surface = atoi(element_str_text);
-		// dbg("altitude_data.height_above_surface	- %d\n",gpsdata_assist.ref_loc.altitude_data.height_above_surface);
+		// dbg("altitude_data.height_above_surface  - %d\n",gpsdata_assist.ref_loc.altitude_data.height_above_surface);
 	}
 	break;
 
 	case 3:
 	{
-		gpsdata_assist->ref_loc.altitude = atoi(element_value); 	 // todo- need to confirm
+		gpsdata_assist->ref_loc.altitude = atoi(element_value);      // todo- need to confirm
 		dbg("altitude_data.height - %d\n", gpsdata_assist->ref_loc.altitude);
 	}
 	break;
@@ -719,7 +761,7 @@ static void _parse_location_parameters(char *element_str, char *element_value, g
 	case 4:
 	{
 		gpsdata_assist->ref_loc.longitude = atoi(element_value);
-		dbg("longitude	- %d\n", gpsdata_assist->ref_loc.longitude);
+		dbg("longitude  - %d\n", gpsdata_assist->ref_loc.longitude);
 	}
 	break;
 
@@ -759,7 +801,7 @@ static void _parse_location_parameters(char *element_str, char *element_value, g
 	break;
 
 	default:
-		err("invalid element");
+		dbg("invalid element");
 	}
 }
 
@@ -767,19 +809,19 @@ static void _parse_dgps_correction_gps_elements(char *element_str, char *element
 {
 	dbg("Enter");
 
-	if (g_strcmp0(element_str, "sat_id") == 0) {
+	if (strcmp(element_str, "sat_id") == 0) {
 		gpsdata_assist->dgps_corrections.seqOfSatElement[0].satId = *element_value;
 		dbg("seqOfSatElement[0].satId  - %d\n", gpsdata_assist->dgps_corrections.seqOfSatElement[0].satId);
-	} else if (g_strcmp0(element_str, "IODE") == 0) {
+	} else if (strcmp(element_str, "IODE") == 0) {
 		gpsdata_assist->dgps_corrections.seqOfSatElement[0].iode = atoi(element_value);
 		dbg("seqOfSatElement[0].iode - %d\n", gpsdata_assist->dgps_corrections.seqOfSatElement[0].iode);
-	} else if (g_strcmp0(element_str, "UDRE") == 0) {
+	} else if (strcmp(element_str, "UDRE") == 0) {
 		gpsdata_assist->dgps_corrections.seqOfSatElement[0].udre = *element_value;
 		dbg("seqOfSatElement[0].udre- %d\n", gpsdata_assist->dgps_corrections.seqOfSatElement[0].udre);
-	} else if (g_strcmp0(element_str, "PRC") == 0) {
+	} else if (strcmp(element_str, "PRC") == 0) {
 		gpsdata_assist->dgps_corrections.seqOfSatElement[0].pseudoRangeCor = atoi(element_value);
 		dbg("seqOfSatElement[0].pseudoRangeCor - %d\n", gpsdata_assist->dgps_corrections.seqOfSatElement[0].pseudoRangeCor);
-	} else if (g_strcmp0(element_str, "RRC") == 0) {
+	} else if (strcmp(element_str, "RRC") == 0) {
 		gpsdata_assist->dgps_corrections.seqOfSatElement[0].rangeRateCor = atoi(element_value);
 		dbg("seqOfSatElement[0].rangeRateCor - %d\n", gpsdata_assist->dgps_corrections.seqOfSatElement[0].rangeRateCor);
 	}
@@ -797,7 +839,7 @@ static void _parse_ionospheric_model_gps_elements(char *element_str, char *eleme
 	case 0:
 	{
 		gpsdata_assist->iono_model.alfa0 = *element_value;
-		dbg("alfa0	- 0x%X\n", gpsdata_assist->iono_model.alfa0);
+		dbg("alfa0  - 0x%X\n", gpsdata_assist->iono_model.alfa0);
 	}
 	break;
 
@@ -811,51 +853,51 @@ static void _parse_ionospheric_model_gps_elements(char *element_str, char *eleme
 	case 2:
 	{
 		gpsdata_assist->iono_model.alfa2 = *element_value;
-		dbg("alfa2	- 0x%X\n", gpsdata_assist->iono_model.alfa2);
+		dbg("alfa2  - 0x%X\n", gpsdata_assist->iono_model.alfa2);
 	}
 	break;
 
 	case 3:
 	{
 		gpsdata_assist->iono_model.alfa3 = *element_value;
-		dbg("alfa3	- 0x%X\n", gpsdata_assist->iono_model.alfa3);
+		dbg("alfa3  - 0x%X\n", gpsdata_assist->iono_model.alfa3);
 	}
 	break;
 
 	case 4:
 	{
 		gpsdata_assist->iono_model.beta0 = *element_value;
-		dbg("beta0	- 0x%X\n", gpsdata_assist->iono_model.beta0);
+		dbg("beta0  - 0x%X\n", gpsdata_assist->iono_model.beta0);
 	}
 	break;
 
 	case 5:
 	{
 		gpsdata_assist->iono_model.beta1 = *element_value;
-		dbg("beta1	-0x%X\n", gpsdata_assist->iono_model.beta1);
+		dbg("beta1  -0x%X\n", gpsdata_assist->iono_model.beta1);
 	}
 	break;
 
 	case 6:
 	{
 		gpsdata_assist->iono_model.beta2 = *element_value;
-		dbg("beta2	- 0x%X\n", gpsdata_assist->iono_model.beta2);
+		dbg("beta2  - 0x%X\n", gpsdata_assist->iono_model.beta2);
 	}
 	break;
 
 	case 7:
 	{
 		gpsdata_assist->iono_model.beta3 = *element_value;
-		dbg("beta3	- 0x%X\n", gpsdata_assist->iono_model.beta3);
+		dbg("beta3  - 0x%X\n", gpsdata_assist->iono_model.beta3);
 	}
 	break;
 
 	default:
-		err("invalid gps element");
+		dbg("invalid gps element");
 	}
 }
 
-static void _parse_utc_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist)
+void _parse_utc_model_gps_elements(char *element_str, char *element_value, gps_assist_data_noti_t *gpsdata_assist)
 {
 	static char *element[] = {"a1", "a0", "tot", "wnt", "dtls", "wnlsf", "dn", "dtlsf"};
 	int nelem = (int) NUM_OF_ELEMENTS(element);
@@ -868,14 +910,14 @@ static void _parse_utc_model_gps_elements(char *element_str, char *element_value
 	case 0:
 	{
 		gpsdata_assist->utc_model.utcA1 = atoi(element_value);
-		dbg("utcA1	- %d\n", gpsdata_assist->utc_model.utcA1);
+		dbg("utcA1  - %d\n", gpsdata_assist->utc_model.utcA1);
 	}
 	break;
 
 	case 1:
 	{
 		gpsdata_assist->utc_model.utcA0 = atoi(element_value);
-		dbg("utcA0	- %d\n", gpsdata_assist->utc_model.utcA0);
+		dbg("utcA0  - %d\n", gpsdata_assist->utc_model.utcA0);
 	}
 	break;
 
@@ -910,7 +952,7 @@ static void _parse_utc_model_gps_elements(char *element_str, char *element_value
 	case 6:
 	{
 		gpsdata_assist->utc_model.utcDN = *element_value;
-		dbg("utcDN	- 0x%X\n", gpsdata_assist->utc_model.utcDN);
+		dbg("utcDN  - 0x%X\n", gpsdata_assist->utc_model.utcDN);
 	}
 	break;
 
@@ -922,7 +964,7 @@ static void _parse_utc_model_gps_elements(char *element_str, char *element_value
 	break;
 
 	default:
-		err("invalid gps element");
+		dbg("invalid gps element");
 	}
 }
 
@@ -962,7 +1004,7 @@ static void _parse_almanc_model_gps_elements(char *element_str, char *element_va
 		case 2:
 		{
 			gpsdata_assist->almanac.AlmanacSatInfo[count].satId = *element_value;
-			dbg("AlmanacSatInfo[%d].sat_id	- 0x%X\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].satId);
+			dbg("AlmanacSatInfo[%d].sat_id  - 0x%X\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].satId);
 		}
 		break;
 
@@ -976,7 +1018,7 @@ static void _parse_almanc_model_gps_elements(char *element_str, char *element_va
 		case 4:
 		{
 			gpsdata_assist->almanac.AlmanacSatInfo[count].almanacToa = *element_value;
-			dbg("AlmanacSatInfo[%d].almanacToa	- 0x%X\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacToa);
+			dbg("AlmanacSatInfo[%d].almanacToa  - 0x%X\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacToa);
 		}
 		break;
 
@@ -1032,19 +1074,19 @@ static void _parse_almanc_model_gps_elements(char *element_str, char *element_va
 		case 12:
 		{
 			gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf0 = atoi(element_value);
-			dbg("AlmanacSatInfo[%d].almanacAf0	- %d\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf0);
+			dbg("AlmanacSatInfo[%d].almanacAf0  - %d\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf0);
 		}
 		break;
 
 		case 13:
 		{
 			gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf1 = atoi(element_value);
-			dbg("AlmanacSatInfo[%d].almanacAf1	- %d\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf1);
+			dbg("AlmanacSatInfo[%d].almanacAf1  - %d\n", count, gpsdata_assist->almanac.AlmanacSatInfo[count].almanacAf1);
 		}
 		break;
 
 		default:
-			err("invalid gps element");
+			dbg("invalid gps element");
 		}
 	}
 	return;
@@ -1062,7 +1104,7 @@ static void _parse_acqu_assist_gps_elements(char *element_str, char *element_val
 	switch (count) {
 	case 0:
 		gpsdata_assist->acq_assist.gpsTow = atoi(element_value);
-		dbg("acq_assist.gpsTow	- %d\n", gpsdata_assist->acq_assist.gpsTow);
+		dbg("acq_assist.gpsTow  - %d\n", gpsdata_assist->acq_assist.gpsTow);
 		break;
 
 	case 1:
@@ -1077,7 +1119,7 @@ static void _parse_acqu_assist_gps_elements(char *element_str, char *element_val
 
 	case 3:
 		gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].doppler1 = *element_value;
-		dbg("lcsAcquisitionSatInfo[0].doppler1	- 0x%X\n", gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].doppler1);
+		dbg("lcsAcquisitionSatInfo[0].doppler1  - 0x%X\n", gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].doppler1);
 		break;
 
 	case 4:
@@ -1087,7 +1129,7 @@ static void _parse_acqu_assist_gps_elements(char *element_str, char *element_val
 
 	case 5:
 		gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].intCodePhase = *element_value;
-		dbg("lcsAcquisitionSatInfo[0].intCodePhase	- 0x%X\n", gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].intCodePhase);
+		dbg("lcsAcquisitionSatInfo[0].intCodePhase  - 0x%X\n", gpsdata_assist->acq_assist.lcsAcquisitionSatInfo[0].intCodePhase);
 		break;
 
 	case 6:
@@ -1111,7 +1153,7 @@ static void _parse_acqu_assist_gps_elements(char *element_str, char *element_val
 		break;
 
 	default:
-		err("invalid gps element");
+		dbg("invalid gps element");
 	}
 }
 
@@ -1127,7 +1169,7 @@ static void _parse_nav_model_gps_elements(char *element_str, char *element_value
 	int count;
 
 	if (element_count < 0 || element_count >= MAX_NUM_OF_GPS_NAV_ELEMENT) {
-		err("invalid count");
+		dbg("invalid count");
 		return;
 	}
 	count = _gps_element_compare(element, element_str, nelem);
@@ -1263,12 +1305,13 @@ static void _parse_nav_model_gps_elements(char *element_str, char *element_value
 			break;
 
 		default:
-			err("invalid gps element");
+			dbg("invalid gps element");
 		}
 	}
 }
 
-// Set coordinate elements	: <latitude> <longitude> <altitude>
+
+// Set coordinate elements  : <latitude> <longitude> <altitude>
 static void _set_coordinate(xmlNodePtr node, gps_ellipsoid_po_t *point, int isalt, int altitude)
 {
 	// <parent_node> .. .. (xmlNodePtr node)
@@ -1311,8 +1354,6 @@ static void _set_coordinate(xmlNodePtr node, gps_ellipsoid_po_t *point, int isal
 	}
 	return;
 }
-
-
 
 static void _set_loc_info_ellipse_elements(xmlNodePtr node, void *elliplse, int is_unc_ellipse)
 {
@@ -1363,81 +1404,81 @@ static xmlChar* _generate_confirm_measure_pos_xml_text(gps_measure_position_conf
 	int count = 0, altitude, size;
 
 /*
-	 Creates a new XML document
+     Creates a new XML document
 ================================================================================================================================
 
 
-	<?xml version="1.0"?>
-	<pos xsi:noNamespaceSchemaLocation="pos.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-		<GPS_meas>
-			<ref_time_only>
-				<tow_msec></tow_msec>
-			</ref_time_only>
-			<meas_params>
-				<sat_id></sat_id><carr2_noise></carr2_noise><dopl></dopl><whole_chips></whole_chips><fract_chips></fract_chips>
-				<multi_path literal="xx"></multi_path> <psr_rms_err></psr_rms_err>
-			</meas_params>
-		</GPS_meas>
-		<location>
-			<time_of_fix></time_of_fix><
-			<location_parameters>
-			<shape_data>
-			 <ellipsoid_point>
-				<coordinate>
-					<latitude><north></north><degrees></degrees></latitude><longitude></longitude>
-				 </coordinate>
-			 </ellipsoid_point>
-			<ellipsoid_point_uncert_circle>
-				<uncert_circle></uncert_circle>
-				<coordinate>
-				<latitude> <> <\> ...</latitude> <longitude></longitude>
-				</coordinate>
-			</ellipsoid_point_uncert_circle>
-			<ellipsoid_point_uncert_ellipse>
-				<coordinate>
-					<latitude><> <\>..<longitude></longitude>
-				</coordinate>
-				<uncert_ellipse><uncert_semi_major></uncert_semi_major><uncert_semi_minor></uncert_semi_minor>
-				<orient_major></orient_major><confidence></confidence></uncert_ellipse>
-			</ellipsoid_point_uncert_ellipse>
-			<polygon>
-				<coordinate*>
-					<latitude><> <\>...</latitude><longitude></longitude>
-				</coordinate>
-			</polygon>
-			 <ellipsoid_point_alt>
-				<coordinate>
-					 <latitude><> <\>..</latitude><longitude></longitude>
-				</coordinate>
-			<altitude>
-				<height_above_surface></height_above_surface><height></height>
-			</altitude>
-			</ellipsoid_point_alt>
-			<ellipsoid_point_alt_uncertellipse>
-			<coordinate>
-				<latitude> <> <\>.. ..</latitude><longitude></longitude>
-			</coordinate>
-			<altitude>
-				<height_above_surface></height_above_surface><height></height>
-			</altitude>
-			<uncert_semi_major></uncert_semi_major><uncert_semi_minor></uncert_semi_minor><orient_major></orient_major>
-			<confidence></confidence><uncert_alt></uncert_alt>
-			</ellipsoid_point_alt_uncertellipse>
-			<ellips_arc>
-				<coordinate>
-					<latitude><> <\> .. </latitude><longitude></longitude>
-				</coordinate><
-				<inner_rad></inner_rad>
-				<uncert_rad></uncert_rad><offset_angle></offset_angle><included_angle></included_angle>
-				<confidence></confidence>
-			</ellips_arc>
-			</shape_data>
-			</location_parameters>
-			</location>
-			<assist_data>
-				<msr_assist_data/>
-			</assist_data>
-		 </pos>
+    <?xml version="1.0"?>
+    <pos xsi:noNamespaceSchemaLocation="pos.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <GPS_meas>
+            <ref_time_only>
+                <tow_msec></tow_msec>
+            </ref_time_only>
+            <meas_params>
+                <sat_id></sat_id><carr2_noise></carr2_noise><dopl></dopl><whole_chips></whole_chips><fract_chips></fract_chips>
+                <multi_path literal="xx"></multi_path> <psr_rms_err></psr_rms_err>
+            </meas_params>
+        </GPS_meas>
+        <location>
+            <time_of_fix></time_of_fix><
+            <location_parameters>
+            <shape_data>
+             <ellipsoid_point>
+                <coordinate>
+                    <latitude><north></north><degrees></degrees></latitude><longitude></longitude>
+                 </coordinate>
+             </ellipsoid_point>
+            <ellipsoid_point_uncert_circle>
+                <uncert_circle></uncert_circle>
+                <coordinate>
+                <latitude> <> <\> ...</latitude> <longitude></longitude>
+                </coordinate>
+            </ellipsoid_point_uncert_circle>
+            <ellipsoid_point_uncert_ellipse>
+                <coordinate>
+                    <latitude><> <\>..<longitude></longitude>
+                </coordinate>
+                <uncert_ellipse><uncert_semi_major></uncert_semi_major><uncert_semi_minor></uncert_semi_minor>
+                <orient_major></orient_major><confidence></confidence></uncert_ellipse>
+            </ellipsoid_point_uncert_ellipse>
+            <polygon>
+                <coordinate*>
+                    <latitude><> <\>...</latitude><longitude></longitude>
+                </coordinate>
+            </polygon>
+             <ellipsoid_point_alt>
+                <coordinate>
+                     <latitude><> <\>..</latitude><longitude></longitude>
+                </coordinate>
+            <altitude>
+                <height_above_surface></height_above_surface><height></height>
+            </altitude>
+            </ellipsoid_point_alt>
+            <ellipsoid_point_alt_uncertellipse>
+            <coordinate>
+                <latitude> <> <\>.. ..</latitude><longitude></longitude>
+            </coordinate>
+            <altitude>
+                <height_above_surface></height_above_surface><height></height>
+            </altitude>
+            <uncert_semi_major></uncert_semi_major><uncert_semi_minor></uncert_semi_minor><orient_major></orient_major>
+            <confidence></confidence><uncert_alt></uncert_alt>
+            </ellipsoid_point_alt_uncertellipse>
+            <ellips_arc>
+                <coordinate>
+                    <latitude><> <\> .. </latitude><longitude></longitude>
+                </coordinate><
+                <inner_rad></inner_rad>
+                <uncert_rad></uncert_rad><offset_angle></offset_angle><included_angle></included_angle>
+                <confidence></confidence>
+            </ellips_arc>
+            </shape_data>
+            </location_parameters>
+            </location>
+            <assist_data>
+                <msr_assist_data/>
+            </assist_data>
+         </pos>
  ================================================================================================================================
  */
 
@@ -1619,103 +1660,7 @@ static xmlChar* _generate_confirm_measure_pos_xml_text(gps_measure_position_conf
 	return xml;
 }
 
-
-static gboolean on_notification_gps_measure_position_from_modem(CoreObject *o, char *file_name, void *user_data)
-{
-	char *node = NULL, *node_value = NULL;
-	char *attribute = NULL;
-	char *attr_value = NULL;
-	gps_measure_position_indi_t gps_measure_position_indi;
-	gboolean rep_quant = FALSE;
-	xmlTextReaderPtr reader;
-
-	memset(&gps_measure_position_indi, 0x00, sizeof(gps_measure_position_indi));
-	reader = xmlReaderForFile(file_name, NULL, 0);
-
-	while (xmlTextReaderRead(reader)) {
-		switch (xmlTextReaderNodeType(reader)) {
-		case XML_READER_TYPE_ELEMENT:
-		{
-			node = (char *) xmlTextReaderConstName(reader);
-			dbg("Element: %s", node);
-			if (node != NULL) {
-				// Read attribute value.
-				while (xmlTextReaderMoveToNextAttribute(reader)) {
-					attribute = (char *) xmlTextReaderConstName(reader);
-					dbg("Attribute value - %s\n", attribute);
-					attr_value = (char *) xmlTextReaderConstValue(reader);
-					dbg("=\"%s\"\n", attr_value);
-
-					if (g_strcmp0(node, "mult_sets") == 0) {
-						if (g_strcmp0(attribute, "literal") == 0) {
-							if (g_strcmp0(attr_value, "one") == 0)
-								gps_measure_position_indi.use_multi_sets = GPS_MULTIPLESETS_ONESET;
-							else if (g_strcmp0(attr_value, "multiple") == 0)
-								gps_measure_position_indi.use_multi_sets = GPS_MULTIPLESETS_MULTIPLESETS;
-						}
-						dbg("gps_measure_position_indi.use_multi_sets - 0x%x\n", gps_measure_position_indi.use_multi_sets);
-					} else if (g_strcmp0(node, "rep_quant") == 0) {
-						rep_quant = TRUE;
-						if (g_strcmp0(attribute, "addl_assist_data_req") == 0) {
-							if (g_strcmp0(attr_value, "true") == 0)
-								gps_measure_position_indi.add_assist_req = GPS_ADDITIONAL_ASSISREQ_REQ;
-							else
-								gps_measure_position_indi.add_assist_req = GPS_ADDITIONAL_ASSISREQ_NOT_REQ;
-						} else if (g_strcmp0(attribute, "gps_timing_of_cell_wanted") == 0) {
-							if (g_strcmp0(attr_value, "true") == 0)
-								gps_measure_position_indi.cell_timing_wnt = GPS_CELLTIMING_WANTED;
-							else
-								gps_measure_position_indi.cell_timing_wnt = GPS_CELLTIMING_NOT_WANTED;
-						}
-					}
-				}		 // end of attribute check
-
-				if (g_strcmp0(node, "ms_assisted") == 0) {
-					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED;
-				} else if (g_strcmp0(node, "ms_assisted_no_accuracy") == 0) {
-					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED;
-				} else if (g_strcmp0(node, "ms_based") == 0) {
-					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_BASED;
-				} else if (g_strcmp0(node, "ms_based_pref") == 0) {
-					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_BASED_PREF;
-				} else if (g_strcmp0(node, "ms_assisted_pref") == 0) {
-					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED_PREF;
-				}
-			}
-			xmlTextReaderMoveToElement(reader);
-		}
-		break;
-
-		case XML_READER_TYPE_TEXT:
-		{
-			node_value = (char *) xmlTextReaderConstValue(reader);
-			dbg("element-value: %s", node_value);
-			if (node_value != NULL) {
-				if (g_strcmp0(node, "resp_time_seconds") == 0) {
-					gps_measure_position_indi.rsp_time = *node_value;
-					dbg("gps_measure_position_indi.rsp_time - 0x%x", gps_measure_position_indi.rsp_time);
-				}
-				if (rep_quant == TRUE) {
-					if (g_strcmp0(node, "hor_acc") == 0)
-						gps_measure_position_indi.accuracy.horizontalAccuracy = *node_value;
-					else if (g_strcmp0(node, "vert_acc") == 0)
-						gps_measure_position_indi.accuracy.vertcalAccuracy = *node_value;
-				}
-			}
-		}
-		break;
-		}
-	}
-	xmlFreeTextReader(reader);
-	xmlCleanupParser();
-
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),(tcore_object_ref_plugin(o)),
-									TCORE_NOTIFICATION_GPS_MEASURE_POSITION, sizeof(gps_measure_position_indi), &gps_measure_position_indi);
-	return TRUE;
-}
-
-
-static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *event_info, void *user_data)
+static gboolean on_notification_gps_assist_data(CoreObject *o, const void *event_info, void *user_data)
 {
 	int fd;
 	gps_assist_data_noti_t gps_data_assist;
@@ -1731,54 +1676,53 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 	xmlTextReaderPtr reader;
 	gboolean _gps_assist_data = FALSE, gps_tow_assist = FALSE;
 	gboolean ephem_and_clock = FALSE, alm_elem = FALSE;
-	const char *path = NULL;
 
 	dbg("enter");
 
 /*
-	Example:GPS assist XML data will be in below format.
+    Example:GPS assist XML data will be in below format.
 ================================================================================================================================
-	+CPOSR:<?xml version="1.0" encoding="UTF-8"?>
-	<pos xsi:noNamespaceSchemaLocation="pos.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-	<assist_data>
-	<GPS_assist>
-		<ref_time>
-			<GPS_time> <> <\>..<\GPS_time> <GPS_TOW_assist*> <> <\> ..<\GPS_TOW_assist>
-		</ref_time>
+    +CPOSR:<?xml version="1.0" encoding="UTF-8"?>
+    <pos xsi:noNamespaceSchemaLocation="pos.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <assist_data>
+    <GPS_assist>
+        <ref_time>
+            <GPS_time> <> <\>..<\GPS_time> <GPS_TOW_assist*> <> <\> ..<\GPS_TOW_assist>
+        </ref_time>
 
-		<location_parameters>
-			<shape_data> <ellipsoid_point_alt_uncertellipse> </coordinate> <> <\>...</coordinate> <altitude> <\altitude>
-			 <uncert_semi_major> </uncert_semi_major> <uncert_semi_minor> </uncert_semi_minor> <orient_major> </orient_major> <confidence> </confidence>
-			<uncert_alt> </uncert_alt>	</ellipsoid_point_alt_uncertellipse> </shape_data>
-		</location_parameters>
+        <location_parameters>
+            <shape_data> <ellipsoid_point_alt_uncertellipse> </coordinate> <> <\>...</coordinate> <altitude> <\altitude>
+             <uncert_semi_major> </uncert_semi_major> <uncert_semi_minor> </uncert_semi_minor> <orient_major> </orient_major> <confidence> </confidence>
+            <uncert_alt> </uncert_alt>  </ellipsoid_point_alt_uncertellipse> </shape_data>
+        </location_parameters>
 
-		<DGPS_corrections>
-			<sat_id> </sat_id> <IODE> </IODE> <UDRE></UDRE> <PRC></PRC> <RRC></RRC>
-		</DGPS_corrections>
+        <DGPS_corrections>
+            <sat_id> </sat_id> <IODE> </IODE> <UDRE></UDRE> <PRC></PRC> <RRC></RRC>
+        </DGPS_corrections>
 
-		<nav_model_elem*>
-			<sat_id> </sat_id> <sat_status literal="xx"></sat_status>
-			<ephem_and_clock?> <l2_code></l2_code> <> <\> .. ..  <\ephem_and_clock>
-		</nav_model_elem>
+        <nav_model_elem*>
+            <sat_id> </sat_id> <sat_status literal="xx"></sat_status>
+            <ephem_and_clock?> <l2_code></l2_code> <> <\> .. ..  <\ephem_and_clock>
+        </nav_model_elem>
 
-		<ionospheric_model> <alfa0> </alfa0> <alfa1> </alfa1> <alfa2> </alfa2>	<alfa3></alfa3>
-			<beta0></beta0> <beta1></beta1> <beta2></beta2>  <beta3> </beta3>
-		</ionospheric_model>
+        <ionospheric_model> <alfa0> </alfa0> <alfa1> </alfa1> <alfa2> </alfa2>  <alfa3></alfa3>
+            <beta0></beta0> <beta1></beta1> <beta2></beta2>  <beta3> </beta3>
+        </ionospheric_model>
 
-		<UTC_model>
-			<a1></a1><a0></a0><tot></tot><wnt></wnt> <dtls></dtls> <wnlsf></wnlsf> <dn></dn><dtlsf></dtlsf>
-		</UTC_model>
-		<almanac>
-			<wna>0</wna> <alm_elem*> <> <\> ...<\alm_elem>
-		</almanac>
+        <UTC_model>
+            <a1></a1><a0></a0><tot></tot><wnt></wnt> <dtls></dtls> <wnlsf></wnlsf> <dn></dn><dtlsf></dtlsf>
+        </UTC_model>
+        <almanac>
+            <wna>0</wna> <alm_elem*> <> <\> ...<\alm_elem>
+        </almanac>
 
-		<acqu_assist>
-			<tow_msec></tow_msec>  <sat_info> <> <\> ...  <\sat_info>
-		</acqu_assist>
+        <acqu_assist>
+            <tow_msec></tow_msec>  <sat_info> <> <\> ...  <\sat_info>
+        </acqu_assist>
 
-	</GPS_assist>
-	</assist_data>
-	</pos>
+    </GPS_assist>
+    </assist_data>
+    </pos>
 ================================================================================================================================
 */
 
@@ -1792,17 +1736,15 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 		pos = (char *) xml_line;
 	}
 	line = g_strdup((char *) pos);
-
-	path = tzplatform_mkpath(TZ_SYS_ROOT, "sample.xml");
 	// open file.
-	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, S_IRWXU)) == -1) {
-		err("Cannot open file\n");
+	if ((fd = open(FILE_NAME, O_WRONLY | O_CREAT | O_TRUNC | S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, S_IRWXU)) == -1) {
+		dbg("Cannot open file\n");
 		g_free(line);
 		return FALSE;
 	}
 	// write gps xml data into file.
 	if (write(fd, (const void *) line, strlen(line)) == -1) {
-		err("Cannot write into file\n");
+		dbg("Cannot write into file\n");
 		close(fd);
 		g_free(line);
 		return FALSE;
@@ -1811,7 +1753,7 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 	g_free(line);
 
 	dbg("read xml file");
-	reader = xmlReaderForFile(path, NULL, 0);
+	reader = xmlReaderForFile(FILE_NAME, NULL, 0);
 
 	while (xmlTextReaderRead(reader)) {
 		// Get the node type of the current node
@@ -1824,23 +1766,23 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 			if (node != NULL) {
 				// check type of sub element of <GPS_assist>
 				set_element_type = _get_element_type(node);
-				if ((int) set_element_type != -1)	  // ignore negative value as excepted element type not set.
+				if ((int) set_element_type != -1)     // ignore negative value as excepted element type not set.
 					node_type = set_element_type;
 
-				dbg("xml node type	: %d", node_type);
+				dbg("xml node type  : %d", node_type);
 
 				// Check for position measurement data.
-				if (g_strcmp0(node, "pos_meas") == 0) {
+				if (strcmp(node, "pos_meas") == 0) {
 					// Deallocate all the resources associated to the reader
 					xmlFreeTextReader(reader);
 					xmlCleanupParser();
 					dbg("gps postion measurement notification ");
 					// GPS position measurement notification.
-					ret = on_notification_gps_measure_position_from_modem(o, path, user_data);
+					ret = on_notification_gps_measure_position_from_modem(o, FILE_NAME, user_data);
 					// remove file.
 					close(fd);
-					if (access(path, F_OK) == 0) {
-						if (remove(path))
+					if (access(FILE_NAME, F_OK) == 0) {
+						if (remove(FILE_NAME))
 							dbg("file removed");
 					}
 					return ret;
@@ -1858,46 +1800,46 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 
 					// Read attribute value of <nav_model_elem>
 					if (node_type == NAV_MODEL_ELEM) {
-						if (g_strcmp0(node, "sat_status") == 0 && g_strcmp0(attribute, "literal") == 0) {
+						if (strcmp(node, "sat_status") == 0 && strcmp(attribute, "literal") == 0) {
 							gps_data_assist.navi_model.NavigationSatInfo[nav_model_node_count].NavigationSatStatus = _modem_sat_status_info_2_tel_sat_info(attr_value);
 							dbg("navigation sat status of nav model element - %d\n", gps_data_assist.navi_model.NavigationSatInfo[nav_model_node_count].NavigationSatStatus);
 						}
 					}
 					// Read attribute value of <acqu_assist>
 					else if (node_type == ACQU_ASSIST) {
-						if (g_strcmp0(node, "dopl1_uncert") == 0 && g_strcmp0(attribute, "literal") == 0) {
+						if (strcmp(node, "dopl1_uncert") == 0 && strcmp(attribute, "literal") == 0) {
 							gps_data_assist.acq_assist.lcsAcquisitionSatInfo[0].dopplerUncertainty = _modem_acqa_assit_doppler_2_tel_doppler(attr_value);
 							dbg("doppler uncertainty of acqu assist data- %d", gps_data_assist.acq_assist.lcsAcquisitionSatInfo[0].dopplerUncertainty);
 						}
 					}
-				}		 // end of attribute check.
+				}        // end of attribute check.
 
 				// check GPS data is having GPS_assist data.
-				if (g_strcmp0(node, "GPS_assist") == 0) {
+				if (strcmp(node, "GPS_assist") == 0) {
 					_gps_assist_data = TRUE;
 				}
 
 				if (_gps_assist_data == TRUE) {
 					// number of GPS_TOW_assist elements.
-					if (g_strcmp0(node, "GPS_TOW_assist") == 0) {
+					if (strcmp(node, "GPS_TOW_assist") == 0) {
 						gps_tow_assist_count++;
 						gps_tow_assist = TRUE;
-					} else if (g_strcmp0(node, "nav_model_elem") == 0) {
+					} else if (strcmp(node, "nav_model_elem") == 0) {
 						// number of nav_model_elem.
 						nav_model_node_count++;
-					} else if (g_strcmp0(node, "alm_elem") == 0) {
+					} else if (strcmp(node, "alm_elem") == 0) {
 						// number of alm_elem elements.
 						alm_node_count++;
 						dbg("alm_elem_count - %d", alm_node_count);
 						if (node_type == ALMANAC)
 							alm_elem = TRUE;
-					} else if (g_strcmp0(node, "ephem_and_clock") == 0 && node_type == NAV_MODEL_ELEM) {
+					} else if (strcmp(node, "ephem_and_clock") == 0 && node_type == NAV_MODEL_ELEM) {
 						ephem_and_clock = TRUE;
 					}
 				}
 			}
 			xmlTextReaderMoveToElement(reader);
-		}	  // end of reading node type.
+		}     // end of reading node type.
 		break;
 
 		case XML_READER_TYPE_TEXT:
@@ -1941,10 +1883,10 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 					break;
 
 				default:
-					err("invalid element");
+					dbg("invalid element");
 				}
 			}
-		}	  // end of reading node value.
+		}     // end of reading node value.
 		break;
 		}
 	} // end of parsing.
@@ -1955,126 +1897,219 @@ static gboolean on_notification_imc_gps_assist_data(CoreObject *o, const void *e
 
 	// remove xml file.
 	close(fd);
-	if (access(path, F_OK) == 0) {
-		if (remove(path))
+	if (access(FILE_NAME, F_OK) == 0) {
+		if (remove(FILE_NAME))
 			dbg("file removed");
 	}
 
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),(tcore_object_ref_plugin(o)),
-									TCORE_NOTIFICATION_GPS_ASSIST_DATA, sizeof(gps_data_assist), &gps_data_assist);
-
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),
+								   o, TNOTI_GPS_ASSIST_DATA, sizeof(gps_data_assist), &gps_data_assist);
 	return TRUE;
 }
 
-static gboolean on_notification_imc_reset_assist_data(CoreObject *o, const void *event_info, void *user_data)
+static gboolean on_notification_gps_measure_position_from_modem(CoreObject *o, char *file_name, void *user_data)
 {
-	dbg("enter!\n");
-	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),(tcore_object_ref_plugin(o)),
-									TCORE_NOTIFICATION_GPS_RESET_ASSIST_DATA, 0, NULL);
+	char *node = NULL, *node_value = NULL;
+	char *attribute = NULL;
+	char *attr_value = NULL;
+	gps_measure_position_indi_t gps_measure_position_indi;
+	gboolean rep_quant = FALSE;
+	xmlTextReaderPtr reader;
 
+	memset(&gps_measure_position_indi, 0x00, sizeof(gps_measure_position_indi));
+	reader = xmlReaderForFile(file_name, NULL, 0);
 
+	while (xmlTextReaderRead(reader)) {
+		switch (xmlTextReaderNodeType(reader)) {
+		case XML_READER_TYPE_ELEMENT:
+		{
+			node = (char *) xmlTextReaderConstName(reader);
+			dbg("Element: %s", node);
+			if (node != NULL) {
+				// Read attribute value.
+				while (xmlTextReaderMoveToNextAttribute(reader)) {
+					attribute = (char *) xmlTextReaderConstName(reader);
+					dbg("Attribute value - %s\n", attribute);
+					attr_value = (char *) xmlTextReaderConstValue(reader);
+					dbg("=\"%s\"\n", attr_value);
+
+					if (strcmp(node, "mult_sets") == 0) {
+						if (strcmp(attribute, "literal") == 0) {
+							if (strcmp(attr_value, "one") == 0)
+								gps_measure_position_indi.use_multi_sets = GPS_MULTIPLESETS_ONESET;
+							else if (strcmp(attr_value, "multiple") == 0)
+								gps_measure_position_indi.use_multi_sets = GPS_MULTIPLESETS_MULTIPLESETS;
+						}
+						dbg("gps_measure_position_indi.use_multi_sets - 0x%x\n", gps_measure_position_indi.use_multi_sets);
+					} else if (strcmp(node, "rep_quant") == 0) {
+						rep_quant = TRUE;
+						if (strcmp(attribute, "addl_assist_data_req") == 0) {
+							if (strcmp(attr_value, "true") == 0)
+								gps_measure_position_indi.add_assist_req = GPS_ADDITIONAL_ASSISREQ_REQ;
+							else
+								gps_measure_position_indi.add_assist_req = GPS_ADDITIONAL_ASSISREQ_NOT_REQ;
+						} else if (strcmp(attribute, "gps_timing_of_cell_wanted") == 0) {
+							if (strcmp(attr_value, "true") == 0)
+								gps_measure_position_indi.cell_timing_wnt = GPS_CELLTIMING_WANTED;
+							else
+								gps_measure_position_indi.cell_timing_wnt = GPS_CELLTIMING_NOT_WANTED;
+						}
+					}
+				}        // end of attribute check
+
+				if (strcmp(node, "ms_assisted") == 0) {
+					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED;
+				} else if (strcmp(node, "ms_assisted_no_accuracy") == 0) {
+					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED;
+				} else if (strcmp(node, "ms_based") == 0) {
+					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_BASED;
+				} else if (strcmp(node, "ms_based_pref") == 0) {
+					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_BASED_PREF;
+				} else if (strcmp(node, "ms_assisted_pref") == 0) {
+					gps_measure_position_indi.method_type = GPS_METHODTYPE_MS_ASSISTED_PREF;
+				}
+			}
+			xmlTextReaderMoveToElement(reader);
+		}
+		break;
+
+		case XML_READER_TYPE_TEXT:
+		{
+			node_value = (char *) xmlTextReaderConstValue(reader);
+			dbg("element-value: %s", node_value);
+			if (node_value != NULL) {
+				if (strcmp(node, "resp_time_seconds") == 0) {
+					gps_measure_position_indi.rsp_time = *node_value;
+					dbg("gps_measure_position_indi.rsp_time - 0x%x", gps_measure_position_indi.rsp_time);
+				}
+				if (rep_quant == TRUE) {
+					if (strcmp(node, "hor_acc") == 0)
+						gps_measure_position_indi.accuracy.horizontalAccuracy = *node_value;
+					else if (strcmp(node, "vert_acc") == 0)
+						gps_measure_position_indi.accuracy.vertcalAccuracy = *node_value;
+				}
+			}
+		}
+		break;
+		}
+	}
+	xmlFreeTextReader(reader);
+	xmlCleanupParser();
+
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),
+								   o, TNOTI_GPS_MEASURE_POSITION, sizeof(gps_measure_position_indi), &gps_measure_position_indi);
 	return TRUE;
 }
 
-/* GPS Responses */
-static void on_response_imc_gps_confirm_measure_pos(TcorePending *p, guint data_len, const void *data, void *user_data)
-{
-	//GPS server does not except confirmation for GPS measure position request.
-	const TcoreAtResponse *at_resp = data;
-	ImcRespCbData *resp_cb_data = user_data;
 
+// CONFIRMATION
+static void on_confirmation_gps_message_send(TcorePending *p, gboolean result, void *user_data)
+{
 	dbg("Entry");
 
-	if (at_resp && at_resp->success) {
-		dbg("Confirm measure position - [OK]");
+	if (result == FALSE) {  // Fail
+		dbg("SEND FAIL");
 	} else {
-		err("Confirm measure position - [NOK]");
+		dbg("SEND OK");
 	}
 
-	imc_destroy_resp_cb_data(resp_cb_data);
+	dbg("Exit");
+	return;
 }
 
-/* GPS Operations */
-/*
- * Operation - confirm measure position
- *
- * Request -
- * 	AT-Command: AT+CPOS=<cr>
- *	text is entered <ctrl-z/ESC>
- *
- * Success:
- *	OK
- *
- * Failure:
- *	+CME ERROR: <error>
- */
-
-static TelReturn imc_gps_confirm_measure_pos (CoreObject *co, const TelGpsDataInfo *gps_data,
-				TcoreObjectResponseCallback cb, void *cb_data)
+static gboolean on_notification_reset_assist_data(CoreObject *o, const void *event_info, void *user_data)
 {
-	ImcRespCbData *resp_cb_data = NULL;
+	dbg("enter!\n");
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)),
+								   o, TNOTI_GPS_RESET_ASSIST_DATA, 0, NULL);
+
+	return TRUE;
+}
+static void on_confirmation_gps_measure_position(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	//GPS server does not except confirmation for GPS measure position request.
+	dbg("enter");
+
+	dbg("exit");
+}
+
+static TReturn gps_confirm_measure_pos(CoreObject *o, UserRequest *ur)
+{
+	char *raw_str = NULL;
 	char *cmd_str = NULL;
+	TcorePending *pending = NULL;
+	TcoreATRequest *req = NULL;
+	TcoreHal *hal = NULL;
+	gboolean ret = FALSE;
 	xmlChar *xml = NULL;
+	unsigned char *data = NULL;
+	unsigned int data_len;
 	gps_measure_position_confirm_t gps_measure_pos_confirm;
-	TelReturn ret;
 
-	memcpy(&gps_measure_pos_confirm, gps_data->data, gps_data->data_len);
+	dbg("enter!");
+	if (!o || !ur)
+		return TCORE_RETURN_EINVAL;
 
+	data = (unsigned char *) tcore_user_request_ref_data(ur, &data_len);
+	memcpy(&gps_measure_pos_confirm, data, data_len);
+
+	// make confirm measure postion request in xml format.
 	xml = _generate_confirm_measure_pos_xml_text(&gps_measure_pos_confirm);
 	if (!xml) {
 		err("xml text generation failed");
-		return TEL_RETURN_FAILURE;
+		return TCORE_RETURN_EINVAL;
 	}
 
-	/* AT - Command */
-	cmd_str = g_strdup_printf("AT+CPOS%s%s\x1A", "\r", xml);
+	// AT+CPOS<cr>text is entered<ctrl-z/esc>
+	raw_str = g_strdup_printf("AT+CPOS%s", "\r");
+	cmd_str = g_strdup_printf("%s%s\x1A", raw_str, xml);
 
-	resp_cb_data = imc_create_resp_cb_data(cb, cb_data, NULL, 0);
+	dbg("command string : %s", cmd_str);
+	pending = tcore_pending_new(o, 0);
+	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
+	tcore_pending_set_request_data(pending, strlen(cmd_str), req);
+	tcore_pending_set_priority(pending, TCORE_PENDING_PRIORITY_DEFAULT);
+	tcore_pending_set_send_callback(pending, on_confirmation_gps_message_send, NULL);
+	tcore_pending_set_response_callback(pending, on_confirmation_gps_measure_position, NULL);
+	tcore_pending_link_user_request(pending, ur);
 
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co,
-			cmd_str, NULL,
-			TCORE_AT_COMMAND_TYPE_NO_RESULT,
-			NULL,
-			on_response_imc_gps_confirm_measure_pos, resp_cb_data,
-			on_send_imc_request, NULL);
-	IMC_CHECK_REQUEST_RET(ret, resp_cb_data, "Confirm Measure Position");
+	// HAL
+	hal = tcore_object_get_hal(o);
+	// Send request to HAL
+	ret = tcore_hal_send_request(hal, pending);
+	if (TCORE_RETURN_SUCCESS != ret) {
+		err("Request send failed");
+		ret = FALSE;
+	}
 
+	dbg("exit");
+	g_free(raw_str);
 	g_free(cmd_str);
-
+	xmlFree(xml);
 	return ret;
-
 }
 
-
- static TelReturn imc_gps_set_frequency_aiding (CoreObject *co, gboolean state,
-				TcoreObjectResponseCallback cb, void *cb_data)
- {
-		return TEL_RETURN_OPERATION_NOT_SUPPORTED;
- }
-
-
-static TcoreGpsOps imc_gps_ops = {
-	.confirm_measure_pos = imc_gps_confirm_measure_pos,
-	.set_frequency_aiding = imc_gps_set_frequency_aiding
+static struct tcore_gps_operations gps_ops = {
+	.confirm_measure_pos = gps_confirm_measure_pos,
 };
 
-gboolean imc_gps_init(TcorePlugin *p, CoreObject *co)
+gboolean imc_gps_init(TcorePlugin *cp, CoreObject *co_gps)
 {
 	dbg("Enter");
 
 	/* Set operations */
-	tcore_gps_set_ops(co, &imc_gps_ops);
+	tcore_gps_set_ops(co_gps, &gps_ops);
 
-	/* Add Callbacks */
-	tcore_object_override_callback(co, "+CPOSR", on_notification_imc_gps_assist_data, NULL);
-	tcore_object_override_callback(co, "+XCPOSR", on_notification_imc_reset_assist_data, NULL);
+	tcore_object_add_callback(co_gps, "+CPOSR", on_notification_gps_assist_data, NULL);
+	tcore_object_add_callback(co_gps, "+XCPOSR", on_notification_reset_assist_data, NULL);
 
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void imc_gps_exit(TcorePlugin *p, CoreObject *co)
+void imc_gps_exit(TcorePlugin *cp, CoreObject *co_gps)
 {
 	dbg("Exit");
 }

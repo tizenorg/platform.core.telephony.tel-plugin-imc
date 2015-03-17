@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: Paresh Agarwal <paresh.agwl@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +23,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <glib.h>
+#include <string.h>
 
 #include <sys/stat.h>
 #include <tcore.h>
@@ -40,7 +43,7 @@
 #define NVM_DATA_LEN_POS			80
 
 /* Image Path information */
-#define MODEM_IMAGE_PATH				"/boot/modem.bin"
+#define MODEM_IMAGE_PATH				"/opt/modem/modem.bin"
 #define NVM_DIR_PATH 					"/csa/nv"
 #define NV_FILE_PATH NVM_DIR_PATH 		"/nvdata.bin"
 
@@ -229,20 +232,16 @@ gboolean nvm_create_nvm_data()
 			/* Close 'modem_fd' */
 			close(modem_fd);
 			return ret_val;
+		} else if ((nv_fd = open(NV_FILE_PATH, O_EXCL)) >= 0) {
+			/* NV data file already exists */
+			dbg("File exists: [%s]", NV_FILE_PATH);
+
+			/* Close 'modem_fd' */
+			close(modem_fd);
+			close(nv_fd);
+			return TRUE;
 		} else {
-			gint fd = open(NV_FILE_PATH, O_EXCL);
-			if (fd < 0) {
-				dbg("File does't exsits... need to create!!!");
-			} else {
-				/* NV data file already exists */
-				dbg("File exists: [%s]", NV_FILE_PATH);
-
-				/* Close 'fds' */
-				close(fd);
-				close(modem_fd);
-
-				return TRUE;
-			}
+			dbg("File does't exsits... need to create!!!");
 		}
 	}
 

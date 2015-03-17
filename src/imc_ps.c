@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: Arun Shukla <arun.shukla@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,74 +21,86 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <glib.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include <tcore.h>
-#include <server.h>
-#include <plugin.h>
-#include <core_object.h>
 #include <hal.h>
+#include <core_object.h>
+#include <plugin.h>
 #include <queue.h>
-#include <storage.h>
-#include <at.h>
-
 #include <co_ps.h>
 #include <co_context.h>
+#include <storage.h>
+#include <server.h>
+#include <at.h>
+#include <util.h>
+#include <type/ps.h>
 
-#include "imc_ps.h"
 #include "imc_common.h"
+#include "imc_ps.h"
 
-typedef struct {
-	TcorePsCallState ps_call_status;
-} PrivateInfo;
+/*Invalid Session ID*/
+#define PS_INVALID_CID  999 /*Need to check */
 
-static void __notify_context_status_changed(CoreObject *co_ps, guint context_id,
-						TcorePsCallState status)
+/*Maximum String length Of the Command*/
+#define MAX_AT_CMD_STR_LEN  150
+
+/*Command for PDP activation and Deactivation*/
+#define AT_PDP_ACTIVATE 1
+#define AT_PDP_DEACTIVATE 0
+
+#define AT_XDNS_ENABLE 1
+#define AT_XDNS_DISABLE 0
+#define AT_SESSION_DOWN 0
+
+enum ps_data_call_status {
+	PS_DATA_CALL_CTX_DEFINED,
+	PS_DATA_CALL_CONNECTED,
+	PS_DATA_CALL_NOT_CONNECTED = 3,
+};
+
+struct ps_user_data {
+	CoreObject *ps_context;
+	struct tnoti_ps_pdp_ipconfiguration data_call_conf;
+};
+
+static void  __convert_ipv4_atoi(unsigned char *ip4,  const char *str)
 {
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-	TcorePsCallStatusInfo data_resp = {0,};
-	tcore_check_return_assert(private_info != NULL);
+	char *token = NULL;
+	char *temp = NULL;
+	char *ptr = NULL;
+	int local_index = 0;
 
-	private_info->ps_call_status = status;
-	data_resp.context_id = context_id;
-	data_resp.state = status;
-	dbg("Sending PS Call Status Notification - Context ID: [%d] Context State: [%d]",
-					data_resp.context_id, data_resp.state);
-
-	/* Send PS CALL Status Notification */
-	(void)tcore_object_send_notification(co_ps,
-			TCORE_NOTIFICATION_PS_CALL_STATUS,
-			sizeof(TcorePsCallStatusInfo),
-			&data_resp);
-
-}
-
-static TcoreHookReturn on_hook_imc_nw_registration_status(TcorePlugin *plugin,
-    TcoreNotification command, guint data_len, void *data, void *user_data)
-{
-	const TelNetworkRegStatusInfo *nw_reg_status = (TelNetworkRegStatusInfo *)data;
-	gboolean state = FALSE;
-
-	tcore_check_return_value(nw_reg_status != NULL,
-        TCORE_HOOK_RETURN_CONTINUE);
-
-
-	dbg("nw_reg_status->ps_status [%d]",nw_reg_status->ps_status);
-	dbg("nw_reg_status->cs_status [%d]",nw_reg_status->cs_status);
-
-	/* Setting if PS is online or not */
-	if(nw_reg_status->ps_status == TEL_NETWORK_REG_STATUS_REGISTERED ||
-		nw_reg_status->ps_status == TEL_NETWORK_REG_STATUS_ROAMING) {
-		/* Set PS is online */
-		state = TRUE;
+	temp = g_strdup(str);
+	token = strtok_r(temp, ".", &ptr);
+	while (token != NULL) {
+		ip4[local_index++] = atoi(token);
+		msg("	[%d]", ip4[local_index-1]);
+		token = strtok_r(NULL, ".", &ptr);
 	}
+	g_free(temp);
+}
+static void _unable_to_get_pending(CoreObject *co_ps, CoreObject *ps_context)
+{
+	struct tnoti_ps_call_status data_resp = {0};
+	dbg("Entry");
 
-	dbg("PS online state [%d]", state);
+	data_resp.context_id = tcore_context_get_id(ps_context);
+	data_resp.state = PS_DATA_CALL_NOT_CONNECTED;
+	dbg("Sending Call Status Notification - Context ID: [%d] Context State: [NOT CONNECTED]",
+					data_resp.context_id);
 
-	/* Set Online state */
-	tcore_ps_set_online((CoreObject *)user_data, state);
-	return TCORE_HOOK_RETURN_CONTINUE;
+	/* Send CALL Status Notification */
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)),
+				co_ps, TNOTI_PS_CALL_STATUS, sizeof(data_resp), &data_resp);
+
+	/* Set PS State to Deactivated */
+	(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATED);
+	dbg("Exit");
 }
 
 /*
@@ -97,7 +111,7 @@ static TcoreHookReturn on_hook_imc_nw_registration_status(TcorePlugin *plugin,
  * The network has forced a context deactivation. The <cid> that was used to activate the context is provided if
  * known to the MT
  */
-static gboolean on_notification_imc_ps_cgev(CoreObject *co_ps,
+static gboolean on_cgev_notification(CoreObject *co_ps,
 	const void *data, void *user_data)
 {
 	GSList *tokens = NULL;
@@ -106,6 +120,8 @@ static gboolean on_notification_imc_ps_cgev(CoreObject *co_ps,
 	gchar *noti_data;
 	guint context_id;
 	TcoreHal *hal;
+	struct tnoti_ps_call_status noti = {0};
+	Server *server;
 
 	dbg("Entry");
 
@@ -144,114 +160,262 @@ static gboolean on_notification_imc_ps_cgev(CoreObject *co_ps,
 
 	dbg("Context %d deactivated", context_id);
 
-	__notify_context_status_changed(co_ps, context_id, TCORE_PS_CALL_STATE_NOT_CONNECTED);
+	/* Set State - CONNECTED */
+	noti.context_id = context_id;
+	noti.state = PS_DATA_CALL_NOT_CONNECTED;
+	dbg("Sending Call Status Notification - Context ID: [%d] Context State: [ NOT CONNECTED]", noti.context_id);
+
+	/* Send Notification */
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
+	tcore_server_send_notification(server, co_ps,
+					TNOTI_PS_CALL_STATUS,
+					sizeof(struct tnoti_ps_call_status),
+					&noti);
 
 	hal = tcore_object_get_hal(co_ps);
 	if (tcore_hal_setup_netif(hal, co_ps, NULL, NULL, context_id,
-					FALSE) != TEL_RETURN_SUCCESS)
+					FALSE) != TCORE_RETURN_SUCCESS)
 		err("Failed to disable network interface");
+
 out:
+
 	tcore_at_tok_free(tokens);
 	return TRUE;
 }
 
-static void __imc_ps_setup_pdp(CoreObject *co_ps, gint result, const gchar *netif_name,
-	void *user_data)
+static gboolean on_event_dun_call_notification(CoreObject *o, const void *data, void *user_data)
 {
+	GSList *tokens = NULL;
+	const char *line = NULL;
+	int value = 0;
+	GSList *lines = NULL;
+	dbg("Entry");
+
+	lines = (GSList *) data;
+	if (g_slist_length(lines) != 1) {
+		dbg("Unsolicited message BUT multiple lines");
+		goto OUT;
+	}
+
+	line = (char *) (lines->data);
+	tokens = tcore_at_tok_new(line);
+	value = atoi(g_slist_nth_data(tokens, 0));
+
+	/*
+	 * <status> may be
+	 *	0: DUN Activation in progress
+	 *	1: DUN Deactivation in progress
+	 *	2: DUN Activated
+	 *	3: DUN Deactivated
+	 */
+	switch (value) {
+	case 0:    /* FALL THROUGH */
+	case 1:
+	{
+		break;
+	}
+
+	case 2:
+	{
+		/* TODO:- Fill Data structure: 'data' */
+		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
+									   TNOTI_PS_EXTERNAL_CALL, sizeof(struct tnoti_ps_external_call), &data);
+	}
+
+	case 3:
+	{
+		/* TODO:- Fill Data structure: 'data' */
+		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
+									   TNOTI_PS_EXTERNAL_CALL, sizeof(struct tnoti_ps_external_call), &data);
+	}
+	break;
+
+	default:
+		break;
+	}
+
+OUT:
+	/* Free tokens */
+	tcore_at_tok_free(tokens);
+
+	return TRUE;
+}
+static void on_response_undefine_context_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	CoreObject *co_ps = NULL;
+	const TcoreATResponse *resp = data;
 	CoreObject *ps_context = user_data;
-	guint context_id;
+	dbg("Entry");
 
-	tcore_check_return_assert(ps_context != NULL);
+	co_ps = tcore_pending_ref_core_object(p);
+	if (resp->success) {
+		dbg("Response Ok");
+		goto exit;
+	}
+	dbg("Response NOk");
 
-	dbg("Enter");
+exit:
+	_unable_to_get_pending(co_ps, ps_context);
+	return;
+}
 
-	if (result < 0) {
-		err("Result [%d],Hence Deactivating context ", result);
-		/* Deactivate PDP context */
-		(void)tcore_object_dispatch_request(co_ps, TRUE,
-				TCORE_COMMAND_PS_DEACTIVATE_CONTEXT,
-				NULL, 0,
-				NULL, NULL);
+static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
+{
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	char cmd_str[MAX_AT_CMD_STR_LEN];
+	int cid = 0;
 
+	dbg("Entry");
+	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
+
+	/* FIXME: Before MUX setup, use PHY HAL directly. */
+	hal = tcore_object_get_hal(co_ps);
+
+	/*Getting Context ID from Core Object*/
+	cid = tcore_context_get_id(ps_context);
+
+	(void) sprintf(cmd_str, "AT+CGDCONT=%d", cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
+								   on_response_undefine_context_cmd, ps_context);
+	if (NULL == pending) {
+		err("Unable to get the create a AT request ");
+		goto error;
+	}
+	tcore_hal_send_request(hal, pending);
+	dbg("Exit: Successfully");
+	return;
+error:
+	{
+		dbg("Exit: With error");
+		_unable_to_get_pending(co_ps, ps_context);
+		return;
+	}
+}
+
+static void on_setup_pdp(CoreObject *co_ps, int result,
+			const char *netif_name, void *user_data)
+{
+	struct ps_user_data *ps_data = user_data;
+	struct tnoti_ps_call_status data_status = {0};
+	Server *server;
+
+	dbg("Entry");
+
+	if (!ps_data ) {
+		err("PS_data unavailable. Exiting.");
 		return;
 	}
 
-	dbg("devname = [%s]", netif_name);
+	if (result < 0) {
+		/* Deactivate PDP context */
+		tcore_ps_deactivate_context(co_ps, ps_data->ps_context, NULL);
+		return;
+	}
 
-	tcore_context_set_ipv4_devname(ps_context, netif_name);
+	dbg("Device name: [%s]", netif_name);
+	if (tcore_util_netif_up(netif_name) != TCORE_RETURN_SUCCESS) {
+		err("util_netif_up() failed. errno=%d", errno);
+		/* Deactivate PDP context */
+		tcore_ps_deactivate_context(co_ps, ps_data->ps_context, NULL);
+		return;
+	} else {
+		dbg("tcore_util_netif_up() PASS...");
+	}
 
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
+	/* Set Device name */
+	//tcore_context_set_ipv4_devname(ps_context, netif_name);
+	g_strlcpy(ps_data->data_call_conf.devname, netif_name, sizeof(ps_data->data_call_conf.devname));
 
-	__notify_context_status_changed(co_ps, context_id, TCORE_PS_CALL_STATE_CONNECTED);
+	ps_data->data_call_conf.context_id = (int)tcore_context_get_id(ps_data->ps_context);
 
+	dbg("Sending IP Configuration Notification - Context ID: [%d] Context State: [CONNECTED]", ps_data->data_call_conf.context_id);
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)),
+					co_ps,
+					TNOTI_PS_PDP_IPCONFIGURATION,
+					sizeof(struct tnoti_ps_pdp_ipconfiguration),
+					&ps_data->data_call_conf);
+
+	/* Set State - CONNECTED */
+	data_status.context_id = tcore_context_get_id(ps_data->ps_context);
+	data_status.state = PS_DATA_CALL_CONNECTED;
+	dbg("Sending Call Status Notification - Context ID: [%d] Context State: [CONNECTED]", data_status.context_id);
+
+	/* Send Notification */
+	server = tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps));
+	tcore_server_send_notification(server, co_ps,
+					TNOTI_PS_CALL_STATUS,
+					sizeof(struct tnoti_ps_call_status),
+					&data_status);
+
+	g_free(ps_data);
 	dbg("Exit");
 }
 
-static void __on_response_imc_ps_send_get_dns_cmd(TcorePending *p, guint data_len, const void *data, void *user_data)
+static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *data, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *ps_context = user_data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	guint context_id;
 	GSList *tokens = NULL;
-	GSList *lines;
+	GSList *pRespData;
 	const char *line = NULL;
 	char *dns_prim = NULL;
 	char *dns_sec = NULL;
 	char *token_dns = NULL;
-	gint no_pdp_active = 0;
-	TcoreHal *hal = tcore_object_get_hal(co_ps);
+	int no_pdp_active = 0;
+	struct ps_user_data *ps_data = user_data;
+	const TcoreATResponse *resp = data;
+	CoreObject *co_ps = tcore_pending_ref_core_object(p);
+	int cid = tcore_context_get_id(ps_data->ps_context);
+	TcoreHal *h = tcore_object_get_hal(co_ps);
 
-	dbg("Entered");
+	dbg("Entry");
 
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	if (at_resp && at_resp->success) {
+	if (resp->final_response) {
 		dbg("Response OK");
-		if (at_resp->lines) {
+		if (resp->lines) {
 			dbg("DNS data present in the Response");
-			lines = (GSList *) at_resp->lines;
-			no_pdp_active = g_slist_length(lines);
+			pRespData = (GSList *) resp->lines;
+			no_pdp_active = g_slist_length(pRespData);
 			dbg("Total Number of Active PS Context: [%d]", no_pdp_active);
 			if (0 == no_pdp_active) {
-				goto fail;
+				goto exit_fail;
 			}
 
-			while (lines) {
-				line = (const char *) lines->data;
+			while (pRespData) {
+				line = (const char *) pRespData->data;
 				dbg("Received Data: [%s]", line);
 				tokens = tcore_at_tok_new(line);
 
 				/* Check if Context ID is matching */
-				if (context_id == (guint)(atoi(g_slist_nth_data(tokens, 0)))) {
-					dbg("Found the DNS details for the Current Context - Context ID: [%d]", context_id);
+				if (cid == atoi(g_slist_nth_data(tokens, 0))) {
+					dbg("Found the DNS details for the Current Context - Context ID: [%d]", cid);
 					break;
 				}
 
+				/* Free tokens */
 				tcore_at_tok_free(tokens);
 				tokens = NULL;
 
 				/* Move to next line */
-				lines = lines->next;
+				pRespData = pRespData->next;
 			}
 
 			/* Read primary DNS */
 			{
 				token_dns = g_slist_nth_data(tokens, 1);
-				dns_prim = tcore_at_tok_extract(token_dns);
+
+				/* Strip off starting " and ending " from this token to read actual PDP address */
+				dns_prim = util_removeQuotes((void *)token_dns);
 				dbg("Primary DNS: [%s]", dns_prim);
 			}
 
 			/* Read Secondary DNS */
 			{
 				token_dns = g_slist_nth_data(tokens, 2);
-				dns_sec = tcore_at_tok_extract(token_dns);
+
+				/* Strip off starting " and ending " from this token to read actual PDP address */
+				dns_sec = util_removeQuotes((void *)token_dns);
 				dbg("Secondary DNS: [%s]", dns_sec);
 			}
 
@@ -259,620 +423,459 @@ static void __on_response_imc_ps_send_get_dns_cmd(TcorePending *p, guint data_le
 					&& (g_strcmp0("0.0.0.0", dns_sec) == 0)) {
 				dbg("Invalid DNS");
 
-				tcore_free(dns_prim);
-				tcore_free(dns_sec);
+				g_free(dns_prim);
+				g_free(dns_sec);
 
 				tcore_at_tok_free(tokens);
 				tokens = NULL;
 
-				goto fail;
+				goto exit_fail;
 			}
 
+			__convert_ipv4_atoi(ps_data->data_call_conf.primary_dns,  dns_prim);
+			__convert_ipv4_atoi(ps_data->data_call_conf.secondary_dns,  dns_sec);
+
+			util_hex_dump("   ", 4, ps_data->data_call_conf.primary_dns);
+			util_hex_dump("   ", 4, ps_data->data_call_conf.secondary_dns);
+
 			/* Set DNS Address */
-			tcore_context_set_ipv4_dns(ps_context, dns_prim, dns_sec);
-			tcore_free(dns_prim);
-			tcore_free(dns_sec);
+			tcore_context_set_dns1(ps_data->ps_context, dns_prim);
+			tcore_context_set_dns2(ps_data->ps_context, dns_sec);
+
+			g_free(dns_prim);
+			g_free(dns_sec);
 
 			tcore_at_tok_free(tokens);
 			tokens = NULL;
-			goto success;
+			goto exit_success;
 		} else {
 			dbg("No data present in the Response");
 		}
 	}
 	dbg("Response NOK");
 
-fail:
+exit_fail:
 	dbg("Adding default DNS");
-	tcore_context_set_ipv4_dns(ps_context, "8.8.8.8", "8.8.4.4");
 
-success:
+	__convert_ipv4_atoi(ps_data->data_call_conf.primary_dns, "8.8.8.8");
+	__convert_ipv4_atoi(ps_data->data_call_conf.secondary_dns, "8.8.4.4");
+
+	tcore_context_set_dns1(ps_data->ps_context, (const char *)ps_data->data_call_conf.primary_dns);
+	tcore_context_set_dns2(ps_data->ps_context, (const char *)ps_data->data_call_conf.secondary_dns);
+
+exit_success:
 	/* Mount network interface */
-	if (tcore_hal_setup_netif(hal, co_ps, __imc_ps_setup_pdp, ps_context, context_id, TRUE)
-			!= TEL_RETURN_SUCCESS) {
+	if (tcore_hal_setup_netif(h, co_ps, on_setup_pdp, (void *)ps_data, cid, TRUE)
+			!= TCORE_RETURN_SUCCESS) {
 		err("Setup network interface failed");
+		return;
+	}
+
+	dbg("EXIT : Without error");
+}
+
+static TReturn send_get_dns_cmd(CoreObject *co_ps, struct ps_user_data *ps_data)
+{
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	char cmd_str[MAX_AT_CMD_STR_LEN];
+
+	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
+
+	dbg("Entry");
+	hal = tcore_object_get_hal(co_ps);
+
+	(void) sprintf(cmd_str, "AT+XDNS?");
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, "+XDNS", TCORE_AT_MULTILINE,
+								   on_response_get_dns_cmnd, (void *)ps_data);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
+	}
+	_unable_to_get_pending(co_ps, ps_data->ps_context);
+	return TCORE_RETURN_FAILURE;
+}
+
+static void on_response_get_pdp_address(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	CoreObject *co_ps = tcore_pending_ref_core_object(p);
+	GSList *tokens = NULL;
+	const char *line;
+	char *token_pdp_address = NULL;
+	char *token_address = NULL;
+	CoreObject *ps_context = user_data;
+	struct ps_user_data *ps_data = {0, };
+
+	dbg("Enetered");
+
+	if (resp->final_response) {
+		ps_data = g_try_malloc0(sizeof (struct ps_user_data));
+		ps_data->ps_context = ps_context;
+		dbg("RESPONSE OK");
+		if (resp->lines != NULL) {
+			line = (const char *) resp->lines->data;
+			tokens = tcore_at_tok_new(line);
+			if (g_slist_length(tokens) < 2) {
+				msg("Invalid message");
+				goto error;
+			}
+			dbg("Received Data: [%s]", line);
+
+			/* CID is already stored in ps_context, skip over & read PDP address */
+			token_address = g_slist_nth_data(tokens, 1);
+			token_pdp_address = util_removeQuotes((void *)token_address);
+			dbg("IP Address: [%s]", token_pdp_address);
+
+			__convert_ipv4_atoi(ps_data->data_call_conf.ip_address,  token_pdp_address);
+
+			util_hex_dump("   ", 4, ps_data->data_call_conf.ip_address);
+
+			/* Strip off starting " and ending " from this token to read actual PDP address */
+			/* Set IP Address */
+			(void)tcore_context_set_address(ps_context, (const char *)ps_data->data_call_conf.ip_address);
+
+			g_free(token_pdp_address);
+		}
+
+		/* Get DNS Address */
+		(void) send_get_dns_cmd(co_ps, ps_data);
+	} else {
+		dbg("Response NOK");
+
+		/*without PDP address we will not be able to start packet service*/
+		tcore_ps_deactivate_context(co_ps, ps_context, NULL);
+	}
+error:
+	tcore_at_tok_free(tokens);
+	return;
+}
+
+static TReturn send_get_pdp_address_cmd(CoreObject *co_ps, CoreObject *ps_context)
+{
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	unsigned int cid = PS_INVALID_CID;
+	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
+
+	dbg("Entry");
+	hal = tcore_object_get_hal(co_ps);
+
+	cid = tcore_context_get_id(ps_context);
+	(void) sprintf(cmd_str, "AT+CGPADDR=%d", cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, "+CGPADDR", TCORE_AT_SINGLELINE,
+								   on_response_get_pdp_address, ps_context);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
+	}
+	_unable_to_get_pending(co_ps, ps_context);
+	return TCORE_RETURN_FAILURE;
+}
+
+static void on_response_send_pdp_activate_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	CoreObject *co_ps = NULL;
+	const TcoreATResponse *resp = data;
+	CoreObject *ps_context = user_data;
+
+	int cid;
+	cid = tcore_context_get_id(ps_context);
+
+
+	dbg("Entry");
+	if (!p) {
+		goto error;
+	}
+	co_ps = tcore_pending_ref_core_object(p);
+
+	if (resp->success) {
+		dbg("Response OK");
+
+		/* Getting the IP address and DNS from the modem */
+		dbg("Getting IP Address");
+		(void) send_get_pdp_address_cmd(co_ps, ps_context);
+		return;
+	} else {
+		dbg("Unable to activate PDP context - Context ID: [%d]", cid);
+		dbg("Undefining PDP context");
+		(void) tcore_context_set_state(ps_context, CONTEXT_STATE_DEACTIVATED);
+		send_undefine_context_cmd(co_ps, ps_context);
+		return;
+	}
+error:
+	{
+		_unable_to_get_pending(co_ps, ps_context);
 		return;
 	}
 }
 
-static void __imc_ps_send_get_dns_cmd(CoreObject *co_ps, CoreObject *ps_context)
+static TReturn send_pdp_activate_cmd(CoreObject *co_ps, CoreObject *ps_context)
 {
-	TelReturn ret = TEL_RETURN_FAILURE;
-	guint context_id;
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
+	int cid = 0;
+	dbg("Entry");
+	/* FIXME: Before MUX setup, use PHY HAL directly. */
+	hal = tcore_object_get_hal(co_ps);
 
-	dbg("Entered");
+	/*Getting Context ID from Core Object*/
+	cid = tcore_context_get_id(ps_context);
+	(void) sprintf(cmd_str, "AT+CGACT=%d,%d", AT_PDP_ACTIVATE, cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
-	tcore_check_return_assert(private_info != NULL);
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		"AT+XDNS?", "+XDNS",
-		TCORE_AT_COMMAND_TYPE_MULTILINE,
-		NULL,
-		__on_response_imc_ps_send_get_dns_cmd,
-		ps_context,
-		on_send_imc_request, NULL);
-	if (ret != TEL_RETURN_SUCCESS){
-		TcorePsCallState curr_call_status;
-		err("Failed to prepare and send AT request");
-		curr_call_status = private_info->ps_call_status;
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
+	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
+								   on_response_send_pdp_activate_cmd, ps_context);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
 	}
+	_unable_to_get_pending(co_ps, ps_context);
+	return TCORE_RETURN_FAILURE;
 }
 
-static void __on_response_imc_ps_get_pdp_address(TcorePending *p, guint data_len,
-					const void *data, void *user_data)
+static TReturn activate_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
+	dbg("Entry");
+	return send_pdp_activate_cmd(co_ps, ps_context);
+}
+
+static void on_response_send_pdp_deactivate_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	CoreObject *co_ps = NULL;
+	const TcoreATResponse *resp = data;
 	CoreObject *ps_context = user_data;
-	GSList *tokens = NULL;
-	const char *line;
-	char *pdp_address;
-	char *real_pdp_address;
+	TcoreHal *hal = NULL;
+	unsigned char context_id = 0;
 
-	dbg("Entered");
-
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-
-	if (at_resp->success != TRUE) {
-		err("Response NOt OK");
-		goto error;
-	}
-
-	dbg("Response OK");
-
-	if (at_resp->lines == NULL) {
-		err("Invalid response line");
-		goto error;
-	}
-
-	line = (const char *)at_resp->lines->data;
-	tokens = tcore_at_tok_new(line);
-	if (g_slist_length(tokens) < 2) {
-		err("Invalid message");
-		goto error;
-	}
-
-	dbg("Line: %s", line);
-
-	/* Skip CID & read directly IP address */
-	pdp_address = g_slist_nth_data(tokens, 1);
-	real_pdp_address = tcore_at_tok_extract(pdp_address);
-
-	tcore_context_set_ipv4_addr(ps_context, real_pdp_address);
-
-	dbg("PDP address: %s", real_pdp_address);
-
-	tcore_free(real_pdp_address);
-
-	/* Get DNS Address */
-	dbg("Getting DNS Address");
-	__imc_ps_send_get_dns_cmd(co_ps, ps_context);
-	goto exit;
-
-error:
-	err("Failed to get PDP address deactivating context...");
-	/* Deactivate PDP context */
-	(void)tcore_object_dispatch_request(co_ps, TRUE,
-			TCORE_COMMAND_PS_DEACTIVATE_CONTEXT,
-			NULL, 0,
-			NULL, NULL);
-exit:
-	tcore_at_tok_free(tokens);
-	dbg("Exit");
-}
-
-static void __imc_ps_get_pdp_address(CoreObject *co_ps, CoreObject *ps_context)
-{
-	TelReturn ret;
-	gchar *at_cmd = NULL;
-	guint context_id;
-
-	dbg("Entered");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+CGPADDR=%d", context_id);
-	dbg(" at command : %s", at_cmd);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		__on_response_imc_ps_get_pdp_address,
-		ps_context,
-		on_send_imc_request, NULL);
-	if (ret != TEL_RETURN_SUCCESS){
-		err("Failed to prepare and send AT request");
-		/* Deactivate PDP context */
-		(void)tcore_object_dispatch_request(co_ps, TRUE,
-				TCORE_COMMAND_PS_DEACTIVATE_CONTEXT,
-				&ps_context, sizeof(CoreObject *),
-				NULL, NULL);
-	}
-	tcore_free(at_cmd);
-}
-
-static void __on_response_imc_ps_send_xdns_enable_cmd(TcorePending *p,
-				guint data_len, const void *data, void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	CoreObject *ps_context = (CoreObject *) user_data;
-	guint context_id;
-	TcorePsCallState status = TCORE_PS_CALL_STATE_NOT_CONNECTED;
-
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-
-	dbg("Entered");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	if (at_resp->success) {
-		dbg("Response OK, Dynamic DNS is enabled successfully");
-		status = TCORE_PS_CALL_STATE_CTX_DEFINED;
-	} else {
-		PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-		tcore_check_return_assert(private_info != NULL);
-
-		status = private_info->ps_call_status;
-		err("ERROR [%s]", at_resp->final_response);
-	}
-	/* Send PS CALL Status Notification */
-	__notify_context_status_changed(co_ps, context_id, status);
-}
-
-static TelReturn __imc_ps_send_xdns_enable_cmd(CoreObject *co_ps, CoreObject *ps_context)
-{
-	guint context_id;
-	gchar *at_cmd = NULL;
-	TelReturn ret;
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	tcore_check_return_value_assert(private_info != NULL, TEL_RETURN_INVALID_PARAMETER);
-
-	dbg("Entered");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+XDNS=%d,1", context_id);
-	dbg("AT Command : %s", at_cmd);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_SINGLELINE,
-		NULL,
-		__on_response_imc_ps_send_xdns_enable_cmd,
-		ps_context,
-		on_send_imc_request, NULL);
-	if (ret != TEL_RETURN_SUCCESS){
-		TcorePsCallState curr_call_status;
-
-		err("Failed to prepare and send AT request");
-		curr_call_status = private_info->ps_call_status;
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
-	}
-	return ret;
-}
-
-static void on_response_imc_ps_activate_context(TcorePending *p, guint data_len,
-							const void *data,
-							void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	CoreObject *ps_context = user_data;
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	dbg("Entered");
-
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-	tcore_check_return_assert(private_info != NULL);
-
-	if (at_resp->success) {
-		dbg("Response OK, Get IP address of data session");
-		__imc_ps_get_pdp_address(co_ps, ps_context);
-	} else {
-		guint context_id;
-		TcorePsCallState curr_call_status;
-		(void)tcore_context_get_id(ps_context, &context_id);
-		err("Response NOT OK,Sending call disconnect notification");
-		curr_call_status = private_info->ps_call_status;
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
-	}
-}
-
-static void on_response_imc_ps_deactivate_context(TcorePending *p, guint data_len,
-							const void *data,
-							void *user_data)
-{
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	CoreObject *ps_context = user_data;
-	TcoreHal *hal = tcore_object_get_hal(co_ps);
-	guint context_id;
-
-	dbg("Entered");
-
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	/*
-	 * AT+CGACT = 0 is returning NO CARRIER or an error. Just test if the
-	 * response contains NO CARRIER else decode CME error.
-	 */
-#if 0
-	if (at_resp->success) {
-		const gchar *line;
-
-		line = (const gchar *)at_resp->lines->data;
-		if (g_strcmp0(line, "NO CARRIER") != 0) {
-			err("%s", line);
-			err("Context %d has not been deactivated", context_id);
-
-			goto out;
+	dbg("Entry");
+	if (resp->success) {
+		dbg("Response Ok");
+		if (!p) {
+			err("Invalid pending data");
+			goto OUT;
 		}
+		co_ps = tcore_pending_ref_core_object(p);
+		hal = tcore_object_get_hal(co_ps);
+		context_id = tcore_context_get_id(ps_context);
+		dbg("Context ID : %d", context_id);
+		goto OUT;
+	} else {
+		/* Since PDP deactivation failed, no need to move to
+		 * PS_DATA_CALL_NOT_CONNECTED state
+		 */
+		err("Response NOk");
+		return;
 	}
+OUT:
+	_unable_to_get_pending(co_ps, ps_context);
 
-#endif
-	__notify_context_status_changed(co_ps, context_id, TCORE_PS_CALL_STATE_NOT_CONNECTED);
-
-	if (tcore_hal_setup_netif(hal, co_ps, NULL, NULL, context_id, FALSE) != TEL_RETURN_SUCCESS)
+	if (tcore_hal_setup_netif(hal, co_ps, NULL, NULL, context_id, FALSE) != TCORE_RETURN_SUCCESS)
 		err("Failed to disable network interface");
 }
 
-static void on_response_imc_ps_define_context(TcorePending *p,
-				guint data_len, const void *data, void *user_data)
+static TReturn send_pdp_deactivate_cmd(CoreObject *co_ps, CoreObject *ps_context)
 {
-	const TcoreAtResponse *at_resp = data;
-	CoreObject *ps_context = (CoreObject *) user_data;
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	char cmd_str[MAX_AT_CMD_STR_LEN];
+	int cid = 0;
+
+	dbg("Entry");
+	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
+
+	hal = tcore_object_get_hal(co_ps);
+
+	/*Getting Context ID from Core Object*/
+	cid = tcore_context_get_id(ps_context);
+
+	(void) sprintf(cmd_str, "AT+CGACT=%d,%u", AT_PDP_DEACTIVATE, cid);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
+								   on_response_send_pdp_deactivate_cmd, ps_context);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
+	}
+	return TCORE_RETURN_FAILURE;
+}
+
+static TReturn deactivate_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
+{
+	dbg("Entry");
+	return send_pdp_deactivate_cmd(co_ps, ps_context);
+}
+static void on_response_xdns_enable_cmd(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	TcoreATResponse *resp = (TcoreATResponse *) data;
 	CoreObject *co_ps = tcore_pending_ref_core_object(p);
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	dbg("Entred");
-
-	tcore_check_return_assert(at_resp != NULL);
-	tcore_check_return_assert(ps_context != NULL);
-	tcore_check_return_assert(private_info != NULL);
-
-	if (at_resp->success) {
-		dbg("Response OK,Sending DNS enable command");
-		__imc_ps_send_xdns_enable_cmd(co_ps, ps_context);
-	} else {
-		guint context_id;
-		TcorePsCallState curr_call_status;
-
-		err("ERROR[%s]", at_resp->final_response);
-		(void)tcore_context_get_id(ps_context, &context_id);
-		curr_call_status = private_info->ps_call_status;
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
-	}
-}
-
-/*
- * Operation - PDP Context Activate
- *
- * Request -
- * AT-Command: AT+CGACT= [<state> [, <cid> [, <cid> [,...]]]]
- *
- * where,
- * <state>
- * indicates the state of PDP context activation
- *
- * 1 activated
- *
- * <cid>
- * It is a numeric parameter which specifies a particular PDP context definition
- *
- * Response -
- * Success: (No Result)
- *	OK
- * Failure:
- *	+CME ERROR: <error>
- */
-
-static TelReturn imc_ps_activate_context(CoreObject *co_ps, CoreObject *ps_context,
-				TcoreObjectResponseCallback cb, void *cb_data)
-{
-	TelReturn ret = TEL_RETURN_FAILURE;
-	gchar *at_cmd = NULL;
-	guint context_id;
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	tcore_check_return_value_assert(private_info != NULL, TEL_RETURN_INVALID_PARAMETER);
-
-	dbg("Entered");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	at_cmd = g_strdup_printf("AT+CGACT=1,%d", context_id);
-	dbg(" at command : %s", at_cmd);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_ps_activate_context,
-		ps_context,
-		on_send_imc_request, NULL);
-	if (ret != TEL_RETURN_SUCCESS){
-		TcorePsCallState curr_call_status;
-		curr_call_status = private_info->ps_call_status;
-		err("AT request failed. Send notification for call status [%d]", curr_call_status);
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
-	}
-	tcore_free(at_cmd);
-	return ret;
-}
-
-/*
- * Operation - PDP Context Deactivate
- *
- * Request -
- * AT-Command: AT+CGACT= [<state> [, <cid> [, <cid> [,...]]]]
- *
- * where,
- * <state>
- * indicates the state of PDP context activation
- *
- * 0 deactivated
- *
- * <cid>
- * It is a numeric parameter which specifies a particular PDP context definition
- *
- * Response -
- * Success: (No Result)
- *	OK
- * Failure:
- *	+CME ERROR: <error>
- */
-static TelReturn imc_ps_deactivate_context(CoreObject *co_ps, CoreObject *ps_context,
-				TcoreObjectResponseCallback cb, void *cb_data)
-{
-	TelReturn ret = TEL_RETURN_FAILURE;
-	gchar *at_cmd = NULL;
-	guint context_id;
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	tcore_check_return_value_assert(private_info != NULL, TEL_RETURN_INVALID_PARAMETER);
-
-	dbg("Entered");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	dbg("Context ID : %d", context_id);
-
-	at_cmd = g_strdup_printf("AT+CGACT=0,%d", context_id);
-	dbg(" at command : %s", at_cmd);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_ps_deactivate_context,
-		ps_context,
-		on_send_imc_request, NULL);
-	if (ret != TEL_RETURN_SUCCESS){
-		TcorePsCallState curr_call_status;
-		curr_call_status = private_info->ps_call_status;
-		err("AT request failed. Send notification for call status [%d]", curr_call_status);
-		__notify_context_status_changed(co_ps, context_id, curr_call_status);
-	}
-	tcore_free(at_cmd);
-	return ret;
-}
-
-/*
- * Operation - Define PDP Context
- *
- * Request -
- * AT-Command: AT+CGDCONT= [<cid> [, <PDP_type> [, <APN> [, <PDP_addr> [,
- * <d_comp> [, <h_comp> [, <pd1> [... [, pdN]]]]]]]]]
- * where,
- * <cid>
- * It is a numeric parameter, which specifies a particular PDP context definition
- *
- * <PDP_type>
- * "IP" Internet Protocol (IETF STD 5)
- * "IPV6" Internet Protocol, version 6 (IETF RFC 2460)
- * "IPV4V6" Virtual <PDP_type>introduced to handle dual IP stack UE capability (see 3GPP
- *  TS 24.301[83])
- *
- * <APN>
- * Access Point Name
- *
- * <PDP_address>
- * It is the string parameter that identifies the MT in the address space applicable to the PDP
- * The allocated address may be read using the command +CGPADDR command
- *
- * <d_comp>
- * A numeric parameter that controls PDP data compression
- * 0 off
- * 1 on
- * 2 V.42 bis
- *
- * <h_comp>
- * A numeric parameter that controls PDP header compression
- * 0 off
- * 1 on
- * 2 RFC1144
- * 3 RFC2507
- * 4 RFC3095
- *
- * <pd1>...<pdN>
- * zero to N string parameters whose meanings are specific to the <PDP_type>
- *
- * Response -
- * Success: (No Result)
- *	OK
- * Failure:
- *	+CME ERROR: <error>
- */
-static TelReturn imc_ps_define_context(CoreObject *co_ps, CoreObject *ps_context,
-				TcoreObjectResponseCallback cb, void *cb_data)
-{
-	TelReturn ret = TEL_RETURN_FAILURE;
-	gchar *at_cmd = NULL;
-	guint context_id = 0;
-	gchar *apn = NULL;
-	gchar *pdp_type_str = NULL;
-	TcoreContextType pdp_type;
-	TcoreContextDComp d_comp;
-	TcoreContextHComp h_comp;
-	TcorePsCallState curr_call_status;
-
-	PrivateInfo *private_info = tcore_object_ref_user_data(co_ps);
-
-	tcore_check_return_value_assert(private_info != NULL, TEL_RETURN_INVALID_PARAMETER);
-
-	dbg("Entred");
-
-	(void)tcore_context_get_id(ps_context, &context_id);
-	(void)tcore_context_get_type(ps_context, &pdp_type);
-
-	switch (pdp_type) {
-	case TCORE_CONTEXT_TYPE_X25:
-		dbg("CONTEXT_TYPE_X25");
-		pdp_type_str = g_strdup("X.25");
-	break;
-
-	case TCORE_CONTEXT_TYPE_IP:
-		dbg("CONTEXT_TYPE_IP");
-		pdp_type_str = g_strdup("IP");
-	break;
-
-	case TCORE_CONTEXT_TYPE_PPP:
-		dbg("CONTEXT_TYPE_PPP");
-		pdp_type_str = g_strdup("PPP");
-	break;
-
-	case TCORE_CONTEXT_TYPE_IPV6:
-		dbg("CONTEXT_TYPE_IPV6");
-		pdp_type_str = g_strdup("IPV6");
-		break;
-
-	default:
-		/*PDP Type not supported*/
-		dbg("Unsupported PDP type: %d", pdp_type);
-		goto error;
-	}
-
-	(void)tcore_context_get_data_compression(ps_context, &d_comp);
-	(void)tcore_context_get_header_compression(ps_context, &h_comp);
-	(void)tcore_context_get_apn(ps_context, &apn);
-
-	dbg("Define context for CID: %d", context_id);
-
-	/* AT-Command */
-	at_cmd = g_strdup_printf("AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d", context_id, pdp_type_str, apn, d_comp, h_comp);
-	dbg("AT Command : %s", at_cmd);
-
-	/* Send Request to modem */
-	ret = tcore_at_prepare_and_send_request(co_ps,
-		at_cmd, NULL,
-		TCORE_AT_COMMAND_TYPE_NO_RESULT,
-		NULL,
-		on_response_imc_ps_define_context,
-		ps_context,
-		on_send_imc_request, NULL);
-
-	tcore_free(pdp_type_str);
-	tcore_free(at_cmd);
-	tcore_free(apn);
-
-	if (ret == TEL_RETURN_SUCCESS)
-		goto out;
-
-error:
-	err("Failed to prepare and send AT request");
-
-	curr_call_status = private_info->ps_call_status;
-	__notify_context_status_changed(co_ps, context_id, curr_call_status);
-
-out:
-	return ret;
-}
-
-/* PS Operations */
-static TcorePsOps imc_ps_ops = {
-	.define_context = imc_ps_define_context,
-	.activate_context = imc_ps_activate_context,
-	.deactivate_context = imc_ps_deactivate_context
-};
-
-
-gboolean imc_ps_init(TcorePlugin *p, CoreObject *co)
-{
-	PrivateInfo *private_info;
+	CoreObject *ps_context = user_data;
+	struct tnoti_ps_call_status noti = {0};
+	int cid = -1;
 
 	dbg("Entry");
 
-	/* Set PrivateInfo */
-	private_info = tcore_malloc0(sizeof(PrivateInfo));
-	tcore_object_link_user_data(co, private_info);
+	cid = tcore_context_get_id(ps_context);
+
+	if (resp->success) {
+		dbg("Response OK");
+		dbg("DNS address getting is Enabled");
+		noti.context_id = cid;
+		noti.state = PS_DATA_CALL_CTX_DEFINED;
+	} else {
+		dbg("Response NOK");
+		noti.context_id = cid;
+		noti.state = PS_DATA_CALL_NOT_CONNECTED;
+		/*If response to enable the DNS NOK then we will use google DNS for the PDP context*/
+	}
+
+	tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(co_ps)), co_ps,
+								   TNOTI_PS_CALL_STATUS, sizeof(struct tnoti_ps_call_status), &noti);
+	return;
+}
+
+static TReturn send_xdns_enable_cmd(CoreObject *co_ps, CoreObject *ps_context)
+{
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	int cid = -1;
+	char cmd_str[MAX_AT_CMD_STR_LEN];
+
+	dbg("Entry");
+	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
+
+	hal = tcore_object_get_hal(co_ps);
+	cid = tcore_context_get_id(ps_context);
+
+	(void) sprintf(cmd_str, "AT+XDNS=%d,%d", cid, AT_XDNS_ENABLE);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
+								   on_response_xdns_enable_cmd, ps_context);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
+	}
+	_unable_to_get_pending(co_ps, ps_context);
+	return TCORE_RETURN_FAILURE;
+}
+
+static void on_response_define_pdp_context(TcorePending *p, int data_len, const void *data, void *user_data)
+{
+	const TcoreATResponse *resp = data;
+	CoreObject *ps_context = (CoreObject *) user_data;
+	CoreObject *co_ps = tcore_pending_ref_core_object(p);
+
+	dbg("Entry");
+	if (resp->success) {
+		dbg("Response OK");
+		send_xdns_enable_cmd(co_ps, ps_context);
+	} else {
+		dbg("response NOK");
+		_unable_to_get_pending(co_ps, ps_context);
+		dbg("Exiting");
+	}
+	return;
+}
+
+static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void *user_data)
+{
+	TcoreHal *hal = NULL;
+	TcorePending *pending = NULL;
+	char *apn = NULL;
+	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
+	char pdp_type_str[10] = {0};
+	unsigned int cid = PS_INVALID_CID;
+	enum co_context_type pdp_type;
+	enum co_context_d_comp d_comp;
+	enum co_context_h_comp h_comp;
+
+	dbg("Entry");
+
+	cid = tcore_context_get_id(ps_context);
+	pdp_type = tcore_context_get_type(ps_context);
+	d_comp = tcore_context_get_data_compression(ps_context);
+	h_comp = tcore_context_get_header_compression(ps_context);
+	apn = tcore_context_get_apn(ps_context);
+
+	hal = tcore_object_get_hal(co_ps);
+	switch (pdp_type) {
+	case CONTEXT_TYPE_X25:
+	{
+		dbg("CONTEXT_TYPE_X25");
+		strcpy(pdp_type_str, "X.25");
+		break;
+	}
+
+	case CONTEXT_TYPE_IP:
+	{
+		dbg("CONTEXT_TYPE_IP");
+		strcpy(pdp_type_str, "IP");
+	}
+	break;
+
+	case CONTEXT_TYPE_PPP:
+	{
+		dbg("CONTEXT_TYPE_PPP");
+		strcpy(pdp_type_str, "PPP");
+	}
+	break;
+
+	case CONTEXT_TYPE_IPV6:
+	{
+		dbg("CONTEXT_TYPE_IPV6");
+		strcpy(pdp_type_str, "IPV6");
+		break;
+	}
+
+	default:
+	{
+		/*PDP Type not supported supported*/
+		dbg("Unsupported PDP type: %d returning ", pdp_type);
+		g_free(apn);
+		return TCORE_RETURN_FAILURE;
+	}
+	}
+	dbg("Activating context for CID: %d", cid);
+	(void) sprintf(cmd_str, "AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d", cid, pdp_type_str, apn, d_comp, h_comp);
+	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
+	g_free(apn);
+
+	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
+								   on_response_define_pdp_context, ps_context);
+	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		return TCORE_RETURN_SUCCESS;
+	}
+	_unable_to_get_pending(co_ps, ps_context);
+	return TCORE_RETURN_FAILURE;
+}
+
+static struct tcore_ps_operations ps_ops = {
+	.define_context = define_ps_context,
+	.activate_context = activate_ps_context,
+	/* Use AT_standard entry point */
+	.deactivate_context = deactivate_ps_context,
+};
+
+gboolean imc_ps_init(TcorePlugin *cp, CoreObject *co_ps)
+{
+	TcorePlugin *plugin = tcore_object_ref_plugin(co_ps);
+
+	dbg("Entry");
 
 	/* Set operations */
-	tcore_ps_set_ops(co, &imc_ps_ops);
+	tcore_ps_set_ops(co_ps, &ps_ops);
 
-	/* Add Callbacks */
-	tcore_object_add_callback(co, "+CGEV", on_notification_imc_ps_cgev, NULL);
-
-	tcore_plugin_add_notification_hook(p,
-        TCORE_NOTIFICATION_NETWORK_REGISTRATION_STATUS,
-        on_hook_imc_nw_registration_status, co);
+	tcore_object_add_callback(co_ps, "+CGEV", on_cgev_notification, NULL);
+	tcore_object_add_callback(co_ps, "+XNOTIFYDUNSTATUS", on_event_dun_call_notification, plugin);
 
 	dbg("Exit");
+
 	return TRUE;
 }
 
-void imc_ps_exit(TcorePlugin *p, CoreObject *co)
+void imc_ps_exit(TcorePlugin *cp, CoreObject *co_ps)
 {
-	PrivateInfo *private_info;
-
-	private_info = tcore_object_ref_user_data(co);
-	tcore_check_return_assert(private_info != NULL);
-
-	tcore_free(private_info);
-
 	dbg("Exit");
 }

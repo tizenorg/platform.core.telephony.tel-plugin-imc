@@ -1,7 +1,9 @@
 /*
  * tel-plugin-imc
  *
- * Copyright (c) 2013 Samsung Electronics Co. Ltd. All rights reserved.
+ * Copyright (c) 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ *
+ * Contact: Hayoon Ko <hayoon.ko@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +21,7 @@
 #ifndef __IMC_SAP_H__
 #define __IMC_SAP_H__
 
-gboolean imc_sap_init(TcorePlugin *p, CoreObject *co);
-void imc_sap_exit(TcorePlugin *p, CoreObject *co);
+gboolean imc_sap_init(TcorePlugin *cp, CoreObject *co_sap);
+void imc_sap_exit(TcorePlugin *cp, CoreObject *co_sap);
 
 #endif /* __IMC_SAP_H__ */
