@@ -2,7 +2,6 @@
 %define minor 1
 %define patchlevel 69
 
-
 Name:             tel-plugin-imc
 Version:          %{major}.%{minor}.%{patchlevel}
 Release:          1
@@ -27,7 +26,8 @@ IMC plugin for telephony
 %setup -q
 
 %build
-%cmake .
+%cmake . -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+	-DLIB_INSTALL_DIR=%{_libdir}
 make %{?_smp_mflags}
 
 %post

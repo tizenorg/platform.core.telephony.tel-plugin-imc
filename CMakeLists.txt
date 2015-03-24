@@ -55,7 +55,7 @@ SET_TARGET_PROPERTIES(imc-plugin PROPERTIES PREFIX "" OUTPUT_NAME imc-plugin)
 
 # install
 INSTALL(TARGETS imc-plugin
-	LIBRARY DESTINATION ${LIB_INSTALL_DIR}/telephony/plugins/modems)
+	LIBRARY DESTINATION ${LIBDIR}/telephony/plugins/modems)
 
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/res/wiki_mcc_mnc_oper_list.sql DESTINATION /tmp RENAME mcc_mnc_oper_list.sql)
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION /usr/share/license RENAME tel-plugin-imc)
