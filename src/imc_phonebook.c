@@ -76,10 +76,19 @@ typedef struct {
  *****************************************************************************/
 static gint __phonebook_compare_index(gconstpointer a, gconstpointer b)
 {
-	guint index1 = (guint)a;
-	guint index2 = (guint)b;
+	gulong index1 = (gulong)a;
+	gulong index2 = (gulong)b;
+	glong diff = index1 - index2;
+	gint result = (gint)diff;
 
-	return index1 - index2;
+	/* For 64-bit compatibility */
+	if (diff != 0 && result == 0) {
+		/* This function is used as GCompareFunc(),
+		 * only positive, negative and 0 are required.
+		 */
+		result = (diff > 0) ? 1 : -1;
+	}
+	return result;
 }
 
 static enum tel_phonebook_field_type __phonebook_convert_field_type(int field_type)
@@ -214,7 +223,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	 * Check if 'index' is already available (UPDATE operation).
 	 */
 	while (list) {
-		if ((guint)list->data == req_index) {
+		if (GPOINTER_TO_UINT(list->data) == req_index) {
 			/*
 			 * index 'present', no need to update
 			 */
@@ -234,7 +243,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_FDN:
 		private_info->used_index_fdn = g_slist_insert_sorted(
 			private_info->used_index_fdn,
-			(gpointer)req_index,
+			GUINT_TO_POINTER(req_index),
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -245,7 +254,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_ADN:
 		private_info->used_index_adn = g_slist_insert_sorted(
 			private_info->used_index_adn,
-			(gpointer)req_index,
+			GUINT_TO_POINTER(req_index),
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -256,7 +265,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_SDN:
 		private_info->used_index_sdn = g_slist_insert_sorted(
 			private_info->used_index_sdn,
-			(gpointer)req_index,
+			GUINT_TO_POINTER(req_index),
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -267,7 +276,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_USIM:
 		private_info->used_index_usim = g_slist_insert_sorted(
 			private_info->used_index_usim,
-			(gpointer)req_index,
+			GUINT_TO_POINTER(req_index),
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -337,9 +346,9 @@ static void __phonebook_check_used_index(CoreObject *co,
 	}
 
 	/* Use first used_index in case req_index is not used */
-	*used_index = (guint)g_slist_nth_data(list, VAL_ZERO);
+	*used_index = GPOINTER_TO_UINT(g_slist_nth_data(list, VAL_ZERO));
 	while (list) {
-		if ((guint)list->data == req_index) {
+		if (GPOINTER_TO_UINT(list->data) == req_index) {
 			/*
 			 * req_index is equal to one of used_index
 			 */
@@ -595,7 +604,7 @@ static void __on_resp_phonebook_get_used_index(TcorePending *p,
 				if (temp) {
 					/* Insert used_index in PrivateInfo sorted in ascending */
 					*list = g_slist_insert_sorted(*list,
-						(gpointer)atoi(temp),
+						GUINT_TO_POINTER(atoi(temp)),
 						__phonebook_compare_index);
 				}
 				tcore_at_tok_free(tokens);
@@ -1141,10 +1150,10 @@ static void on_resp_read_record(TcorePending *p,
 		if (__phonebook_get_index_list_by_type(co,
 				req_data->phonebook_type, &list) == TRUE) {
 			while (list) {
-				if ((guint)list->data == resp_read_record.index) {
+				if (GPOINTER_TO_UINT(list->data) == resp_read_record.index) {
 					if ((list = g_slist_next(list)) != NULL) {
 						/* If exist, set next_index */
-						resp_read_record.next_index = (guint)list->data;
+						resp_read_record.next_index = GPOINTER_TO_UINT(list->data);
 						dbg("next_index is [%u]", resp_read_record.next_index);
 					} else {
 						/* read_record.index is the end of used_index */
@@ -1310,8 +1319,8 @@ static void on_resp_delete_record(TcorePending *p,
 			err("used_index list is NOT valid");
 		}
 		else {
-			const int del_index = (const int)req_data->index;
-			list = g_slist_remove(list, (gconstpointer)del_index);
+			const guint del_index = GPOINTER_TO_UINT(req_data->index);
+			list = g_slist_remove(list, (gconstpointer)GUINT_TO_POINTER(del_index));
 			dbg("Remove index: [%u] list: [0x%x]", req_data->index, list);
 		}
 	}
