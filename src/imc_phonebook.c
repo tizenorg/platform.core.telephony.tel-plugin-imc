@@ -76,10 +76,19 @@ typedef struct {
  *****************************************************************************/
 static gint __phonebook_compare_index(gconstpointer a, gconstpointer b)
 {
-	guint index1 = (guint)a;
-	guint index2 = (guint)b;
+	gulong index1 = (gulong)a;
+	gulong index2 = (gulong)b;
+	glong diff = index1 - index2;
+	gint result = (gint)diff;
 
-	return index1 - index2;
+	/* For 64-bit compatibility */
+	if (diff != 0 && result == 0) {
+		/* This function is used as GCompareFunc(),
+		 * only positive, negative and 0 are required.
+		 */
+		result = (diff > 0) ? 1 : -1;
+	}
+	return result;
 }
 
 static enum tel_phonebook_field_type __phonebook_convert_field_type(int field_type)
@@ -182,7 +191,7 @@ static gboolean __phonebook_check_and_select_type(CoreObject *co,
 }
 
 static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
-	enum tel_phonebook_type pb_type, guint req_index)
+	enum tel_phonebook_type pb_type, gulong req_index)
 {
 	GSList *list = NULL;
 	PrivateInfo *private_info = tcore_object_ref_user_data(co);
@@ -214,7 +223,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	 * Check if 'index' is already available (UPDATE operation).
 	 */
 	while (list) {
-		if ((guint)list->data == req_index) {
+		if ((gulong)list->data == req_index) {
 			/*
 			 * index 'present', no need to update
 			 */
@@ -325,7 +334,7 @@ static gboolean __phonebook_get_index_list_by_type(CoreObject *co,
 }
 
 static void __phonebook_check_used_index(CoreObject *co,
-	enum tel_phonebook_type pb_type, guint req_index, guint *used_index)
+	enum tel_phonebook_type pb_type, guint req_index, gulong *used_index)
 {
 	GSList *list = NULL;
 
@@ -337,9 +346,9 @@ static void __phonebook_check_used_index(CoreObject *co,
 	}
 
 	/* Use first used_index in case req_index is not used */
-	*used_index = (guint)g_slist_nth_data(list, VAL_ZERO);
+	*used_index = (gulong)g_slist_nth_data(list, VAL_ZERO);
 	while (list) {
-		if ((guint)list->data == req_index) {
+		if ((gulong)list->data == (gulong)req_index) {
 			/*
 			 * req_index is equal to one of used_index
 			 */
@@ -595,7 +604,7 @@ static void __on_resp_phonebook_get_used_index(TcorePending *p,
 				if (temp) {
 					/* Insert used_index in PrivateInfo sorted in ascending */
 					*list = g_slist_insert_sorted(*list,
-						(gpointer)atoi(temp),
+						(gpointer)(gulong)atoi(temp),
 						__phonebook_compare_index);
 				}
 				tcore_at_tok_free(tokens);
@@ -1141,10 +1150,10 @@ static void on_resp_read_record(TcorePending *p,
 		if (__phonebook_get_index_list_by_type(co,
 				req_data->phonebook_type, &list) == TRUE) {
 			while (list) {
-				if ((guint)list->data == resp_read_record.index) {
+				if ((gulong)list->data == (gulong)resp_read_record.index) {
 					if ((list = g_slist_next(list)) != NULL) {
 						/* If exist, set next_index */
-						resp_read_record.next_index = (guint)list->data;
+						resp_read_record.next_index = (guint)(gulong)list->data;
 						dbg("next_index is [%u]", resp_read_record.next_index);
 					} else {
 						/* read_record.index is the end of used_index */
@@ -1310,7 +1319,7 @@ static void on_resp_delete_record(TcorePending *p,
 			err("used_index list is NOT valid");
 		}
 		else {
-			const int del_index = (const int)req_data->index;
+			const gulong del_index = (const gulong)req_data->index;
 			list = g_slist_remove(list, (gconstpointer)del_index);
 			dbg("Remove index: [%u] list: [0x%x]", req_data->index, list);
 		}
@@ -1550,7 +1559,7 @@ static TReturn imc_read_record(CoreObject *co, UserRequest *ur)
 	const struct treq_phonebook_read_record *req_data = NULL;
 	gchar *at_cmd;
 	gchar *set_pb_cmd;
-	guint used_index = 0;
+	gulong used_index = 0;
 
 	TReturn ret = TCORE_RETURN_FAILURE;
 
@@ -1571,7 +1580,7 @@ static TReturn imc_read_record(CoreObject *co, UserRequest *ur)
 		req_data->phonebook_type, req_data->index, &used_index);
 
 	/* AT-Command */
-	at_cmd = g_strdup_printf("%s+CPBR=%u", set_pb_cmd, used_index);
+	at_cmd = g_strdup_printf("%s+CPBR=%lu", set_pb_cmd, used_index);
 
 	/* Send Request to Modem */
 	ret = tcore_prepare_and_send_at_request(co,
