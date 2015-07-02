@@ -4272,7 +4272,7 @@ static TReturn imc_transmit_apdu(CoreObject *o, UserRequest *ur)
 	result = util_byte_to_hex((const char *)req_data->apdu, apdu, req_data->apdu_length);
 	dbg("result %d", result);
 
-	cmd_str = g_strdup_printf("AT+CSIM=%d, \"%s\"", strlen(apdu), apdu);
+	cmd_str = g_strdup_printf("AT+CSIM=%d, \"%s\"", (unsigned int)strlen(apdu), apdu);
 
 	ret = tcore_prepare_and_send_at_request(o, cmd_str, "+CSIM:",
 								TCORE_AT_SINGLELINE, ur,

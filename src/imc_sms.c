@@ -661,7 +661,7 @@ int data_len, const void *data, void *user_data)
 	struct tresp_sms_delete_msg delMsgInfo = {0, };
 	UserRequest *ur = NULL;
 	const TcoreATResponse *atResp = data;
-	int index = (int) user_data;
+	int index = GPOINTER_TO_INT(user_data);
 
 	dbg(" Func Entrance");
 
