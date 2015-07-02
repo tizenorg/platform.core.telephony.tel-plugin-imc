@@ -30,28 +30,28 @@
 #include "nvm/nvm.h"
 
 /* NVM file type */
-#define NVM_TYPE_CALIB				0
-#define NVM_TYPE_STATIC			1
-#define NVM_TYPE_DYNAMIC			2
-#define NVM_FILE_TYPE_POS			36
+#define NVM_TYPE_CALIB			0
+#define NVM_TYPE_STATIC		1
+#define NVM_TYPE_DYNAMIC		2
+#define NVM_FILE_TYPE_POS		36
 
 /* NVM Payload information */
 #define NVM_PAYLOAD_OFFSET_0		48
 #define NVM_PAYLOAD_LENGTH_0		52
 #define NVM_PAYLOAD_OFFSET_1		64
 #define NVM_PAYLOAD_LENGTH_1		68
-#define NVM_DATA_LEN_POS			80
+#define NVM_DATA_LEN_POS		80
 
 /* Image Path information */
-#define MODEM_IMAGE_PATH				"/opt/modem/modem.bin"
-#define NVM_DIR_PATH 					"/csa/nv"
-#define NV_FILE_PATH NVM_DIR_PATH 		"/nvdata.bin"
+#define MODEM_IMAGE_PATH		"/opt/modem/modem.bin"
+#define NVM_DIR_PATH			"/csa/nv"
+#define NV_FILE_PATH			NVM_DIR_PATH"/nvdata.bin"
 
 /* NV offsets and size */
-#define MODEM_NV_OFFSET 				0xA00000
-#define MAX_NVDATA_SIZE 				0x200000
-#define NVM_CALIB_OFFSET				0x80000
-#define NVM_STATIC_OFFSET				0x100000
+#define MODEM_NV_OFFSET		0xA00000
+#define MAX_NVDATA_SIZE		0x200000
+#define NVM_CALIB_OFFSET		0x80000
+#define NVM_STATIC_OFFSET		0x100000
 
 struct nvm_payload_info {
 	unsigned long m_offset_0;
@@ -287,7 +287,7 @@ gboolean nvm_create_nvm_data()
 			strerror_r(errno, err_str, 255);
 			err("[READ] Failed: [%s]", err_str);
 			break;
-	 	}
+		}
 
 		/* Write the data read from modem binary to nvdata */
 		if (write(nv_fd, buffer, MAX_NVDATA_SIZE) < 0) {
@@ -299,11 +299,10 @@ gboolean nvm_create_nvm_data()
 		ret_val = TRUE;
 	} while (0);
 
-	if (ret_val == FALSE) {
+	if (ret_val == FALSE)
 		err("nvdata (%s) creation Failed!!!", NV_FILE_PATH);
-	} else {
+	else
 		dbg("nvdata (%s) created Success", NV_FILE_PATH);
-	}
 
 	/* Close 'fds' */
 	close(modem_fd);

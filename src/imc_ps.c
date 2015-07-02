@@ -221,6 +221,7 @@ static gboolean on_event_dun_call_notification(CoreObject *o, const void *data, 
 		tcore_server_send_notification(tcore_plugin_ref_server(tcore_object_ref_plugin(o)), o,
 									   TNOTI_PS_EXTERNAL_CALL, sizeof(struct tnoti_ps_external_call), &data);
 	}
+	break;
 
 	case 3:
 	{
@@ -263,11 +264,10 @@ static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
+	char *cmd_str = NULL;
 	int cid = 0;
 
 	dbg("Entry");
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
 	/* FIXME: Before MUX setup, use PHY HAL directly. */
 	hal = tcore_object_get_hal(co_ps);
@@ -275,7 +275,8 @@ static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	/*Getting Context ID from Core Object*/
 	cid = tcore_context_get_id(ps_context);
 
-	(void) sprintf(cmd_str, "AT+CGDCONT=%d", cid);
+	cmd_str = g_strdup_printf("AT+CGDCONT=%d", cid);
+
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
@@ -285,12 +286,14 @@ static void send_undefine_context_cmd(CoreObject *co_ps, CoreObject *ps_context)
 		goto error;
 	}
 	tcore_hal_send_request(hal, pending);
+	g_free(cmd_str);
 	dbg("Exit: Successfully");
 	return;
 error:
 	{
 		dbg("Exit: With error");
 		_unable_to_get_pending(co_ps, ps_context);
+		g_free(cmd_str);
 		return;
 	}
 }
@@ -304,7 +307,7 @@ static void on_setup_pdp(CoreObject *co_ps, int result,
 
 	dbg("Entry");
 
-	if (!ps_data ) {
+	if (!ps_data) {
 		err("PS_data unavailable. Exiting.");
 		return;
 	}
@@ -326,7 +329,6 @@ static void on_setup_pdp(CoreObject *co_ps, int result,
 	}
 
 	/* Set Device name */
-	//tcore_context_set_ipv4_devname(ps_context, netif_name);
 	g_strlcpy(ps_data->data_call_conf.devname, netif_name, sizeof(ps_data->data_call_conf.devname));
 
 	ps_data->data_call_conf.context_id = (int)tcore_context_get_id(ps_data->ps_context);
@@ -378,9 +380,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 			pRespData = (GSList *) resp->lines;
 			no_pdp_active = g_slist_length(pRespData);
 			dbg("Total Number of Active PS Context: [%d]", no_pdp_active);
-			if (0 == no_pdp_active) {
+			if (0 == no_pdp_active)
 				goto exit_fail;
-			}
 
 			while (pRespData) {
 				line = (const char *) pRespData->data;
@@ -406,7 +407,7 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 				token_dns = g_slist_nth_data(tokens, 1);
 
 				/* Strip off starting " and ending " from this token to read actual PDP address */
-				dns_prim = util_removeQuotes((void *)token_dns);
+				dns_prim = tcore_at_tok_extract((void *)token_dns);
 				dbg("Primary DNS: [%s]", dns_prim);
 			}
 
@@ -415,7 +416,7 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 				token_dns = g_slist_nth_data(tokens, 2);
 
 				/* Strip off starting " and ending " from this token to read actual PDP address */
-				dns_sec = util_removeQuotes((void *)token_dns);
+				dns_sec = tcore_at_tok_extract((void *)token_dns);
 				dbg("Secondary DNS: [%s]", dns_sec);
 			}
 
@@ -435,8 +436,8 @@ static void on_response_get_dns_cmnd(TcorePending *p, int data_len, const void *
 			__convert_ipv4_atoi(ps_data->data_call_conf.primary_dns,  dns_prim);
 			__convert_ipv4_atoi(ps_data->data_call_conf.secondary_dns,  dns_sec);
 
-			util_hex_dump("   ", 4, ps_data->data_call_conf.primary_dns);
-			util_hex_dump("   ", 4, ps_data->data_call_conf.secondary_dns);
+			tcore_util_hex_dump("   ", 4, ps_data->data_call_conf.primary_dns);
+			tcore_util_hex_dump("   ", 4, ps_data->data_call_conf.secondary_dns);
 
 			/* Set DNS Address */
 			tcore_context_set_dns1(ps_data->ps_context, dns_prim);
@@ -478,22 +479,22 @@ static TReturn send_get_dns_cmd(CoreObject *co_ps, struct ps_user_data *ps_data)
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
-
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
+	char *cmd_str = NULL;
 
 	dbg("Entry");
 	hal = tcore_object_get_hal(co_ps);
 
-	(void) sprintf(cmd_str, "AT+XDNS?");
+	cmd_str = g_strdup("AT+XDNS?");
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, "+XDNS", TCORE_AT_MULTILINE,
 								   on_response_get_dns_cmnd, (void *)ps_data);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
 		return TCORE_RETURN_SUCCESS;
 	}
 	_unable_to_get_pending(co_ps, ps_data->ps_context);
+	g_free(cmd_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -511,7 +512,11 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 	dbg("Enetered");
 
 	if (resp->final_response) {
-		ps_data = g_try_malloc0(sizeof (struct ps_user_data));
+		ps_data = g_try_malloc0(sizeof(struct ps_user_data));
+		if (ps_data == NULL) {
+			err("Memory allocation failed!!");
+			return;
+		}
 		ps_data->ps_context = ps_context;
 		dbg("RESPONSE OK");
 		if (resp->lines != NULL) {
@@ -525,12 +530,12 @@ static void on_response_get_pdp_address(TcorePending *p, int data_len, const voi
 
 			/* CID is already stored in ps_context, skip over & read PDP address */
 			token_address = g_slist_nth_data(tokens, 1);
-			token_pdp_address = util_removeQuotes((void *)token_address);
+			token_pdp_address = tcore_at_tok_extract((void *)token_address);
 			dbg("IP Address: [%s]", token_pdp_address);
 
 			__convert_ipv4_atoi(ps_data->data_call_conf.ip_address,  token_pdp_address);
 
-			util_hex_dump("   ", 4, ps_data->data_call_conf.ip_address);
+			tcore_util_hex_dump("   ", 4, ps_data->data_call_conf.ip_address);
 
 			/* Strip off starting " and ending " from this token to read actual PDP address */
 			/* Set IP Address */
@@ -557,21 +562,24 @@ static TReturn send_get_pdp_address_cmd(CoreObject *co_ps, CoreObject *ps_contex
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
 	unsigned int cid = PS_INVALID_CID;
-	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
+	char *cmd_str = NULL;
 
 	dbg("Entry");
 	hal = tcore_object_get_hal(co_ps);
 
 	cid = tcore_context_get_id(ps_context);
-	(void) sprintf(cmd_str, "AT+CGPADDR=%d", cid);
+	cmd_str = g_strdup_printf("AT+CGPADDR=%d", cid);
+
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, "+CGPADDR", TCORE_AT_SINGLELINE,
 								   on_response_get_pdp_address, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
 		return TCORE_RETURN_SUCCESS;
 	}
 	_unable_to_get_pending(co_ps, ps_context);
+	g_free(cmd_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -586,9 +594,9 @@ static void on_response_send_pdp_activate_cmd(TcorePending *p, int data_len, con
 
 
 	dbg("Entry");
-	if (!p) {
+	if (!p)
 		goto error;
-	}
+
 	co_ps = tcore_pending_ref_core_object(p);
 
 	if (resp->success) {
@@ -616,23 +624,28 @@ static TReturn send_pdp_activate_cmd(CoreObject *co_ps, CoreObject *ps_context)
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
+	char *cmd_str = NULL;
 	int cid = 0;
+
 	dbg("Entry");
+
 	/* FIXME: Before MUX setup, use PHY HAL directly. */
 	hal = tcore_object_get_hal(co_ps);
 
 	/*Getting Context ID from Core Object*/
 	cid = tcore_context_get_id(ps_context);
-	(void) sprintf(cmd_str, "AT+CGACT=%d,%d", AT_PDP_ACTIVATE, cid);
+	cmd_str = g_strdup_printf("AT+CGACT=%d,%d", AT_PDP_ACTIVATE, cid);
+
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_send_pdp_activate_cmd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
 		return TCORE_RETURN_SUCCESS;
 	}
 	_unable_to_get_pending(co_ps, ps_context);
+	g_free(cmd_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -680,25 +693,26 @@ static TReturn send_pdp_deactivate_cmd(CoreObject *co_ps, CoreObject *ps_context
 {
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
+	char *cmd_str = NULL;
 	int cid = 0;
 
 	dbg("Entry");
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
 	hal = tcore_object_get_hal(co_ps);
 
 	/*Getting Context ID from Core Object*/
 	cid = tcore_context_get_id(ps_context);
+	cmd_str = g_strdup_printf("AT+CGACT=%d,%u", AT_PDP_DEACTIVATE, cid);
 
-	(void) sprintf(cmd_str, "AT+CGACT=%d,%u", AT_PDP_DEACTIVATE, cid);
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_send_pdp_deactivate_cmd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
 		return TCORE_RETURN_SUCCESS;
 	}
+	g_free(cmd_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -741,23 +755,24 @@ static TReturn send_xdns_enable_cmd(CoreObject *co_ps, CoreObject *ps_context)
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
 	int cid = -1;
-	char cmd_str[MAX_AT_CMD_STR_LEN];
+	char *cmd_str = NULL;
 
 	dbg("Entry");
-	memset(cmd_str, 0x0, MAX_AT_CMD_STR_LEN);
 
 	hal = tcore_object_get_hal(co_ps);
 	cid = tcore_context_get_id(ps_context);
 
-	(void) sprintf(cmd_str, "AT+XDNS=%d,%d", cid, AT_XDNS_ENABLE);
+	cmd_str = g_strdup_printf("AT+XDNS=%d,%d", cid, AT_XDNS_ENABLE);
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_xdns_enable_cmd, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
 		return TCORE_RETURN_SUCCESS;
 	}
 	_unable_to_get_pending(co_ps, ps_context);
+	g_free(cmd_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -784,8 +799,8 @@ static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void
 	TcoreHal *hal = NULL;
 	TcorePending *pending = NULL;
 	char *apn = NULL;
-	char cmd_str[MAX_AT_CMD_STR_LEN] = {0};
-	char pdp_type_str[10] = {0};
+	char *cmd_str = NULL;
+	char *pdp_type_str = NULL;
 	unsigned int cid = PS_INVALID_CID;
 	enum co_context_type pdp_type;
 	enum co_context_d_comp d_comp;
@@ -804,28 +819,29 @@ static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void
 	case CONTEXT_TYPE_X25:
 	{
 		dbg("CONTEXT_TYPE_X25");
-		strcpy(pdp_type_str, "X.25");
-		break;
+		pdp_type_str = g_strdup_printf("X.25");
 	}
+	break;
 
+	case CONTEXT_TYPE_IPV4V6:
 	case CONTEXT_TYPE_IP:
 	{
 		dbg("CONTEXT_TYPE_IP");
-		strcpy(pdp_type_str, "IP");
+		pdp_type_str = g_strdup_printf("IP");
 	}
 	break;
 
 	case CONTEXT_TYPE_PPP:
 	{
 		dbg("CONTEXT_TYPE_PPP");
-		strcpy(pdp_type_str, "PPP");
+		pdp_type_str = g_strdup_printf("PPP");
 	}
 	break;
 
 	case CONTEXT_TYPE_IPV6:
 	{
 		dbg("CONTEXT_TYPE_IPV6");
-		strcpy(pdp_type_str, "IPV6");
+		pdp_type_str = g_strdup_printf("IPV6");
 		break;
 	}
 
@@ -838,16 +854,22 @@ static TReturn define_ps_context(CoreObject *co_ps, CoreObject *ps_context, void
 	}
 	}
 	dbg("Activating context for CID: %d", cid);
-	(void) sprintf(cmd_str, "AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d", cid, pdp_type_str, apn, d_comp, h_comp);
+	cmd_str = g_strdup_printf("AT+CGDCONT=%d,\"%s\",\"%s\",,%d,%d",
+			cid, pdp_type_str, apn, d_comp, h_comp);
+
 	dbg("Command: [%s] Command Length: [%d]", cmd_str, strlen(cmd_str));
 	g_free(apn);
 
 	pending = tcore_at_pending_new(co_ps, cmd_str, NULL, TCORE_AT_NO_RESULT,
 								   on_response_define_pdp_context, ps_context);
 	if (TCORE_RETURN_SUCCESS == tcore_hal_send_request(hal, pending)) {
+		g_free(cmd_str);
+		g_free(pdp_type_str);
 		return TCORE_RETURN_SUCCESS;
 	}
 	_unable_to_get_pending(co_ps, ps_context);
+	g_free(cmd_str);
+	g_free(pdp_type_str);
 	return TCORE_RETURN_FAILURE;
 }
 
@@ -865,7 +887,7 @@ gboolean imc_ps_init(TcorePlugin *cp, CoreObject *co_ps)
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_ps_set_ops(co_ps, &ps_ops);
+	tcore_ps_set_ops(co_ps, &ps_ops, TCORE_OPS_TYPE_CP);
 
 	tcore_object_add_callback(co_ps, "+CGEV", on_cgev_notification, NULL);
 	tcore_object_add_callback(co_ps, "+XNOTIFYDUNSTATUS", on_event_dun_call_notification, plugin);

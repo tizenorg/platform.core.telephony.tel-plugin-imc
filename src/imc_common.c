@@ -52,39 +52,6 @@ char _util_unpackb(const char *src, int pos, int len);
 char _util_convert_byte_hexChar(char val);
 gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes);
 
-void util_hex_dump(char *pad, int size, const void *data)
-{
-	char buf[255] = {0, };
-	char hex[4] = {0, };
-	int i;
-	unsigned char *p;
-
-	if (size <= 0) {
-		msg("%sno data", pad);
-		return;
-	}
-
-	p = (unsigned char *) data;
-
-	snprintf(buf, 255, "%s%04X: ", pad, 0);
-	for (i = 0; i < size; i++) {
-		snprintf(hex, 4, "%02X ", p[i]);
-		strcat(buf, hex);
-
-		if ((i + 1) % 8 == 0) {
-			if ((i + 1) % 16 == 0) {
-				msg("%s", buf);
-				memset(buf, 0, 255);
-				snprintf(buf, 255, "%s%04X: ", pad, i + 1);
-			} else {
-				strcat(buf, "  ");
-			}
-		}
-	}
-
-	msg("%s", buf);
-}
-
 unsigned char util_hexCharToInt(char c)
 {
 	if (c >= '0' && c <= '9')
@@ -108,8 +75,14 @@ char *util_hex_to_string(const char *src, unsigned int src_len)
 		return NULL;
 
 	dest = g_malloc0(src_len * 2 + 1);
+	if (dest == NULL) {
+		err("Memory allocation failed!!");
+		return NULL;
+	}
+
 	for (i = 0; i < src_len; i++) {
-		sprintf(dest + (i * 2), "%02x", (unsigned char)src[i]);
+		snprintf(dest + (i * 2), (src_len * 2 + 1) - (i * 2),
+			"%02x", (unsigned char)src[i]);
 	}
 
 	dest[src_len * 2] = '\0';
@@ -117,7 +90,7 @@ char *util_hex_to_string(const char *src, unsigned int src_len)
 	return dest;
 }
 
-char* util_hexStringToBytes(char *s)
+char *util_hexStringToBytes(char *s)
 {
 	char *ret;
 	int i;
@@ -128,7 +101,11 @@ char* util_hexStringToBytes(char *s)
 
 	sz = strlen(s);
 
-	ret = g_try_malloc0((sz / 2) + 1);
+	ret = g_malloc0((sz / 2) + 1);
+	if (ret == NULL) {
+		err("Memory allocation failed!!");
+		return NULL;
+	}
 
 	dbg("Convert String to Binary!!");
 
@@ -157,7 +134,7 @@ char _util_unpackb(const char *src, int pos, int len)
 		src++;
 		len -= 8 - pos;
 
-		if (len > 0) result = (result << len) | (*src >> (8 - len));   // if any bits left
+		if (len > 0) result = (result << len) | (*src >> (8 - len));   /* if any bits left */
 	}
 
 	return result;
@@ -167,13 +144,12 @@ char _util_convert_byte_hexChar(char val)
 {
 	char hex_char;
 
-	if (val <= 9) {
+	if (val <= 9)
 		hex_char = (char) (val + '0');
-	} else if (val >= 10 && val <= 15) {
+	else if (val >= 10 && val <= 15)
 		hex_char = (char) (val - 10 + 'A');
-	} else {
+	else
 		hex_char = '0';
-	}
 
 	return (hex_char);
 }
@@ -191,22 +167,4 @@ gboolean util_byte_to_hex(const char *byte_pdu, char *hex_pdu, int num_bytes)
 	}
 
 	return TRUE;
-}
-
-char* util_removeQuotes(void *data)
-{
-	char *tmp = NULL;
-	int data_len = 0;
-
-	data_len = strlen((const char *) data);
-	dbg("data_len: %d----%s", data_len, data);
-	if (data_len <= 0) {
-		return NULL;
-	}
-
-	tmp = g_try_malloc0(data_len - 1);
-	memcpy(tmp, data + 1, data_len - 2);
-	dbg("tmp: [%s]", tmp);
-
-	return tmp;
 }

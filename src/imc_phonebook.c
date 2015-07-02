@@ -76,8 +76,8 @@ typedef struct {
  *****************************************************************************/
 static gint __phonebook_compare_index(gconstpointer a, gconstpointer b)
 {
-	guint index1 = GPOINTER_TO_UINT(a);
-	guint index2 = GPOINTER_TO_UINT(b);
+	guint index1 = (guint)a;
+	guint index2 = (guint)b;
 
 	return index1 - index2;
 }
@@ -105,12 +105,11 @@ static enum tel_phonebook_ton __phonebook_find_num_plan(int number_plan)
 	enum tel_phonebook_ton result;
 	dbg("number_plan : 0x%04x", number_plan);
 
-	if (number_plan & IMC_NUM_PLAN_INTERNATIONAL) {
+	if (number_plan & IMC_NUM_PLAN_INTERNATIONAL)
 		result = PB_TON_INTERNATIONAL;
-	}
-	else {
+	else
 		result = PB_TON_UNKNOWN;
-	}
+
 	dbg("result : %d", result);
 
 	return result;
@@ -214,7 +213,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	 * Check if 'index' is already available (UPDATE operation).
 	 */
 	while (list) {
-		if (GPOINTER_TO_UINT(list->data) == req_index) {
+		if ((guint)list->data == req_index) {
 			/*
 			 * index 'present', no need to update
 			 */
@@ -234,7 +233,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_FDN:
 		private_info->used_index_fdn = g_slist_insert_sorted(
 			private_info->used_index_fdn,
-			GUINT_TO_POINTER(req_index),
+			(gpointer)req_index,
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -245,7 +244,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_ADN:
 		private_info->used_index_adn = g_slist_insert_sorted(
 			private_info->used_index_adn,
-			GUINT_TO_POINTER(req_index),
+			(gpointer)req_index,
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -256,7 +255,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_SDN:
 		private_info->used_index_sdn = g_slist_insert_sorted(
 			private_info->used_index_sdn,
-			GUINT_TO_POINTER(req_index),
+			(gpointer)req_index,
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -267,7 +266,7 @@ static gboolean __phonebook_update_index_list_by_type(CoreObject *co,
 	case PB_TYPE_USIM:
 		private_info->used_index_usim = g_slist_insert_sorted(
 			private_info->used_index_usim,
-			GUINT_TO_POINTER(req_index),
+			(gpointer)req_index,
 			__phonebook_compare_index);
 
 		/* Update Phonebook list valid */
@@ -337,9 +336,9 @@ static void __phonebook_check_used_index(CoreObject *co,
 	}
 
 	/* Use first used_index in case req_index is not used */
-	*used_index = GPOINTER_TO_UINT(g_slist_nth_data(list, VAL_ZERO));
+	*used_index = (guint)g_slist_nth_data(list, VAL_ZERO);
 	while (list) {
-		if (GPOINTER_TO_UINT(list->data) == req_index) {
+		if ((guint)list->data == req_index) {
 			/*
 			 * req_index is equal to one of used_index
 			 */
@@ -367,6 +366,7 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 	if (resp && resp->success > VAL_ZERO) {
 		const char *line;
 		char *temp = NULL;
+		char *ptr = NULL;
 
 		GSList *tokens = NULL;
 		char *pb_type = NULL;
@@ -378,7 +378,7 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 			goto EXIT;
 		}
 
-		line = (const char*)resp->lines->data;
+		line = (const char *)resp->lines->data;
 		tokens = tcore_at_tok_new(line);
 		if (g_slist_length(tokens) < VAL_ONE) {
 			warn("Invalid notification - 'number' of tokens: [%d]",
@@ -390,8 +390,9 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 			goto EXIT;
 		}
 
-		temp = (char*)g_slist_nth_data(tokens, VAL_ZERO);
-		pb_type = strtok(temp, "(,)");
+		temp = (char *)g_slist_nth_data(tokens, VAL_ZERO);
+		pb_type = strtok_r(temp, "(,)", &ptr);
+
 		while (pb_type != NULL) {
 			temp =  tcore_at_tok_extract(pb_type);
 			dbg("pbtype %s", temp);
@@ -399,12 +400,10 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 			if (VAL_ZERO == g_strcmp0(temp, "FD")) {
 				dbg("SIM fixed-dialing Phonebook");
 				noti_data.support_list.b_fdn = TRUE;
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "SN")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "SN")) {
 				dbg("Service Dialing Number");
 				noti_data.support_list.b_sdn = TRUE;
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "SM")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "SM")) {
 				CoreObject *co_sim = NULL;
 				enum tel_sim_type sim_type = SIM_TYPE_UNKNOWN;
 
@@ -425,32 +424,26 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 				if (sim_type == SIM_TYPE_USIM) {	/* 3G SIM */
 					noti_data.support_list.b_usim = TRUE;
 					dbg("3G SIM - USIM Phonebook");
-				}
-				else {	/* 2G SIM */
+				} else {	/* 2G SIM */
 					noti_data.support_list.b_adn = TRUE;
 					dbg("2G SIM - ADN Phonebook");
 				}
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "LD")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "LD")) {
 				dbg("SIM/UICC - last-dialling-phonebook");
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "ON")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "ON")) {
 				dbg("SIM (or MT) own numbers (MSISDNs) list");
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "BL")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "BL")) {
 				dbg("Blacklist phonebook");
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "EC")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "EC")) {
 				dbg("SIM emergency-call-codes phonebook");
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "AP")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "AP")) {
 				dbg("Selected application phonebook");
-			}
-			else if (VAL_ZERO == g_strcmp0(temp, "BN")) {
+			} else if (VAL_ZERO == g_strcmp0(temp, "BN")) {
 				dbg("SIM barred-dialling-number");
 			}
 
-			pb_type = strtok (NULL, "(,)");
+			pb_type = strtok_r(NULL, "(,)", &ptr);
+
 			g_free(temp);
 		}
 
@@ -469,8 +462,7 @@ static void __on_resp_phonebook_get_support_list(TcorePending *p,
 		/* Update states */
 		tcore_phonebook_set_support_list(co_phonebook, &noti_data.support_list);
 		tcore_phonebook_set_status(co_phonebook, noti_data.b_init);
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 
 		/* Update state */
@@ -595,7 +587,7 @@ static void __on_resp_phonebook_get_used_index(TcorePending *p,
 				if (temp) {
 					/* Insert used_index in PrivateInfo sorted in ascending */
 					*list = g_slist_insert_sorted(*list,
-						GUINT_TO_POINTER(atoi(temp)),
+						(gpointer)atoi(temp),
 						__phonebook_compare_index);
 				}
 				tcore_at_tok_free(tokens);
@@ -607,8 +599,7 @@ static void __on_resp_phonebook_get_used_index(TcorePending *p,
 			dbg("pb_type: [%d], used_index Length: [%d]",
 				req_pb_type, g_slist_length(*list));
 		}
-	}
-	else {
+	} else {
 		err("Response NOK");
 	}
 }
@@ -668,7 +659,7 @@ static void on_resp_get_count(TcorePending *p,
 		CoreObject *co = tcore_pending_ref_core_object(p);
 		enum tel_phonebook_type pb_type;
 
-		GSList *tokens=NULL;
+		GSList *tokens = NULL;
 		char *temp = NULL;
 
 		dbg("RESPONSE OK");
@@ -726,8 +717,7 @@ static void on_resp_get_count(TcorePending *p,
 			/* Cache 'used' index list */
 			__phonebook_get_used_index(co, pb_type, resp_get_count.total_count);
 		}
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 	}
 EXIT:
@@ -856,8 +846,7 @@ static void on_resp_get_info(TcorePending *p,
 			/* Cache 'used' index list */
 			__phonebook_get_used_index(co, pb_type, resp_get_info.index_max);
 		}
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 	}
 
@@ -1081,7 +1070,7 @@ static void on_resp_read_record(TcorePending *p,
 		 * +CPBR: <index>,<number>,<type>,<text>[,<hidden>][,<group>]
 		 *	[,<adnumber>][,<adtype>][,<secondtext>][,<email>]]
 		 */
-		line = (const char*)resp->lines->data;
+		line = (const char *)resp->lines->data;
 		tokens = tcore_at_tok_new(line);
 		if (g_slist_length(tokens) < VAL_ONE) {
 			err("invalid message");
@@ -1126,7 +1115,7 @@ static void on_resp_read_record(TcorePending *p,
 		if (name) {
 			g_strlcpy((char *)resp_read_record.name,
 				(const gchar *)name, PHONEBOOK_NAME_BYTE_MAX+1);
-			resp_read_record.name_len = strlen((const char*)resp_read_record.name);
+			resp_read_record.name_len = strlen((const char *)resp_read_record.name);
 			resp_read_record.dcs = PB_TEXT_ASCII;
 			g_free(name);
 		}
@@ -1141,10 +1130,10 @@ static void on_resp_read_record(TcorePending *p,
 		if (__phonebook_get_index_list_by_type(co,
 				req_data->phonebook_type, &list) == TRUE) {
 			while (list) {
-				if (GPOINTER_TO_UINT(list->data) == resp_read_record.index) {
+				if ((guint)list->data == resp_read_record.index) {
 					if ((list = g_slist_next(list)) != NULL) {
 						/* If exist, set next_index */
-						resp_read_record.next_index = GPOINTER_TO_UINT(list->data);
+						resp_read_record.next_index = (guint)list->data;
 						dbg("next_index is [%u]", resp_read_record.next_index);
 					} else {
 						/* read_record.index is the end of used_index */
@@ -1162,9 +1151,8 @@ static void on_resp_read_record(TcorePending *p,
 
 		/* Fetch <hidden> */
 		temp = g_slist_nth_data(tokens, VAL_FOUR);
-		if (temp) {
+		if (temp)
 			dbg("Phonebook entry is hidden");
-		}
 
 		/* Fetch <adnumber> */
 		temp = g_slist_nth_data(tokens, VAL_SIX);
@@ -1193,7 +1181,7 @@ static void on_resp_read_record(TcorePending *p,
 		if (sne) {
 			g_strlcpy((char *)resp_read_record.sne,
 				(const gchar *)sne, PHONEBOOK_NAME_BYTE_MAX+1);
-			resp_read_record.sne_len = strlen((const char*)resp_read_record.sne);
+			resp_read_record.sne_len = strlen((const char *)resp_read_record.sne);
 			resp_read_record.sne_dcs = PB_TEXT_ASCII;
 			g_free(sne);
 		}
@@ -1208,15 +1196,14 @@ static void on_resp_read_record(TcorePending *p,
 		if (email) {
 			g_strlcpy((char *)resp_read_record.email1,
 				(const gchar *)email, PHONEBOOK_EMAIL_BYTE_MAX+1);
-			resp_read_record.email1_len = strlen((const char*)resp_read_record.email1);
+			resp_read_record.email1_len = strlen((const char *)resp_read_record.email1);
 			g_free(email);
 		}
 
 EXIT:
 		/* Free resources */
 		tcore_at_tok_free(tokens);
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 	}
 
@@ -1260,8 +1247,7 @@ static void on_resp_update_record(TcorePending *p,
 		 */
 		__phonebook_update_index_list_by_type(co,
 			req_data->phonebook_type, req_data->index);
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 		resp_update_record.result = PB_FAIL;
 	}
@@ -1271,8 +1257,7 @@ static void on_resp_update_record(TcorePending *p,
 		tcore_user_request_send_response(ur,
 			TRESP_PHONEBOOK_UPDATERECORD,
 			sizeof(struct tresp_phonebook_update_record), &resp_update_record);
-	}
-	else {
+	} else {
 		err("ur is NULL");
 	}
 
@@ -1308,26 +1293,22 @@ static void on_resp_delete_record(TcorePending *p,
 		if (__phonebook_get_index_list_by_type(co,
 				req_data->phonebook_type, &list) != TRUE) {
 			err("used_index list is NOT valid");
-		}
-		else {
-			const guint del_index = GPOINTER_TO_UINT(req_data->index);
-			list = g_slist_remove(list, (gconstpointer)GUINT_TO_POINTER(del_index));
+		} else {
+			const int del_index = (const int)req_data->index;
+			list = g_slist_remove(list, (gconstpointer)del_index);
 			dbg("Remove index: [%u] list: [0x%x]", req_data->index, list);
 		}
-	}
-	else {
+	} else {
 		dbg("RESPONSE NOK");
 		resp_delete_record.result = PB_FAIL;
 	}
 
-	if (ur) {
+	if (ur)
 		tcore_user_request_send_response(ur,
 			TRESP_PHONEBOOK_DELETERECORD,
 			sizeof(struct tresp_phonebook_delete_record), &resp_delete_record);
-	}
-	else {
+	else
 		err("ur is NULL");
-	}
 
 	dbg("Exit");
 }
@@ -1533,7 +1514,7 @@ static TReturn imc_get_usim_info(CoreObject *co, UserRequest *ur)
  * <type> Type of address octet in integer format
  * <text> String type field of maximum length <tlength>
  * <hidden> Indicates if the entry is hidden or not – only available,
- * 		if a UICC with an active USIM application is present
+ *		if a UICC with an active USIM application is present
  * 0	Phonebook entry not hidden
  * 1	Phonebook entry hidden
  * <group> String type field of maximum length <glength>
@@ -1629,7 +1610,7 @@ static TReturn imc_update_record(CoreObject *co, UserRequest *ur)
 		at_cmd = g_strdup_printf("%s+CPBW=%u,\"%s\",%d,\"%s\",,\"%s\",,\"%s\",\"%s\"",
 			set_pb_cmd, req_data->index,
 			req_data->number,
-			((PB_TON_INTERNATIONAL == req_data->ton) ? IMC_TON_INTERNATIONAL: IMC_TON_UNKNOWN),
+			((PB_TON_INTERNATIONAL == req_data->ton) ? IMC_TON_INTERNATIONAL : IMC_TON_UNKNOWN),
 			req_data->name, req_data->anr1,
 			req_data->sne, req_data->email1);
 	} else {
@@ -1742,7 +1723,7 @@ gboolean imc_phonebook_init(TcorePlugin *cp, CoreObject *co_phonebook)
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_phonebook_set_ops(co_phonebook, &phonebook_ops);
+	tcore_phonebook_set_ops(co_phonebook, &phonebook_ops, TCORE_OPS_TYPE_CP);
 
 	/* Set PrivateInfo */
 	private_info = g_malloc0(sizeof(PrivateInfo));

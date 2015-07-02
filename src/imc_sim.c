@@ -33,6 +33,7 @@
 #include <user_request.h>
 #include <server.h>
 #include <at.h>
+#include <ss_manager.h>
 
 #include "imc_common.h"
 #include "imc_sms.h"
@@ -42,6 +43,9 @@
 #define SIM_PIN_MAX_RETRY_COUNT	 3
 #define SMS_STATE_READY	1
 
+#define SIM_SSM_GROUP_ID "secure-storage::telephony_sim"
+#define SIM_SSM_FILE_IMSI1 "imsi1"
+
 #define SWAPBYTES16(x) \
 	{ \
 		unsigned short int data = *(unsigned short int *)&(x);	\
@@ -49,14 +53,6 @@
 			   ((data & 0x00ff) << 8);	  \
 		*(unsigned short int *)&(x) = data;	 \
 	}
-
-enum imc_sim_file_type_e {
-	SIM_FTYPE_DEDICATED = 0x00, /**< Dedicated */
-	SIM_FTYPE_TRANSPARENT = 0x01, /**< Transparent -binary type*/
-	SIM_FTYPE_LINEAR_FIXED = 0x02, /**< Linear fixed - record type*/
-	SIM_FTYPE_CYCLIC = 0x04, /**< Cyclic - record type*/
-	SIM_FTYPE_INVALID_TYPE = 0xFF /**< Invalid type */
-};
 
 enum imc_sim_sec_op_e {
 	SEC_PIN1_VERIFY,
@@ -70,7 +66,7 @@ enum imc_sim_sec_op_e {
 	SEC_PIN1_ENABLE,
 	SEC_PIN1_DISABLE,
 	SEC_PIN2_ENABLE,
-	SEC_PIN2_DISABLE, // 10
+	SEC_PIN2_DISABLE, /* 10 */
 	SEC_SIM_ENABLE,
 	SEC_SIM_DISABLE,
 	SEC_NET_ENABLE,
@@ -80,7 +76,7 @@ enum imc_sim_sec_op_e {
 	SEC_SP_ENABLE,
 	SEC_SP_DISABLE,
 	SEC_CP_ENABLE,
-	SEC_CP_DISABLE, // 20
+	SEC_CP_DISABLE, /* 20 */
 	SEC_FDN_ENABLE,
 	SEC_FDN_DISABLE,
 	SEC_PIN1_STATUS,
@@ -97,7 +93,7 @@ enum imc_sim_sec_op_e {
 struct imc_sim_property {
 	gboolean b_valid; /**< Valid or not */
 	enum tel_sim_file_id file_id; /**< File identifier */
-	enum imc_sim_file_type_e file_type; /**< File type and structure */
+	enum tcore_sim_file_type_e file_type; /**< File type and structure */
 	int rec_length; /**< Length of one record in file */
 	int rec_count; /**< Number of records in file */
 	int data_size; /**< File size */
@@ -105,12 +101,11 @@ struct imc_sim_property {
 	enum imc_sim_sec_op_e current_sec_op; /**< current index to read */
 	int mb_count; /**< Number of MB records in file */
 	struct tel_sim_mbi_list mbi_list;
-//	struct tel_sim_mb_number mb_list[SIM_MSP_CNT_MAX*5];
 	struct tel_sim_mailbox mb_data;
 	struct tresp_sim_read files;
 };
 
-void on_response_update_file (TcorePending *p, int data_len, const void *data, void *user_data);
+void on_response_update_file(TcorePending *p, int data_len, const void *data, void *user_data);
 static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_sim_file_id ef, enum tel_sim_access_result rt);
 static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_sim_access_result rt, int decode_ret);
 static gboolean _get_sim_type(CoreObject *o);
@@ -132,15 +127,21 @@ static void sim_prepare_and_send_pending_request(CoreObject *co, const char *at_
 	dbg("hal: %p", hal);
 
 	pending = tcore_pending_new(co, 0);
-	if (!pending)
+	if (!pending) {
 		dbg("Pending is NULL");
+		return;
+	}
 	req = tcore_at_request_new(at_cmd, prefix, at_cmd_type);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		return;
+	}
 
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
 	tcore_pending_set_response_callback(pending, callback, NULL);
-	tcore_pending_link_user_request(pending, NULL); // set user request to NULL - this is internal request
+	tcore_pending_link_user_request(pending, NULL); /* set user request to NULL - this is internal request */
 	ret = tcore_hal_send_request(hal, pending);
 	if (ret != TCORE_RETURN_SUCCESS) {
 		err("error: [0x%x]", ret);
@@ -436,10 +437,10 @@ static enum tel_sim_access_result _decode_status_word(unsigned short status_word
 		rst = SIM_ACCESS_FAILED;
 		dbg("error -Incorrect parameters [%x][%x]", status_word1, status_word2);
 	} else if (status_word1 == 0x6A && status_word2 == 0x82) {
-		rst = SIM_ACCESS_FILE_NOT_FOUND; // not sure of the SW1 and SW2 meaning here
+		rst = SIM_ACCESS_FILE_NOT_FOUND; /* not sure of the SW1 and SW2 meaning here */
 		dbg("error -File Not found [%x][%x]", status_word1, status_word2);
 	} else if (status_word1 == 0x6A && status_word2 == 0x83) {
-		rst = SIM_ACCESS_FILE_NOT_FOUND; // not sure of the SW1 and SW2 meaning here
+		rst = SIM_ACCESS_FILE_NOT_FOUND; /* not sure of the SW1 and SW2 meaning here */
 		dbg("error -Record Not found [%x][%x]", status_word1, status_word2);
 	} else {
 		rst = SIM_ACCESS_CARD_ERROR;
@@ -449,49 +450,42 @@ static enum tel_sim_access_result _decode_status_word(unsigned short status_word
 }
 
 #if 0
-static gboolean _sim_check_identity(CoreObject *o, struct tel_sim_imsi *imsi)
+static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *imsi)
 {
-	Server *s = NULL;
-	Storage *strg = NULL;
-	char *old_imsi = NULL;
-	char new_imsi[15 + 1] = {0, };
+	gboolean is_changed = TRUE;
+	char new_imsi[16 + 1]; /* IMSI is 15 digit, but for distingushing between plmn and msin, define as 16 bytes. */
+	char *imsi_buf = NULL;
+	int ret_val = 0;
 
-	s = tcore_plugin_ref_server(tcore_object_ref_plugin(o));
-	if (!s) {
-		dbg("there is no valid server at this point");
+	dbg("Entry");
+	if (NULL == imsi) {
+		err("imsi is NULL");
 		return FALSE;
 	}
-	strg = (Storage *)tcore_server_find_storage(s, "vconf");
-	if (!strg) {
-		dbg("there is no valid storage plugin");
-		return FALSE;
-	}
-	memcpy(&new_imsi, imsi->plmn, strlen(imsi->plmn));
-	memcpy(&new_imsi[strlen(imsi->plmn)], imsi->msin, strlen(imsi->msin));
-	new_imsi[strlen(imsi->plmn) + strlen(imsi->msin)] = '\0';
 
-	old_imsi = tcore_storage_get_string(strg, STORAGE_KEY_TELEPHONY_IMSI);
-	dbg("old_imsi[%s],newImsi[%s]", old_imsi, new_imsi);
+	memset(new_imsi, 0x5F, 16);
+	memcpy(new_imsi, imsi->plmn, strlen(imsi->plmn));
+	memcpy(&new_imsi[6], imsi->msin, strlen(imsi->msin));
+	new_imsi[6 + strlen(imsi->msin)] = '\0';
 
-	if (old_imsi != NULL) {
-		if (strncmp(old_imsi, new_imsi, 15) != 0) {
-			dbg("NEW SIM");
-			if (tcore_storage_set_string(strg, STORAGE_KEY_TELEPHONY_IMSI, (const char *)&new_imsi) == FALSE) {
-				dbg("[FAIL] UPDATE STORAGE_KEY_TELEPHONY_IMSI");
-			}
-			tcore_sim_set_identification(o, TRUE);
-		} else {
-			dbg("SAME SIM");
-			tcore_sim_set_identification(o, FALSE);
-		}
-	} else {
-		dbg("OLD SIM VALUE IS NULL. NEW SIM");
-		if (tcore_storage_set_string(strg, STORAGE_KEY_TELEPHONY_IMSI, (const char *)&new_imsi) == FALSE) {
-			dbg("[FAIL] UPDATE STORAGE_KEY_TELEPHONY_IMSI");
-		}
-		tcore_sim_set_identification(o, TRUE);
+	ret_val = ssa_get(SIM_SSM_FILE_IMSI1, &imsi_buf, SIM_SSM_GROUP_ID, NULL);
+	if (ret_val >= 0 && imsi_buf != NULL) {
+		if (strncmp(imsi_buf, new_imsi, 16) == 0)
+			is_changed = FALSE;
+		free(imsi_buf);
 	}
-	return 1;
+
+	if (is_changed) {
+		dbg("NEW SIM");
+		/* Update file */
+		ret_val = ssa_put(SIM_SSM_FILE_IMSI1, new_imsi, strlen(new_imsi) + 1, SIM_SSM_GROUP_ID, NULL);
+		if (ret_val < 0)
+			err("ssa_put failed. ret_val=[%d]", ret_val);
+	}
+
+	/* Update sim identification */
+	tcore_sim_set_identification(co_sim, is_changed);
+	return TRUE;
 }
 #endif
 
@@ -512,42 +506,51 @@ static TReturn __sim_update_file(CoreObject *o, UserRequest *ur, enum tel_sim_fi
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
-
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
 	meta_info = (struct imc_sim_property *)tcore_user_request_ref_metainfo(ur, NULL);
 
 	meta_info->file_id = ef;
 	dbg("File ID: [0x%x]", meta_info->file_id);
 
-	switch (ef)
-	{
-		case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
-		case SIM_EF_ELP:
-		case SIM_EF_LP:
-		case SIM_EF_CPHS_VOICE_MSG_WAITING:
-			p1 = 0;
-			p2 = 0;
-			p3 = encoded_len;
-			cmd = 214;
-			break;
+	switch (ef) {
+	case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
+	case SIM_EF_ELP:
+	case SIM_EF_LP:
+	case SIM_EF_CPHS_VOICE_MSG_WAITING:
+		p1 = 0;
+		p2 = 0;
+		p3 = encoded_len;
+		cmd = 214;
+	break;
 
-		case SIM_EF_USIM_CFIS:
-		case SIM_EF_USIM_MWIS:
-		case SIM_EF_CPHS_MAILBOX_NUMBERS:
-		case SIM_EF_MBDN:
-		case SIM_EF_USIM_MBI:
-			p1 = rec_index;
-			p2 = 0x04;
-			p3 = encoded_len;
-			cmd = 220;
-			break;
-		default:
-			err("Unhandled File ID[0x%04x]", ef);
-			return TCORE_RETURN_EINVAL;
+	case SIM_EF_USIM_CFIS:
+	case SIM_EF_USIM_MWIS:
+	case SIM_EF_CPHS_MAILBOX_NUMBERS:
+	case SIM_EF_MBDN:
+	case SIM_EF_USIM_MBI:
+		p1 = rec_index;
+		p2 = 0x04;
+		p3 = encoded_len;
+		cmd = 220;
+	break;
+
+	default:
+		err("Unhandled File ID[0x%04x]", ef);
+		tcore_pending_free(pending);
+		return TCORE_RETURN_EINVAL;
 	}
 
-	cmd_str = g_strdup_printf("AT+CRSM=%d,%d,%d,%d,%d,\"%s\"", cmd, ef, p1, p2, p3, encoded_data);
+	cmd_str = g_strdup_printf("AT+CRSM=%d, %d, %d, %d, %d, \"%s\"", cmd, ef, p1, p2, p3, encoded_data);
 
 	req = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -583,189 +586,196 @@ static TReturn __set_file_data(CoreObject *o, UserRequest *ur, const enum tel_si
 	meta_info = (struct imc_sim_property *)tcore_user_request_ref_metainfo(ur, NULL);
 
 	switch (command) {
+	case TREQ_SIM_SET_LANGUAGE: {
+		const struct treq_sim_set_language *lang = NULL;
+		struct tel_sim_language language = {0, };
 
-		case TREQ_SIM_SET_LANGUAGE:
-		{
-			const struct treq_sim_set_language *lang = NULL;
-			struct tel_sim_language language = {0,};
-
-			lang = tcore_user_request_ref_data(ur, NULL);
-			language.language_count = 1;
-			language.language[0] = lang->language;
-			if (tcore_sim_get_type(o) == SIM_TYPE_GSM && ef == SIM_EF_LP){
-				dbg("Encoding EF-LP, language[%d]", lang->language);
-				tmp = tcore_sim_encode_lp(&encoded_len, &language);
-			} else {
-				dbg("Encoding EF-ELP, language[%d]", lang->language);
-				tmp = tcore_sim_encode_li(&encoded_len, &language);
-			}
+		lang = tcore_user_request_ref_data(ur, NULL);
+		language.language_count = 1;
+		language.language[0] = lang->language;
+		if (tcore_sim_get_type(o) == SIM_TYPE_GSM && ef == SIM_EF_LP) {
+			dbg("Encoding EF-LP, language[%d]", lang->language);
+			tmp = tcore_sim_encode_lp(&encoded_len, &language);
+		} else {
+			dbg("Encoding EF-ELP, language[%d]", lang->language);
+			tmp = tcore_sim_encode_li(&encoded_len, &language);
 		}
-		break;
+	}
+	break;
 
-		case TREQ_SIM_SET_CALLFORWARDING:
-		{
-			const struct treq_sim_set_callforwarding *cf = NULL;
+	case TREQ_SIM_SET_CALLFORWARDING: {
+		const struct treq_sim_set_callforwarding *cf = NULL;
 
-			cf = tcore_user_request_ref_data(ur, NULL);
-			if(ef == SIM_EF_CPHS_CALL_FORWARD_FLAGS ) {
-				if (cf->b_cphs) {
-					tmp = tcore_sim_encode_cff((const struct tel_sim_cphs_cf*)&cf->cphs_cf, meta_info->data_size);
-				} else {
-					/* Convert 3GPP data to CPHS data */
-					struct tel_sim_cphs_cf cphs_cf;
-
-					dbg("Convert 3GPP data to CPHS data");
-					memset(&cphs_cf, 0x00, sizeof(struct tel_sim_cphs_cf));
-					if (cf->cf.cfu_status & 0x01) {
-						cphs_cf.b_line1 = TRUE;
-					}
-					if (cf->cf.cfu_status & 0x02) {
-						cphs_cf.b_fax = TRUE;
-					}
-					if (cf->cf.cfu_status & 0x04) {
-						cphs_cf.b_data = TRUE;
-					}
-					tmp = tcore_sim_encode_cff((const struct tel_sim_cphs_cf*)&cphs_cf, meta_info->data_size);
-				}
-				if (tmp) {
-					encoded_len = strlen(tmp);
-				} else {
-					err("NULL Encoding Data[%p].. No Updating EF", tmp);
-					goto EXIT;
-				}
-			} else if (ef == SIM_EF_USIM_CFIS){
-				tmp = tcore_sim_encode_cfis(&encoded_len, (const struct tel_sim_cfis*)&cf->cf);
-				rec_index = cf->cf.rec_index;
+		cf = tcore_user_request_ref_data(ur, NULL);
+		if (ef == SIM_EF_CPHS_CALL_FORWARD_FLAGS) {
+			if (cf->b_cphs) {
+				tmp = tcore_sim_encode_cff((const struct tel_sim_cphs_cf *)&cf->cphs_cf, meta_info->data_size);
 			} else {
-				err("Invalid File ID[0x%04x]", ef);
+				/* Convert 3GPP data to CPHS data */
+				struct tel_sim_cphs_cf cphs_cf;
+
+				dbg("Convert 3GPP data to CPHS data");
+				memset(&cphs_cf, 0x00, sizeof(struct tel_sim_cphs_cf));
+				if (cf->cf.cfu_status & 0x01)
+					cphs_cf.b_line1 = TRUE;
+
+				if (cf->cf.cfu_status & 0x02)
+					cphs_cf.b_fax = TRUE;
+
+				if (cf->cf.cfu_status & 0x04)
+					cphs_cf.b_data = TRUE;
+
+				tmp = tcore_sim_encode_cff((const struct tel_sim_cphs_cf *)&cphs_cf, meta_info->data_size);
+			}
+
+			if (tmp) {
+				encoded_len = strlen(tmp);
+			} else {
+				err("NULL Encoding Data[%p].. No Updating EF", tmp);
 				goto EXIT;
 			}
-		}
-		break;
-
-		case TREQ_SIM_SET_MESSAGEWAITING:
-		{
-			const struct treq_sim_set_messagewaiting *mw = NULL;
-
-			mw = tcore_user_request_ref_data(ur, NULL);
-			if(ef == SIM_EF_CPHS_VOICE_MSG_WAITING ) {
-				if (mw->b_cphs) {
-					tmp = tcore_sim_encode_vmwf(&encoded_len, (const struct tel_sim_cphs_mw*)&mw->cphs_mw, meta_info->data_size);
-				} else {
-					/* Convert 3GPP data to CPHS data */
-					struct tel_sim_cphs_mw cphs_mw;
-
-					dbg("Convert 3GPP data to CPHS data");
-					memset(&cphs_mw, 0x00, sizeof(struct tel_sim_cphs_mw));
-
-					if (mw->mw.indicator_status & 0x01) {
-						cphs_mw.b_voice1 = TRUE;
-					}
-					if (mw->mw.indicator_status & 0x02) {
-						cphs_mw.b_fax = TRUE;
-					}
-					if (mw->mw.indicator_status & 0x04) {
-						cphs_mw.b_data = TRUE;
-					}
-					tmp = tcore_sim_encode_vmwf(&encoded_len, (const struct tel_sim_cphs_mw*)&cphs_mw, meta_info->data_size);
-				}
-			} else if (ef == SIM_EF_USIM_MWIS){
-				tmp = tcore_sim_encode_mwis(&encoded_len, (const struct tel_sim_mw*)&mw->mw, meta_info->rec_length);
-				rec_index = mw->mw.rec_index;
-				if (tmp)
-				encoded_len = meta_info->rec_length;
-			} else {
-				err("Invalid File ID[0x%04x]", ef);
-				goto EXIT;
-			}
-		}
-		break;
-
-		case TREQ_SIM_SET_MAILBOX:
-		{
-			const struct treq_sim_set_mailbox *mb = NULL;
-
-			mb = tcore_user_request_ref_data(ur, NULL);
-			if (ef == SIM_EF_USIM_MBI){
-				gboolean mbi_changed = FALSE;
-				struct tel_sim_mbi mbi;
-
-				do {
-					meta_info->current_index++;
-					memcpy(&mbi, &meta_info->mbi_list.mbi[meta_info->current_index - 1], sizeof(struct tel_sim_mbi));
-
-					switch(mb->mb_info.mb_type) {
-					case SIM_MAILBOX_VOICE:
-						if (mbi.voice_index != mb->mb_info.rec_index) {
-							mbi_changed = TRUE;
-							mbi.voice_index = mb->mb_info.rec_index;
-						}
-						break;
-					case SIM_MAILBOX_FAX:
-						if (mbi.fax_index != mb->mb_info.rec_index) {
-							mbi_changed = TRUE;
-							mbi.fax_index = mb->mb_info.rec_index;
-						}
-						break;
-					case SIM_MAILBOX_EMAIL:
-						if (mbi.email_index != mb->mb_info.rec_index) {
-							mbi_changed = TRUE;
-							mbi.email_index = mb->mb_info.rec_index;
-						}
-						break;
-					case SIM_MAILBOX_OTHER:
-						if (mbi.other_index != mb->mb_info.rec_index) {
-							mbi_changed = TRUE;
-							mbi.other_index = mb->mb_info.rec_index;
-						}
-						break;
-					case SIM_MAILBOX_VIDEO:
-						if (mbi.video_index != mb->mb_info.rec_index) {
-							mbi_changed = TRUE;
-							mbi.video_index = mb->mb_info.rec_index;
-						}
-						break;
-					case SIM_MAILBOX_DATA:
-					default:
-						break;
-					}
-
-					dbg("mbi_changed[%d], profile_count[%d], index (voice[%d], fax[%d], email[%d], other[%d], video[%d])",
-							mbi_changed, meta_info->mbi_list.profile_count,
-							mbi.voice_index, mbi.fax_index, mbi.email_index, mbi.other_index, mbi.video_index);
-				} while (mbi_changed == FALSE && meta_info->current_index < meta_info->mbi_list.profile_count);
-
-				if (mbi_changed == TRUE) {
-					rec_index = meta_info->current_index;
-					tmp = tcore_sim_encode_mbi(&mbi, meta_info->rec_length);
-					if (tmp)
-						encoded_len = meta_info->rec_length;
-				}
-			} else if (ef == SIM_EF_CPHS_MAILBOX_NUMBERS) {
-				tmp = tcore_sim_encode_xdn(meta_info->rec_length, (struct tel_sim_dialing_number*)&mb->mb_info.number_info);
-				rec_index = mb->mb_info.rec_index;
-				if (tmp)
-					encoded_len = meta_info->rec_length;
-			} else if (ef == SIM_EF_MBDN){
-				tmp = tcore_sim_encode_xdn(meta_info->rec_length, (struct tel_sim_dialing_number*)&mb->mb_info.number_info);
-				rec_index = mb->mb_info.rec_index;
-				if (tmp)
-					encoded_len = meta_info->rec_length;
-			} else {
-				err("Invalid File ID[0x%04x]", ef);
-				goto EXIT;
-			}
-		}
-		break;
-
-		default:
-			err("Unhandled update REQUEST command[%d]", command);
-			ret_code = TCORE_RETURN_EINVAL;
+		} else if (ef == SIM_EF_USIM_CFIS) {
+			tmp = tcore_sim_encode_cfis(&encoded_len, (const struct tel_sim_cfis *)&cf->cf);
+			rec_index = cf->cf.rec_index;
+		} else {
+			err("Invalid File ID[0x%04x]", ef);
 			goto EXIT;
+		}
+	}
+	break;
+
+	case TREQ_SIM_SET_MESSAGEWAITING: {
+		const struct treq_sim_set_messagewaiting *mw = NULL;
+
+		mw = tcore_user_request_ref_data(ur, NULL);
+		if (ef == SIM_EF_CPHS_VOICE_MSG_WAITING) {
+			if (mw->b_cphs) {
+				tmp = tcore_sim_encode_vmwf(&encoded_len, (const struct tel_sim_cphs_mw *)&mw->cphs_mw, meta_info->data_size);
+			} else {
+				/* Convert 3GPP data to CPHS data */
+				struct tel_sim_cphs_mw cphs_mw;
+
+				dbg("Convert 3GPP data to CPHS data");
+				memset(&cphs_mw, 0x00, sizeof(struct tel_sim_cphs_mw));
+
+				if (mw->mw.indicator_status & 0x01)
+					cphs_mw.b_voice1 = TRUE;
+
+				if (mw->mw.indicator_status & 0x02)
+					cphs_mw.b_fax = TRUE;
+
+				if (mw->mw.indicator_status & 0x04)
+					cphs_mw.b_data = TRUE;
+
+				tmp = tcore_sim_encode_vmwf(&encoded_len, (const struct tel_sim_cphs_mw *)&cphs_mw, meta_info->data_size);
+			}
+		} else if (ef == SIM_EF_USIM_MWIS) {
+			tmp = tcore_sim_encode_mwis(&encoded_len, (const struct tel_sim_mw *)&mw->mw, meta_info->rec_length);
+			rec_index = mw->mw.rec_index;
+			if (tmp)
+				encoded_len = meta_info->rec_length;
+		} else {
+			err("Invalid File ID[0x%04x]", ef);
+			goto EXIT;
+		}
+	}
+	break;
+
+	case TREQ_SIM_SET_MAILBOX: {
+		const struct treq_sim_set_mailbox *mb = NULL;
+
+		mb = tcore_user_request_ref_data(ur, NULL);
+		if (ef == SIM_EF_USIM_MBI) {
+			gboolean mbi_changed = FALSE;
+			struct tel_sim_mbi mbi;
+
+			do {
+				meta_info->current_index++;
+				memcpy(&mbi, &meta_info->mbi_list.mbi[meta_info->current_index - 1], sizeof(struct tel_sim_mbi));
+
+				switch (mb->mb_info.mb_type) {
+				case SIM_MAILBOX_VOICE:
+					if (mbi.voice_index != mb->mb_info.rec_index) {
+						mbi_changed = TRUE;
+						mbi.voice_index = mb->mb_info.rec_index;
+					}
+				break;
+
+				case SIM_MAILBOX_FAX:
+					if (mbi.fax_index != mb->mb_info.rec_index) {
+						mbi_changed = TRUE;
+						mbi.fax_index = mb->mb_info.rec_index;
+					}
+				break;
+
+				case SIM_MAILBOX_EMAIL:
+					if (mbi.email_index != mb->mb_info.rec_index) {
+						mbi_changed = TRUE;
+						mbi.email_index = mb->mb_info.rec_index;
+					}
+				break;
+
+				case SIM_MAILBOX_OTHER:
+					if (mbi.other_index != mb->mb_info.rec_index) {
+						mbi_changed = TRUE;
+						mbi.other_index = mb->mb_info.rec_index;
+					}
+				break;
+
+				case SIM_MAILBOX_VIDEO:
+					if (mbi.video_index != mb->mb_info.rec_index) {
+						mbi_changed = TRUE;
+						mbi.video_index = mb->mb_info.rec_index;
+					}
+				break;
+
+				case SIM_MAILBOX_DATA:
+				default:
+				break;
+				}
+
+				dbg("mbi_changed[%d], profile_count[%d], index (voice[%d], fax[%d], email[%d], other[%d], video[%d])",
+						mbi_changed, meta_info->mbi_list.profile_count,
+						mbi.voice_index, mbi.fax_index, mbi.email_index, mbi.other_index, mbi.video_index);
+			} while (mbi_changed == FALSE && meta_info->current_index < meta_info->mbi_list.profile_count);
+
+			if (mbi_changed == TRUE) {
+				rec_index = meta_info->current_index;
+				tmp = tcore_sim_encode_mbi(&mbi, meta_info->rec_length);
+				if (tmp)
+					encoded_len = meta_info->rec_length;
+			}
+		} else if (ef == SIM_EF_CPHS_MAILBOX_NUMBERS) {
+			tmp = tcore_sim_encode_xdn(meta_info->rec_length, (struct tel_sim_dialing_number *)&mb->mb_info.number_info);
+			rec_index = mb->mb_info.rec_index;
+			if (tmp)
+				encoded_len = meta_info->rec_length;
+		} else if (ef == SIM_EF_MBDN) {
+			tmp = tcore_sim_encode_xdn(meta_info->rec_length, (struct tel_sim_dialing_number *)&mb->mb_info.number_info);
+			rec_index = mb->mb_info.rec_index;
+			if (tmp)
+				encoded_len = meta_info->rec_length;
+		} else {
+			err("Invalid File ID[0x%04x]", ef);
+			goto EXIT;
+		}
+	}
+	break;
+
+	default:
+		err("Unhandled update REQUEST command[%d]", command);
+		ret_code = TCORE_RETURN_EINVAL;
+		goto EXIT;
 	}
 
-	if(tmp) {
+	if (tmp) {
 		encoded_data = (char *) g_malloc0(2 * (encoded_len) + 1);
+		if (encoded_data == NULL) {
+			err("Memory allocation failed!!");
+			free(tmp);
+			return ret_code;
+		}
+
 		memset(encoded_data, 0x00, (2 * encoded_len) + 1);
 		util_byte_to_hex(tmp, encoded_data, encoded_len);
 		free(tmp);
@@ -777,38 +787,40 @@ static TReturn __set_file_data(CoreObject *o, UserRequest *ur, const enum tel_si
 	dbg("Encoded Data length =[%d]", encoded_len);
 	tcore_util_hex_dump("[Encoded Data] ", encoded_len, encoded_data);
 
-	switch (ef)
-	{
-		case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
-		case SIM_EF_ELP:
-		case SIM_EF_LP:
-		case SIM_EF_CPHS_VOICE_MSG_WAITING:
-			ret_code = __sim_update_file(o, ur, ef, encoded_data, encoded_len, 0);
-			break;
+	switch (ef) {
+	case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
+	case SIM_EF_ELP:
+	case SIM_EF_LP:
+	case SIM_EF_CPHS_VOICE_MSG_WAITING:
+		ret_code = __sim_update_file(o, ur, ef, encoded_data, encoded_len, 0);
+	break;
 
-		case SIM_EF_USIM_CFIS:
-		case SIM_EF_USIM_MWIS:
-		case SIM_EF_CPHS_MAILBOX_NUMBERS:
-		case SIM_EF_MBDN:
+	case SIM_EF_USIM_CFIS:
+	case SIM_EF_USIM_MWIS:
+	case SIM_EF_CPHS_MAILBOX_NUMBERS:
+	case SIM_EF_MBDN:
+		ret_code = __sim_update_file(o, ur, ef, encoded_data, encoded_len, rec_index);
+	break;
+
+	case SIM_EF_USIM_MBI:
+		if (rec_index > 0)
 			ret_code = __sim_update_file(o, ur, ef, encoded_data, encoded_len, rec_index);
-			break;
-		case SIM_EF_USIM_MBI:
-			if (rec_index > 0) {
-				ret_code = __sim_update_file(o, ur, ef, encoded_data, encoded_len, rec_index);
-			} else {
-				memset(meta_info, 0x00, sizeof(struct imc_sim_property));
-			}
-			break;
-		default:
-			err("Unhandled File ID[0x%04x]", ef);
-			ret_code = TCORE_RETURN_EINVAL;
-			break;
+		else
+			memset(meta_info, 0x00, sizeof(struct imc_sim_property));
+	break;
+
+	default:
+		err("Unhandled File ID[0x%04x]", ef);
+		ret_code = TCORE_RETURN_EINVAL;
+	break;
 	}
+
 EXIT:
-	if(encoded_data) {
+	if (encoded_data) {
 		free(encoded_data);
 		encoded_data = NULL;
 	}
+
 	return ret_code;
 }
 
@@ -837,11 +849,10 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 	case SIM_EF_ELP:
 		if (rt == SIM_ACCESS_SUCCESS) {
 			dbg("[SIM DATA] exist EFELP/PL(0x2F05)");
-			if (command == TREQ_SIM_SET_LANGUAGE) {
+			if (command == TREQ_SIM_SET_LANGUAGE)
 				__set_file_data(o, ur, ef);
-			} else {
+			else
 				_get_file_data(o, ur, ef, 0, meta_info->data_size);
-			}
 		} else {
 			if (sim_type == SIM_TYPE_GSM) {
 				dbg("[SIM DATA]SIM_EF_ELP(2F05) access fail. Request SIM_EF_LP(0x6F05) info");
@@ -849,30 +860,29 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 				_get_file_info(o, ur, SIM_EF_LP);
 			} else if (sim_type == SIM_TYPE_USIM) {
 				dbg(
-					" [SIM DATA]fail to get Language information in USIM(EF-LI(6F05),EF-PL(2F05)). Request SIM_EF_ECC(0x6FB7) info");
+					" [SIM DATA]fail to get Language information in USIM(EF-LI(6F05), EF-PL(2F05)). Request SIM_EF_ECC(0x6FB7) info");
 				/* EFELPand EFLI not present at this point. */
 				/*					po->language.lang_cnt = 0;*/
 				tcore_user_request_send_response(ur, _find_resp_command(ur),
-												 sizeof(struct tresp_sim_read), &resp);
+					sizeof(struct tresp_sim_read), &resp);
 				return;
 			}
 		}
 		break;
 
-	case SIM_EF_LP:   // same with SIM_EF_USIM_LI
+	case SIM_EF_LP:   /* same with SIM_EF_USIM_LI */
 		if (rt == SIM_ACCESS_SUCCESS) {
 			dbg("[SIM DATA] exist EFLP/LI(0x6F05)");
-			if (command == TREQ_SIM_SET_LANGUAGE) {
+			if (command == TREQ_SIM_SET_LANGUAGE)
 				__set_file_data(o, ur, ef);
-			} else {
+			else
 				_get_file_data(o, ur, ef, 0, meta_info->data_size);
-			}
 		} else {
 			dbg("[SIM DATA]SIM_EF_LP/LI(6F05) access fail. Current CardType[%d]",
 				sim_type);
 			if (sim_type == SIM_TYPE_GSM) {
 				tcore_user_request_send_response(ur, _find_resp_command(ur),
-												 sizeof(struct tresp_sim_read), &resp);
+					sizeof(struct tresp_sim_read), &resp);
 				return;
 			}
 			/* if EFLI is not present, then the language selection shall be as defined in EFPL at the MF level	*/
@@ -886,11 +896,10 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 	case SIM_EF_USIM_PL:
 		if (rt == SIM_ACCESS_SUCCESS) {
 			dbg("[SIM DATA] exist EFELP/PL(0x2F05)");
-			if (command == TREQ_SIM_SET_LANGUAGE) {
+			if (command == TREQ_SIM_SET_LANGUAGE)
 				__set_file_data(o, ur, ef);
-			} else {
+			else
 				_get_file_data(o, ur, SIM_EF_ELP, 0, meta_info->data_size);
-			}
 		} else {
 			/* EFELIand EFPL not present, so set language count as zero and select ECC */
 			dbg(" [SIM DATA]SIM_EF_USIM_PL(2A05) access fail. Request SIM_EF_ECC(0x6FB7) info");
@@ -904,9 +913,8 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 		if (sim_type == SIM_TYPE_GSM) {
 			_get_file_data(o, ur, ef, 0, meta_info->data_size);
 		} else if (sim_type == SIM_TYPE_USIM) {
-			if (meta_info->rec_count > SIM_ECC_RECORD_CNT_MAX) {
+			if (meta_info->rec_count > SIM_ECC_RECORD_CNT_MAX)
 				meta_info->rec_count = SIM_ECC_RECORD_CNT_MAX;
-			}
 
 			meta_info->current_index++;
 			_get_file_record(o, ur, ef, meta_info->current_index, meta_info->rec_length);
@@ -930,11 +938,11 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 		break;
 
 	case SIM_EF_CPHS_CALL_FORWARD_FLAGS:
-		if (command == TREQ_SIM_SET_CALLFORWARDING) {
+		if (command == TREQ_SIM_SET_CALLFORWARDING)
 			__set_file_data(o, ur, ef);
-		} else {
+		else
 			_get_file_data(o, ur, ef, 0, meta_info->data_size);
-		}
+	break;
 
 	case SIM_EF_CPHS_CPHS_INFO:
 		if (rt == SIM_ACCESS_SUCCESS) {
@@ -963,9 +971,9 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 		if (command == TREQ_SIM_SET_CALLFORWARDING) {
 			__set_file_data(o, ur, ef);
 		} else {
-			if (meta_info->rec_count > SIM_CF_RECORD_CNT_MAX) {
+			if (meta_info->rec_count > SIM_CF_RECORD_CNT_MAX)
 				meta_info->rec_count = SIM_CF_RECORD_CNT_MAX;
-			}
+
 			meta_info->current_index++;
 			_get_file_record(o, ur, ef, meta_info->current_index, meta_info->rec_length);
 		}
@@ -1031,7 +1039,6 @@ static void _next_from_get_file_info(CoreObject *o, UserRequest *ur, enum tel_si
 		dbg("error - File id for get file info [0x%x]", ef);
 		break;
 	}
-	return;
 }
 
 static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_sim_access_result rt, int decode_ret)
@@ -1048,11 +1055,12 @@ static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_si
 	case SIM_EF_LP:
 	case SIM_EF_USIM_LI:
 		if (decode_ret == TRUE) {
-			if (meta_info->file_id == SIM_EF_LP || meta_info->file_id == SIM_EF_USIM_LI) {
-/*					po->language_file = SIM_EF_LP;*/
-			} else if (meta_info->file_id == SIM_EF_ELP || meta_info->file_id == SIM_EF_USIM_PL) {
-/*					po->language_file = SIM_EF_ELP;*/
-			}
+#if 0
+			if (meta_info->file_id == SIM_EF_LP || meta_info->file_id == SIM_EF_USIM_LI)
+				/* po->language_file = SIM_EF_LP;*/
+			else if (meta_info->file_id == SIM_EF_ELP || meta_info->file_id == SIM_EF_USIM_PL)
+				/* po->language_file = SIM_EF_ELP;*/
+#endif
 			tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_read), &meta_info->files);
 		} else {
 			/* 2G */
@@ -1067,17 +1075,15 @@ static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_si
 			 -	if the ME does not support any of the language codes indicated in EFLI , or if EFLI is not present
 			 */
 			if (tcore_sim_get_type(o) == SIM_TYPE_GSM) {
-				if (meta_info->file_id == SIM_EF_LP) {
+				if (meta_info->file_id == SIM_EF_LP)
 					tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_read), &meta_info->files);
-				} else {
+				else
 					_get_file_info(o, ur, SIM_EF_LP);
-				}
 			} else if (tcore_sim_get_type(o) == SIM_TYPE_USIM) {
-				if (meta_info->file_id == SIM_EF_LP || meta_info->file_id == SIM_EF_USIM_LI) {
+				if (meta_info->file_id == SIM_EF_LP || meta_info->file_id == SIM_EF_USIM_LI)
 					_get_file_info(o, ur, SIM_EF_ELP);
-				} else {
+				else
 					tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_read), &meta_info->files);
-				}
 			}
 		}
 		break;
@@ -1098,7 +1104,7 @@ static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_si
 		break;
 
 	case SIM_EF_IMSI:
-		ur = tcore_user_request_new(NULL, NULL);   // this is for using ur metainfo set/ref functionality.
+		ur = tcore_user_request_new(NULL, NULL);   /* this is for using ur metainfo set/ref functionality. */
 		_get_file_info(o, ur, SIM_EF_CPHS_CPHS_INFO);
 		break;
 
@@ -1175,9 +1181,9 @@ static void _next_from_get_file_data(CoreObject *o, UserRequest *ur, enum tel_si
 		break;
 
 	case SIM_EF_CPHS_OPERATOR_NAME_SHORT_FORM_STRING:
-		if (rt == SIM_ACCESS_SUCCESS) {
+		if (rt == SIM_ACCESS_SUCCESS)
 			meta_info->files.result = SIM_ACCESS_SUCCESS;
-		}
+
 		tcore_user_request_send_response(ur, _find_resp_command(ur), sizeof(struct tresp_sim_read), &meta_info->files);
 		break;
 
@@ -1251,8 +1257,10 @@ static void _response_get_sim_type(TcorePending *p, int data_len, const void *da
 
 		if (state == 0) {
 			sim_type = SIM_TYPE_GSM;
+			tcore_sim_set_app_list(o, SIM_APP_TYPE_SIM);
 		} else if (state == 1) {
 			sim_type = SIM_TYPE_USIM;
+			tcore_sim_set_app_list(o, SIM_APP_TYPE_USIM);
 		} else {
 			sim_type = SIM_TYPE_UNKNOWN;
 		}
@@ -1327,9 +1335,14 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 			dbg("hexData: %s", hexData);
 			dbg("hexData: %s", hexData + 1);
 
-			tmp = util_removeQuotes(hexData);
+			tmp = tcore_at_tok_extract(hexData);
 			recordData = util_hexStringToBytes(tmp);
-			util_hex_dump("   ", strlen(hexData) / 2, recordData);
+			if (!recordData) {
+				err("util_hexStringToBytes Failed!!");
+				tcore_at_tok_free(tokens);
+				return;
+			}
+			tcore_util_hex_dump("   ", strlen(hexData) / 2, recordData);
 			g_free(tmp);
 
 			ptr_data = (unsigned char *)recordData;
@@ -1374,7 +1387,6 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 
 						switch (file_type_tag) {
 						/* increment to next byte */
-						// ptr_data++;
 						case 0x1:
 							dbg("Getting FileType: [Transparent file type]");
 							file_type = SIM_FTYPE_TRANSPARENT;
@@ -1427,7 +1439,11 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 						return;
 					}
 
-					/*File identifier - file id?? */ // 0x84,0x85,0x86 etc are currently ignored and not handled
+					/*
+					 * File identifier - file id??
+					 *
+					 * 0x84, 0x85, 0x86 etc are currently ignored and not handled
+					 */
 					if (*ptr_data == 0x83) {
 						/* increment to next byte */
 						ptr_data++;
@@ -1521,7 +1537,6 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 						} else {
 							/* if tag length is not 3 */
 							/* ignoring bytes	*/
-							// ptr_data = ptr_data + 4;
 							dbg("Useless security attributes, so jump to next tag");
 							ptr_data = ptr_data + (*ptr_data + 1);
 						}
@@ -1585,7 +1600,6 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 				ptr_data++;
 				ptr_data++;
 				/*	file size */
-				// file_size = p_info->response_len;
 				memcpy(&file_size, ptr_data, 2);
 				/* swap bytes */
 				SWAPBYTES16(file_size);
@@ -1672,7 +1686,7 @@ static void _response_get_file_info(TcorePending *p, int data_len, const void *d
 			meta_info->data_size = file_size;
 			meta_info->rec_length = record_len;
 			meta_info->rec_count = num_of_records;
-			meta_info->current_index = 0; // reset for new record type EF
+			meta_info->current_index = 0; /* reset for new record type EF */
 			rt = SIM_ACCESS_SUCCESS;
 			g_free(recordData);
 		} else {
@@ -1735,7 +1749,9 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 		sw2 = atoi(g_slist_nth_data(tokens, 1));
 		res = g_slist_nth_data(tokens, 2);
 
-		tmp = util_removeQuotes(res);
+		tmp = tcore_at_tok_extract(res);
+		if (!tmp)
+			return;
 		res = util_hexStringToBytes(tmp);
 		res_len = strlen(tmp) / 2;
 		dbg("Response: [%s] Response length: [%d]", res, res_len);
@@ -1801,21 +1817,21 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 								(unsigned char *)res, res_len);
 			break;
 
-			case SIM_EF_SST: //EF UST has same address
+			case SIM_EF_SST: /* EF UST has same address */
 			{
 				if (tcore_sim_get_type(o) == SIM_TYPE_GSM) {
 					dr = tcore_sim_decode_sst(&meta_info->files.data.svct.table.sst , (unsigned char *)res, res_len);
-					if(dr == FALSE){
+					if (dr == FALSE) {
 						dbg("SST decoding failed");
 						tcore_sim_set_service_table(o, NULL);
-					}else{
+					} else {
 						int i = 0, size = sizeof(struct tel_sim_sst);
 						char *temp = NULL;
 						meta_info->files.data.svct.sim_type = SIM_TYPE_GSM;
-						if ((temp=g_try_malloc0(size + 1)) != NULL ) {
+						if ((temp = g_try_malloc0(size + 1)) != NULL) {
 							memcpy(temp, &meta_info->files.data.svct.table.sst, size);
-							for(i=0; i<size; i++) {
-								if(temp[i] == 1)
+							for (i = 0; i < size; i++) {
+								if (temp[i] == 1)
 									temp[i] = '1';
 								else
 									temp[i] = '0';
@@ -1827,17 +1843,17 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 					}
 				} else if (tcore_sim_get_type(o) == SIM_TYPE_USIM) {
 					dr = tcore_sim_decode_ust(&meta_info->files.data.svct.table.ust , (unsigned char *)res, res_len);
-					if(dr == FALSE){
+					if (dr == FALSE) {
 						dbg("SST decoding failed");
 						tcore_sim_set_service_table(o, NULL);
-					}else{
+					} else {
 						int i = 0, size = sizeof(struct tel_sim_ust);
 						char *temp = NULL;
 						meta_info->files.data.svct.sim_type = SIM_TYPE_USIM;
-						if ((temp=g_try_malloc0(size + 1)) != NULL ) {
+						if ((temp = g_try_malloc0(size + 1)) != NULL) {
 							memcpy(temp, &meta_info->files.data.svct.table.ust, size);
-							for(i=0; i<size; i++) {
-								if(temp[i] == 1)
+							for (i = 0; i < size; i++) {
+								if (temp[i] == 1)
 									temp[i] = '1';
 								else
 									temp[i] = '0';
@@ -1848,7 +1864,7 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 						tcore_sim_set_service_table(o, &meta_info->files.data.svct);
 					}
 				} else {
-					dbg("err not handled tcore_sim_get_type(o)[%d] in here",tcore_sim_get_type(o));
+					dbg("err not handled tcore_sim_get_type(o)[%d] in here", tcore_sim_get_type(o));
 				}
 			}
 			break;
@@ -1941,11 +1957,10 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 			break;
 
 			case SIM_EF_CPHS_CUSTOMER_SERVICE_PROFILE:
-				/*dr = tcore_sim_decode_csp(&po->p_cphs->csp,
-										p_data->response, p_data->response_len);*/
+				/*dr = tcore_sim_decode_csp(&po->p_cphs->csp, p_data->response, p_data->response_len);*/
 			break;
 
-			case SIM_EF_USIM_MBI: //linear type
+			case SIM_EF_USIM_MBI: /* linear type */
 			{
 				struct tel_sim_mbi *mbi = NULL;
 
@@ -1957,11 +1972,11 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 					meta_info->mbi_list.profile_count++;
 
 					dbg("mbi count[%d]", meta_info->mbi_list.profile_count);
-					dbg("voice_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count -1].voice_index);
-					dbg("fax_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count -1].fax_index);
-					dbg("email_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count -1].email_index);
-					dbg("other_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count -1].other_index);
-					dbg("video_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count -1].video_index);
+					dbg("voice_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count - 1].voice_index);
+					dbg("fax_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count - 1].fax_index);
+					dbg("email_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count - 1].email_index);
+					dbg("other_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count - 1].other_index);
+					dbg("video_index[%d]", meta_info->mbi_list.mbi[meta_info->mbi_list.profile_count - 1].video_index);
 				}
 
 				/* Free memory */
@@ -1969,19 +1984,19 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 			}
 			break;
 
-			case SIM_EF_CPHS_MAILBOX_NUMBERS: // linear type
-			case SIM_EF_MBDN: //linear type
+			case SIM_EF_CPHS_MAILBOX_NUMBERS: /* linear type */
+			case SIM_EF_MBDN: /* linear type */
 				dr = tcore_sim_decode_xdn(&meta_info->mb_data.mb[meta_info->mb_count].number_info,
 									(unsigned char *)res, res_len);
 				meta_info->mb_count++;
 			break;
 
-			case SIM_EF_CPHS_VOICE_MSG_WAITING: // transparent type
+			case SIM_EF_CPHS_VOICE_MSG_WAITING: /* transparent type */
 				dr = tcore_sim_decode_vmwf(&meta_info->files.data.mw.cphs_mw,
 									(unsigned char *)res, res_len);
 			break;
 
-			case SIM_EF_USIM_MWIS: //linear type
+			case SIM_EF_USIM_MWIS: /* linear type */
 			{
 				struct tel_sim_mw *mw = NULL;
 
@@ -1999,12 +2014,12 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 			}
 			break;
 
-			case SIM_EF_CPHS_CALL_FORWARD_FLAGS: //transparent type
+			case SIM_EF_CPHS_CALL_FORWARD_FLAGS: /* transparent type */
 				dr = tcore_sim_decode_cff(&meta_info->files.data.cf.cphs_cf,
 									(unsigned char *)res, res_len);
 			break;
 
-			case SIM_EF_USIM_CFIS: //linear type
+			case SIM_EF_USIM_CFIS: /* linear type */
 			{
 				struct tel_sim_cfis *cf = NULL;
 
@@ -2028,9 +2043,9 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 			break;
 
 			case SIM_EF_CPHS_OPERATOR_NAME_STRING:
-				dr = tcore_sim_decode_ons((unsigned char*)&meta_info->files.data.cphs_net.full_name,
+				dr = tcore_sim_decode_ons((unsigned char *)&meta_info->files.data.cphs_net.full_name,
 									(unsigned char *)res, res_len);
-				dbg("meta_info->files.result[%d],meta_info->files.data.cphs_net.full_name[%s]",
+				dbg("meta_info->files.result[%d], meta_info->files.data.cphs_net.full_name[%s]",
 						meta_info->files.result, meta_info->files.data.cphs_net.full_name);
 			break;
 
@@ -2050,7 +2065,7 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 			break;
 
 			case SIM_EF_CPHS_OPERATOR_NAME_SHORT_FORM_STRING:
-				dr = tcore_sim_decode_short_ons((unsigned char*)&meta_info->files.data.cphs_net.short_name,
+				dr = tcore_sim_decode_short_ons((unsigned char *)&meta_info->files.data.cphs_net.short_name,
 										(unsigned char *)res, res_len);
 			break;
 
@@ -2105,6 +2120,10 @@ static void _on_response_get_retry_count(TcorePending *p, int data_len, const vo
 
 	o = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
 	ur = tcore_pending_ref_user_request(p);
 
 	if (resp->success > 0) {
@@ -2229,9 +2248,17 @@ static gboolean _get_sim_type(CoreObject *o)
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
-
+	if (!pending) {
+		err("Pending is NULL");
+		return FALSE;
+	}
 	cmd_str = g_strdup_printf("AT+XUICC?");
 	req = tcore_at_request_new(cmd_str, "+XUICC:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return FALSE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s] Command length: [%d]",
@@ -2270,9 +2297,8 @@ static TReturn _get_file_info(CoreObject *o, UserRequest *ur, const enum tel_sim
 	pending = tcore_at_pending_new(o, cmd_str, "+CRSM:", TCORE_AT_SINGLELINE, _response_get_file_info, NULL);
 	tcore_pending_link_user_request(pending, ur);
 	ret = tcore_hal_send_request(hal, pending);
-	if (TCORE_RETURN_SUCCESS != ret) {
+	if (TCORE_RETURN_SUCCESS != ret)
 		tcore_user_request_free(ur);
-	}
 
 	g_free(cmd_str);
 	dbg("Exit");
@@ -2292,16 +2318,25 @@ static gboolean _get_file_data(CoreObject *o, UserRequest *ur, const enum tel_si
 	dbg("Entry");
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return FALSE;
+	}
 
 	dbg("file_id: %x", ef);
 
 	p1 = (unsigned char) (offset & 0xFF00) >> 8;
-	p2 = (unsigned char) offset & 0x00FF; // offset low
+	p2 = (unsigned char) offset & 0x00FF; /* offset low */
 	p3 = (unsigned char) length;
 
 	cmd_str = g_strdup_printf("AT+CRSM=176, %d, %d, %d, %d", ef, p1, p2, p3);     /*command - 176 : READ BINARY*/
 
 	req = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return FALSE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -2330,6 +2365,10 @@ static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return FALSE;
+	}
 
 	p1 = (unsigned char) index;
 	p2 = (unsigned char) 0x04;    /* 0x4 for absolute mode */
@@ -2338,6 +2377,11 @@ static gboolean _get_file_record(CoreObject *o, UserRequest *ur, const enum tel_
 	cmd_str = g_strdup_printf("AT+CRSM=178, %d, %d, %d, %d", ef, p1, p2, p3);     /*command - 178 : READ RECORD*/
 
 	req = tcore_at_request_new(cmd_str, "+CRSM:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return FALSE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -2365,7 +2409,16 @@ static TReturn _get_retry_count(CoreObject *o, UserRequest *ur)
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		tcore_pending_free(pending);
+		return TCORE_RETURN_FAILURE;
+	}
 
 	switch (sp->current_sec_op) {
 	case SEC_PIN1_VERIFY:
@@ -2422,6 +2475,11 @@ static TReturn _get_retry_count(CoreObject *o, UserRequest *ur)
 
 	cmd_str = g_strdup_printf("AT+XPINCNT=%d", lock_type);
 	req = tcore_at_request_new(cmd_str, "+XPINCNT:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -2443,7 +2501,6 @@ static gboolean on_event_facility_lock_status(CoreObject *o, const void *event_i
 	GSList *lines = NULL;
 
 	dbg("Function entry");
-	return TRUE;
 
 	lines = (GSList *)event_info;
 	if (1 != g_slist_length(lines)) {
@@ -2688,6 +2745,11 @@ static void on_response_verify_pins(TcorePending *p, int data_len, const void *d
 
 	co_sim = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(co_sim);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
+
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_verify_pins));
@@ -2752,6 +2814,11 @@ static void on_response_verify_puks(TcorePending *p, int data_len, const void *d
 
 	co_sim = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(co_sim);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
+
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_verify_pins));
@@ -2802,6 +2869,11 @@ static void on_response_change_pins(TcorePending *p, int data_len, const void *d
 
 	co_sim = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(co_sim);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
+
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_change_pins));
@@ -2894,6 +2966,11 @@ static void on_response_enable_facility(TcorePending *p, int data_len, const voi
 
 	co_sim = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(co_sim);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
+
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_enable_facility));
@@ -2949,6 +3026,11 @@ static void on_response_disable_facility(TcorePending *p, int data_len, const vo
 
 	co_sim = tcore_pending_ref_core_object(p);
 	sp = tcore_sim_ref_userdata(co_sim);
+	if (!sp) {
+		err("user data is null");
+		return;
+	}
+
 	ur = tcore_pending_ref_user_request(p);
 
 	memset(&res, 0, sizeof(struct tresp_sim_disable_facility));
@@ -2974,10 +3056,9 @@ static void on_response_disable_facility(TcorePending *p, int data_len, const vo
 
 		res.result = SIM_PIN_OPERATION_SUCCESS;
 		/* Send Response */
-		if (ur) {
+		if (ur)
 			tcore_user_request_send_response(ur, _find_resp_command(ur),
 									sizeof(struct tresp_sim_disable_facility), &res);
-		}
 
 		/* Free tokens */
 		tcore_at_tok_free(tokens);
@@ -3028,24 +3109,25 @@ static void on_response_get_lock_info(TcorePending *p, int data_len, const void 
 			line = (const char *)response->lines->data;
 			tokens = tcore_at_tok_new(line);
 			length_tokens = g_slist_length(tokens);
-			dbg("No of Tokens [%d]",length_tokens);
+			dbg("No of Tokens [%d]", length_tokens);
 			switch (length_tokens) {
-				case 4:
-					puk2_attempts_left = atoi(g_slist_nth_data(tokens, 3));
-				case 3:
-					puk1_attempts_left = atoi(g_slist_nth_data(tokens, 2));
-				case 2:
-					pin2_attempts_left = atoi(g_slist_nth_data(tokens, 1));
-				case 1:
-					pin1_attempts_left = atoi(g_slist_nth_data(tokens, 0));
-					break;
-				default :
-					err("Invalid response");
-					tcore_at_tok_free(tokens);
-					resp.result = SIM_CARD_ERROR;
-					tcore_user_request_send_response(ur, _find_resp_command(ur),
-									sizeof(struct tresp_sim_get_lock_info), &resp);
-					return;
+			case 4:
+				puk2_attempts_left = atoi(g_slist_nth_data(tokens, 3));
+			case 3:
+				puk1_attempts_left = atoi(g_slist_nth_data(tokens, 2));
+			case 2:
+				pin2_attempts_left = atoi(g_slist_nth_data(tokens, 1));
+			case 1:
+				pin1_attempts_left = atoi(g_slist_nth_data(tokens, 0));
+			break;
+
+			default:
+				err("Invalid response");
+				tcore_at_tok_free(tokens);
+				resp.result = SIM_CARD_ERROR;
+				tcore_user_request_send_response(ur, _find_resp_command(ur),
+								sizeof(struct tresp_sim_get_lock_info), &resp);
+				return;
 			}
 
 
@@ -3056,38 +3138,38 @@ static void on_response_get_lock_info(TcorePending *p, int data_len, const void 
 
 			resp.lock_status = SIM_LOCK_STATUS_UNLOCKED;
 
-			switch(resp.type)
-			{
-				case SIM_FACILITY_SC :
-					resp.retry_count = pin1_attempts_left;
-					if (pin1_attempts_left > 0 && pin1_attempts_left < SIM_PIN_MAX_RETRY_COUNT) {
-						resp.lock_status = SIM_LOCK_STATUS_PIN;
-					} else if (pin1_attempts_left == 0){
-						if (puk1_attempts_left) {
-							resp.lock_status = SIM_LOCK_STATUS_PUK;
-							resp.retry_count = puk1_attempts_left;
-						}
-						else {
-							resp.lock_status = SIM_LOCK_STATUS_PERM_BLOCKED;
-						}
+			switch (resp.type) {
+			case SIM_FACILITY_SC:
+				resp.retry_count = pin1_attempts_left;
+				if (pin1_attempts_left > 0 && pin1_attempts_left < SIM_PIN_MAX_RETRY_COUNT) {
+					resp.lock_status = SIM_LOCK_STATUS_PIN;
+				} else if (pin1_attempts_left == 0) {
+					if (puk1_attempts_left) {
+						resp.lock_status = SIM_LOCK_STATUS_PUK;
+						resp.retry_count = puk1_attempts_left;
+					} else {
+						resp.lock_status = SIM_LOCK_STATUS_PERM_BLOCKED;
 					}
-					break;
-				case SIM_FACILITY_FD :
-					resp.retry_count = pin2_attempts_left;
-					if (pin2_attempts_left > 0 && pin2_attempts_left < SIM_PIN_MAX_RETRY_COUNT) {
-						resp.lock_status = SIM_LOCK_STATUS_PIN2;
-					} else if (pin2_attempts_left == 0){
-						if (puk2_attempts_left) {
-							resp.lock_status = SIM_LOCK_STATUS_PUK2;
-							resp.retry_count = puk2_attempts_left;
-						}
-						else {
-							resp.lock_status = SIM_LOCK_STATUS_PERM_BLOCKED;
-						}
+				}
+			break;
+
+			case SIM_FACILITY_FD:
+				resp.retry_count = pin2_attempts_left;
+				if (pin2_attempts_left > 0 && pin2_attempts_left < SIM_PIN_MAX_RETRY_COUNT) {
+					resp.lock_status = SIM_LOCK_STATUS_PIN2;
+				} else if (pin2_attempts_left == 0) {
+					if (puk2_attempts_left) {
+						resp.lock_status = SIM_LOCK_STATUS_PUK2;
+						resp.retry_count = puk2_attempts_left;
+					} else {
+						resp.lock_status = SIM_LOCK_STATUS_PERM_BLOCKED;
 					}
-					break;
-				default :
-					err("Unhandled facility type : [%d]", resp.type);
+				}
+			break;
+
+			default:
+				err("Unhandled facility type : [%d]", resp.type);
+			break;
 			}
 			dbg("Lock type : [%d], Lock status : [%d]", resp.type, resp.lock_status);
 			tcore_at_tok_free(tokens);
@@ -3102,7 +3184,7 @@ static void on_response_get_lock_info(TcorePending *p, int data_len, const void 
 					sizeof(struct tresp_sim_get_lock_info), &resp);
 }
 
-void on_response_update_file (TcorePending *p, int data_len, const void *data, void *user_data)
+void on_response_update_file(TcorePending *p, int data_len, const void *data, void *user_data)
 {
 	UserRequest *ur = NULL;
 	GSList *tokens = NULL;
@@ -3142,11 +3224,10 @@ void on_response_update_file (TcorePending *p, int data_len, const void *data, v
 					sw1 = atoi(g_slist_nth_data(tokens, 0));
 					sw2 = atoi(g_slist_nth_data(tokens, 1));
 
-					if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91) {
+					if ((sw1 == 0x90 && sw2 == 0x00) || sw1 == 0x91)
 						resp.result = SIM_ACCESS_SUCCESS;
-					} else {
+					else
 						resp.result = _decode_status_word(sw1, sw2);
-					}
 				}
 				tcore_at_tok_free(tokens);
 			}
@@ -3156,7 +3237,7 @@ void on_response_update_file (TcorePending *p, int data_len, const void *data, v
 		}
 	}
 
-	if (cphs_sim == FALSE){
+	if (cphs_sim == FALSE) {
 		switch (command) {
 		case TREQ_SIM_SET_MAILBOX:
 			if (meta_info->file_id == SIM_EF_USIM_MBI) {
@@ -3177,32 +3258,29 @@ void on_response_update_file (TcorePending *p, int data_len, const void *data, v
 		}
 	} else {
 		switch (command) {
-			case TREQ_SIM_SET_MAILBOX:
-			{
-				if (meta_info->file_id != SIM_EF_CPHS_MAILBOX_NUMBERS) {
-					_get_file_info(co_sim, ur, SIM_EF_CPHS_MAILBOX_NUMBERS);
-					return;
-				}
+		case TREQ_SIM_SET_MAILBOX:
+			if (meta_info->file_id != SIM_EF_CPHS_MAILBOX_NUMBERS) {
+				_get_file_info(co_sim, ur, SIM_EF_CPHS_MAILBOX_NUMBERS);
+				return;
 			}
-			break;
-			case TREQ_SIM_SET_CALLFORWARDING:
-			{
-				if (meta_info->file_id != SIM_EF_CPHS_CALL_FORWARD_FLAGS) {
-					_get_file_info(co_sim, ur, SIM_EF_CPHS_CALL_FORWARD_FLAGS);
-					return;
-				}
+		break;
+
+		case TREQ_SIM_SET_CALLFORWARDING:
+			if (meta_info->file_id != SIM_EF_CPHS_CALL_FORWARD_FLAGS) {
+				_get_file_info(co_sim, ur, SIM_EF_CPHS_CALL_FORWARD_FLAGS);
+				return;
 			}
-			break;
-			case TREQ_SIM_SET_MESSAGEWAITING:
-			{
-				if (meta_info->file_id != SIM_EF_CPHS_VOICE_MSG_WAITING) {
-					_get_file_info(co_sim, ur, SIM_EF_CPHS_VOICE_MSG_WAITING);
-					return;
-				}
+		break;
+
+		case TREQ_SIM_SET_MESSAGEWAITING:
+			if (meta_info->file_id != SIM_EF_CPHS_VOICE_MSG_WAITING) {
+				_get_file_info(co_sim, ur, SIM_EF_CPHS_VOICE_MSG_WAITING);
+				return;
 			}
-			break;
-			default:
-			break;
+		break;
+
+		default:
+		break;
 		}
 	}
 
@@ -3242,15 +3320,28 @@ static void on_response_transmit_apdu(TcorePending *p, int data_len, const void 
 			}
 
 			tmp = tcore_at_tok_extract(g_slist_nth_data(tokens, 1));
-			decoded_data = util_hexStringToBytes(tmp);
-			res.apdu_resp_length = strlen(tmp) / 2;
-			res.apdu_resp = g_malloc0(res.apdu_resp_length + 1);
-
-			memcpy((char *)res.apdu_resp, decoded_data, res.apdu_resp_length);
-			g_free(tmp);
-			g_free(decoded_data);
-			res.result = SIM_ACCESS_SUCCESS;
-			tcore_at_tok_free(tokens);
+			if (tmp) {
+				decoded_data = util_hexStringToBytes(tmp);
+				if (decoded_data) {
+					res.apdu_resp_length = strlen(tmp) / 2;
+					res.apdu_resp = g_malloc0(res.apdu_resp_length + 1);
+					if (res.apdu_resp == NULL) {
+						err("Memory allocation failed!!");
+						tcore_at_tok_free(tokens);
+						g_free(tmp);
+						g_free(decoded_data);
+						goto OUT;
+					}
+					memcpy((char *)res.apdu_resp, decoded_data, res.apdu_resp_length);
+					g_free(tmp);
+					g_free(decoded_data);
+					res.result = SIM_ACCESS_SUCCESS;
+					tcore_at_tok_free(tokens);
+				} else {
+					err("util_hexStringToBytes Failed!!");
+					g_free(tmp);
+				}
+			}
 		}
 	} else {
 		dbg("RESPONSE NOK");
@@ -3291,14 +3382,20 @@ static void on_response_get_atr(TcorePending *p, int data_len, const void *data,
 				goto OUT;
 			}
 
-			tmp = util_removeQuotes(g_slist_nth_data(tokens, 0));
-			decoded_data = util_hexStringToBytes(tmp);
+			tmp = tcore_at_tok_extract(g_slist_nth_data(tokens, 0));
+			if (tmp) {
+				decoded_data = util_hexStringToBytes(tmp);
+				if (!decoded_data) {
+					err("util_hexStringToBytes Failed!!");
+					goto OUT;
+				}
 
-			res.atr_length = strlen(tmp) / 2;
-			memcpy((char *)res.atr, decoded_data, res.atr_length);
-			g_free(tmp);
-			g_free(decoded_data);
-			res.result = SIM_ACCESS_SUCCESS;
+				res.atr_length = strlen(tmp) / 2;
+				memcpy((char *)res.atr, decoded_data, res.atr_length);
+				g_free(tmp);
+				g_free(decoded_data);
+				res.result = SIM_ACCESS_SUCCESS;
+			}
 		}
 	} else {
 		dbg("RESPONSE NOK");
@@ -3454,7 +3551,7 @@ static TReturn imc_verify_pins(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3464,7 +3561,17 @@ static TReturn imc_verify_pins(CoreObject *o, UserRequest *ur)
 	}
 
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	if (req_data->pin_type == SIM_PTYPE_PIN1) {
@@ -3485,6 +3592,11 @@ static TReturn imc_verify_pins(CoreObject *o, UserRequest *ur)
 	}
 
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3511,7 +3623,7 @@ static TReturn imc_verify_puks(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3521,7 +3633,17 @@ static TReturn imc_verify_puks(CoreObject *o, UserRequest *ur)
 	}
 
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	if (req_data->puk_type == SIM_PTYPE_PUK1) {
@@ -3536,6 +3658,11 @@ static TReturn imc_verify_puks(CoreObject *o, UserRequest *ur)
 	}
 
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3564,7 +3691,7 @@ static TReturn imc_change_pins(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3574,20 +3701,35 @@ static TReturn imc_change_pins(CoreObject *o, UserRequest *ur)
 	}
 
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	if (req_data->type == SIM_PTYPE_PIN1) {
 		sp->current_sec_op = SEC_PIN1_CHANGE;
-		cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", pin1, req_data->old_pin, req_data->new_pin);
+		cmd_str = g_strdup_printf("AT+CPWD=\"%s\", \"%s\", \"%s\"", pin1, req_data->old_pin, req_data->new_pin);
 	} else if (req_data->type == SIM_PTYPE_PIN2) {
 		sp->current_sec_op = SEC_PIN2_CHANGE;
-		cmd_str = g_strdup_printf("AT+CPWD=\"%s\",\"%s\",\"%s\"", pin2, req_data->old_pin, req_data->new_pin);
+		cmd_str = g_strdup_printf("AT+CPWD=\"%s\", \"%s\", \"%s\"", pin2, req_data->old_pin, req_data->new_pin);
 	} else {
 		tcore_pending_free(pending);
 		return TCORE_RETURN_EINVAL;
 	}
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3616,7 +3758,7 @@ static TReturn imc_get_facility_status(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3626,6 +3768,11 @@ static TReturn imc_get_facility_status(CoreObject *o, UserRequest *ur)
 	}
 
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	res = g_try_new0(struct tresp_sim_get_facility_status, 1);
@@ -3636,25 +3783,30 @@ static TReturn imc_get_facility_status(CoreObject *o, UserRequest *ur)
 
 	res->type = req_data->type;
 
-	if (req_data->type == SIM_FACILITY_PS) {
+	if (req_data->type == SIM_FACILITY_PS)
 		fac = "PS";               /*PH-SIM, Lock PHone to SIM/UICC card*/
-	} else if (req_data->type == SIM_FACILITY_SC) {
+	else if (req_data->type == SIM_FACILITY_SC)
 		fac = "SC";               /*Lock SIM/UICC card, simply PIN1*/
-	} else if (req_data->type == SIM_FACILITY_FD) {
+	else if (req_data->type == SIM_FACILITY_FD)
 		fac = "FD";               /*Fixed Dialing Number feature, need PIN2*/
-	} else if (req_data->type == SIM_FACILITY_PN) {
+	else if (req_data->type == SIM_FACILITY_PN)
 		fac = "PN";               /*Network Personalization*/
-	} else if (req_data->type == SIM_FACILITY_PU) {
+	else if (req_data->type == SIM_FACILITY_PU)
 		fac = "PU";               /*network sUbset Personalization*/
-	} else if (req_data->type == SIM_FACILITY_PP) {
+	else if (req_data->type == SIM_FACILITY_PP)
 		fac = "PP";               /*service Provider Personalization*/
-	} else if (req_data->type == SIM_FACILITY_PC) {
+	else if (req_data->type == SIM_FACILITY_PC)
 		fac = "PC";               /*Corporate Personalization*/
-	} else {
+	else
 		return TCORE_RETURN_EINVAL;
-	}
+
 	cmd_str = g_strdup_printf("AT+CLCK=\"%s\", %d", fac, mode);
 	req = tcore_at_request_new(cmd_str, "+CLCK:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3683,7 +3835,7 @@ static TReturn imc_enable_facility(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3693,7 +3845,17 @@ static TReturn imc_enable_facility(CoreObject *o, UserRequest *ur)
 	}
 
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	if (req_data->type == SIM_FACILITY_PS) {
@@ -3722,6 +3884,11 @@ static TReturn imc_enable_facility(CoreObject *o, UserRequest *ur)
 	}
 	cmd_str = g_strdup_printf("AT+CLCK=\"%s\", %d, \"%s\"", fac, mode, req_data->password);
 	req = tcore_at_request_new(cmd_str, "+CLCK:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3750,7 +3917,7 @@ static TReturn imc_disable_facility(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -3760,7 +3927,17 @@ static TReturn imc_disable_facility(CoreObject *o, UserRequest *ur)
 	}
 
 	sp = tcore_sim_ref_userdata(o);
+	if (!sp) {
+		err("user data is null");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
+
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	if (req_data->type == SIM_FACILITY_PS) {
@@ -3789,6 +3966,11 @@ static TReturn imc_disable_facility(CoreObject *o, UserRequest *ur)
 	}
 	cmd_str = g_strdup_printf("AT+CLCK=\"%s\", %d, \"%s\"", fac, mode, req_data->password);
 	req = tcore_at_request_new(cmd_str, "+CLCK:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		g_free(cmd_str);
+		return TCORE_RETURN_FAILURE;
+	}
 	g_free(cmd_str);
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
@@ -3813,12 +3995,21 @@ static TReturn imc_get_lock_info(CoreObject *o, UserRequest *ur)
 
 	hal = tcore_object_get_hal(o);
 	pending = tcore_pending_new(o, 0);
+	if (!pending) {
+		err("Pending is NULL");
+		return TCORE_RETURN_FAILURE;
+	}
 
-	if ((o == NULL )|| (ur == NULL)) {
+	if ((o == NULL) || (ur == NULL)) {
 		tcore_pending_free(pending);
 		return TCORE_RETURN_EINVAL;
 	}
 	req = tcore_at_request_new("AT+XPINCNT", "+XPINCNT:", TCORE_AT_SINGLELINE);
+
+	if (req == NULL) {
+		tcore_pending_free(pending);
+		return TCORE_RETURN_FAILURE;
+	}
 
 	dbg("Command: [%s] Prefix(if any): [%s], Command length: [%d]",
 				req->cmd, req->prefix, strlen(req->cmd));
@@ -3839,7 +4030,7 @@ static TReturn imc_read_file(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	command = tcore_user_request_get_command(ur);
@@ -3948,109 +4139,104 @@ static TReturn imc_update_file(CoreObject *co_sim, UserRequest *ur)
 	cphs_sim = tcore_sim_get_cphs_status(co_sim);
 	sim_type = tcore_sim_get_type(co_sim);
 
-	if ((co_sim == NULL )|| (ur == NULL)) {
+	if ((co_sim == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
-	}
 
 	switch (command) {
-		case TREQ_SIM_SET_LANGUAGE:
-			if (sim_type == SIM_TYPE_GSM)
-				ret_code = _get_file_info(co_sim, ur, SIM_EF_ELP);
-			else if (sim_type == SIM_TYPE_USIM)
-				ret_code = _get_file_info(co_sim, ur, SIM_EF_LP);
-			else
-				ret_code = TCORE_RETURN_ENOSYS;
-		break;
+	case TREQ_SIM_SET_LANGUAGE:
+		if (sim_type == SIM_TYPE_GSM)
+			ret_code = _get_file_info(co_sim, ur, SIM_EF_ELP);
+		else if (sim_type == SIM_TYPE_USIM)
+			ret_code = _get_file_info(co_sim, ur, SIM_EF_LP);
+		else
+			ret_code = TCORE_RETURN_ENOSYS;
+	break;
 
-		case TREQ_SIM_SET_MAILBOX:
-		{
+	case TREQ_SIM_SET_MAILBOX:
+		if (cphs_sim) {
+			struct tel_sim_service_table *svct = tcore_sim_get_service_table(co_sim);
+
+			if (!svct)
+				break;
+			if ((sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_MBDN]) || (sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_MBDN])) {
+				tcore_user_request_set_metainfo(ur, sizeof(struct imc_sim_property), &meta_info);
+				ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MBI);
+			} else {
+				dbg("Service not available in SST/UST - Updating CPHS file : Fild ID[0x%x]", SIM_EF_CPHS_MAILBOX_NUMBERS);
+				ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_MAILBOX_NUMBERS);
+			}
+			free(svct);
+		} else {
+			ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MBI);
+		}
+	break;
+
+	case TREQ_SIM_SET_CALLFORWARDING:
+	{
+		const struct treq_sim_set_callforwarding *cf = NULL;
+		cf = (struct treq_sim_set_callforwarding *) tcore_user_request_ref_data(ur, NULL);
+
+		if (cf) {
 			if (cphs_sim) {
 				struct tel_sim_service_table *svct = tcore_sim_get_service_table(co_sim);
-
-				if(!svct)
+				if (!svct)
 					break;
-				if ((sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_MBDN]) || (sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_MBDN])) {
+				if ((sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_CFIS])	|| (sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_CFIS])) {
+					if (cf->b_cphs == FALSE)
+						ef = SIM_EF_USIM_CFIS;
+					else
+						ef = SIM_EF_CPHS_CALL_FORWARD_FLAGS;
+
 					tcore_user_request_set_metainfo(ur, sizeof(struct imc_sim_property), &meta_info);
-					ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MBI);
+					ret_code = _get_file_info(co_sim, ur, ef);
 				} else {
-					dbg("Service not available in SST/UST - Updating CPHS file : Fild ID[0x%x]", SIM_EF_CPHS_MAILBOX_NUMBERS);
-					ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_MAILBOX_NUMBERS);
+					dbg("Service not available in SST/UST - Updating CPHS file : File ID[0x%x]", SIM_EF_CPHS_CALL_FORWARD_FLAGS);
+					ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_CALL_FORWARD_FLAGS);
 				}
 				free(svct);
 			} else {
-				ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MBI);
+				ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_CFIS);
 			}
+		} else {
+			ret_code = TCORE_RETURN_EINVAL;
 		}
-		break;
+	}
+	break;
 
-		case TREQ_SIM_SET_CALLFORWARDING:
-		{
-			const struct treq_sim_set_callforwarding *cf = NULL;
-			cf = (struct treq_sim_set_callforwarding *) tcore_user_request_ref_data(ur, NULL);
+	case TREQ_SIM_SET_MESSAGEWAITING:
+	{
+		const struct treq_sim_set_messagewaiting *mw = NULL;
+		mw = (struct treq_sim_set_messagewaiting *) tcore_user_request_ref_data(ur, NULL);
+		if (mw) {
+			if (cphs_sim) {
+				struct tel_sim_service_table *svct = tcore_sim_get_service_table(co_sim);
+				if (!svct)
+					break;
+				if ((sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_MWIS]) || (sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_MWIS])) {
+					if (mw->b_cphs == FALSE)
+						ef = SIM_EF_USIM_MWIS;
+					else
+						ef = SIM_EF_CPHS_VOICE_MSG_WAITING;
 
-			if (cf){
-				if (cphs_sim) {
-					struct tel_sim_service_table *svct = tcore_sim_get_service_table(co_sim);
-					if(!svct)
-						break;
-					if ((sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_CFIS])	|| (sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_CFIS])) {
-						if (cf->b_cphs == FALSE) {
-							ef = SIM_EF_USIM_CFIS;
-						} else {
-							ef = SIM_EF_CPHS_CALL_FORWARD_FLAGS;
-						}
-						tcore_user_request_set_metainfo(ur, sizeof(struct imc_sim_property), &meta_info);
-						ret_code = _get_file_info(co_sim, ur, ef);
-					} else {
-						dbg("Service not available in SST/UST - Updating CPHS file : File ID[0x%x]", SIM_EF_CPHS_CALL_FORWARD_FLAGS);
-						ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_CALL_FORWARD_FLAGS);
-					}
-					free(svct);
+					tcore_user_request_set_metainfo(ur, sizeof(struct imc_sim_property), &meta_info);
+					ret_code = _get_file_info(co_sim, ur, ef);
 				} else {
-					ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_CFIS);
+					dbg("Service not available in SST/UST - Updating CPHS file : File ID[0x%x]", SIM_EF_CPHS_VOICE_MSG_WAITING);
+					ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_VOICE_MSG_WAITING);
 				}
-			} else {
-				ret_code = TCORE_RETURN_EINVAL;
+				free(svct);
+				} else {
+					ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MWIS);
 			}
+		} else{
+			ret_code = TCORE_RETURN_EINVAL;
 		}
-		break;
+	}
+	break;
 
-		case TREQ_SIM_SET_MESSAGEWAITING:
-		{
-			const struct treq_sim_set_messagewaiting *mw = NULL;
-			mw = (struct treq_sim_set_messagewaiting *) tcore_user_request_ref_data(ur, NULL);
-			if (mw) {
-				if(cphs_sim) {
-					struct tel_sim_service_table *svct = tcore_sim_get_service_table(co_sim);
-					if(!svct)
-						break;
-					if (( sim_type == SIM_TYPE_GSM && svct->table.sst.service[SIM_SST_MWIS] ) || ( sim_type == SIM_TYPE_USIM && svct->table.ust.service[SIM_UST_MWIS] )) {
-						if (mw->b_cphs == FALSE) {
-							ef = SIM_EF_USIM_MWIS;
-						} else {
-							ef = SIM_EF_CPHS_VOICE_MSG_WAITING;
-						}
-						tcore_user_request_set_metainfo(ur, sizeof(struct imc_sim_property), &meta_info);
-						ret_code = _get_file_info(co_sim, ur, ef);
-					} else {
-						dbg("Service not available in SST/UST - Updating CPHS file : File ID[0x%x]", SIM_EF_CPHS_VOICE_MSG_WAITING);
-						ret_code = _get_file_info(co_sim, ur, SIM_EF_CPHS_VOICE_MSG_WAITING);
-					}
-					free(svct);
-					} else {
-						ret_code = _get_file_info(co_sim, ur, SIM_EF_USIM_MWIS);
-				}
-			} else{
-				ret_code = TCORE_RETURN_EINVAL;
-			}
-		}
-		break;
-
-		default:
-		{
-			err("Unhandled UPDATE command[%d]", command);
-			return TCORE_RETURN_EINVAL;
-		}
+	default:
+		err("Unhandled UPDATE command[%d]", command);
+		return TCORE_RETURN_EINVAL;
 	}
 
 	return ret_code;
@@ -4067,7 +4253,7 @@ static TReturn imc_transmit_apdu(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL))
+	if ((o == NULL) || (ur == NULL))
 		return TCORE_RETURN_EINVAL;
 
 	hal = tcore_object_get_hal(o);
@@ -4079,10 +4265,14 @@ static TReturn imc_transmit_apdu(CoreObject *o, UserRequest *ur)
 	req_data = tcore_user_request_ref_data(ur, NULL);
 
 	apdu = (char *)g_try_malloc0((2 * req_data->apdu_length) + 1);
+	if (apdu == NULL) {
+		err("Memory allocation failed!!");
+		return TCORE_RETURN_ENOMEM;
+	}
 	result = util_byte_to_hex((const char *)req_data->apdu, apdu, req_data->apdu_length);
 	dbg("result %d", result);
 
-	cmd_str = g_strdup_printf("AT+CSIM=%d,\"%s\"", (unsigned int)strlen(apdu), apdu);
+	cmd_str = g_strdup_printf("AT+CSIM=%d, \"%s\"", strlen(apdu), apdu);
 
 	ret = tcore_prepare_and_send_at_request(o, cmd_str, "+CSIM:",
 								TCORE_AT_SINGLELINE, ur,
@@ -4101,7 +4291,7 @@ static TReturn imc_get_atr(CoreObject *o, UserRequest *ur)
 
 	dbg("Entry");
 
-	if ((o == NULL )|| (ur == NULL)) {
+	if ((o == NULL) || (ur == NULL)) {
 		err("Invalid parameters");
 		return TCORE_RETURN_EINVAL;
 	}
@@ -4137,14 +4327,8 @@ static TReturn imc_req_authentication(CoreObject *co, UserRequest *ur)
 		return ret;
 	}
 
-	if (req_data->rand_data != NULL) {
-		convert_rand = util_hex_to_string(req_data->rand_data,
-						strlen(req_data->rand_data));
-		dbg("Convert RAND hex to string: [%s]", convert_rand);
-	} else {
-		err("rand_data is NULL");
-		return ret;
-	}
+	convert_rand = util_hex_to_string(req_data->rand_data, strlen(req_data->rand_data));
+	dbg("Convert RAND hex to string: [%s]", convert_rand);
 
 	sim_type = tcore_sim_get_type(co);
 	switch (sim_type) {
@@ -4161,20 +4345,15 @@ static TReturn imc_req_authentication(CoreObject *co, UserRequest *ur)
 	switch (req_data->auth_type) {
 	case SIM_AUTH_TYPE_GSM:
 		context_type = 2;
-		cmd_str = g_strdup_printf("AT+XAUTH=%d,%d,\"%s\"", session_id,
+		cmd_str = g_strdup_printf("AT+XAUTH=%d, %d, \"%s\"", session_id,
 						context_type, convert_rand);
 		break;
 	case SIM_AUTH_TYPE_3G:
 		context_type = 1;
-		if (req_data->autn_data != NULL) {
-			convert_autn = util_hex_to_string(req_data->autn_data,
-						strlen(req_data->autn_data));
-			dbg("Convert AUTN hex to string: [%s]", convert_autn);
-		} else {
-			err("autn_data is NULL");
-			goto out;
-		}
-		cmd_str = g_strdup_printf("AT+XAUTH=%d,%d,\"%s\",\"%s\"",
+		convert_autn = util_hex_to_string(req_data->autn_data, strlen(req_data->autn_data));
+		dbg("Convert AUTN hex to string: [%s]", convert_autn);
+
+		cmd_str = g_strdup_printf("AT+XAUTH=%d, %d, \"%s\", \"%s\"",
 						session_id, context_type,
 						convert_rand, convert_autn);
 		break;
@@ -4220,7 +4399,7 @@ gboolean imc_sim_init(TcorePlugin *cp, CoreObject *co_sim)
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_sim_set_ops(co_sim, &sim_ops);
+	tcore_sim_set_ops(co_sim, &sim_ops, TCORE_OPS_TYPE_CP);
 
 	meta_info = g_try_new0(struct imc_sim_property, 1);
 	if (meta_info == NULL)

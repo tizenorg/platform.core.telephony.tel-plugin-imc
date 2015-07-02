@@ -58,11 +58,10 @@ static void on_response_bootup_subscription(TcorePending *p,
 	const TcoreATResponse *resp = data;
 	dbg("Entry");
 
-	if (resp->success > 0) {
+	if (resp->success > 0)
 		dbg("RESULT - OK");
-	} else {
+	else
 		err("RESULT - ERROR");
-	}
 }
 
 static void on_response_last_bootup_subscription(TcorePending *p,
@@ -73,11 +72,10 @@ static void on_response_last_bootup_subscription(TcorePending *p,
 	gboolean ret;
 	dbg("Last Subscription - COMPLETED");
 
-	if (resp->success) {
+	if (resp->success)
 		dbg("RESULT - OK");
-	} else {
+	else
 		err("RESULT - FAIL");
-	}
 
 	dbg("Boot-up configration completed for IMC modem. %s",
 				"Bring CP to ONLINE state based on Flightmode status");

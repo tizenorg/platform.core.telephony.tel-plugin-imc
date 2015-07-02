@@ -37,7 +37,7 @@
 #define ENVELOPE_CMD_LEN        256
 
 static TReturn imc_terminal_response(CoreObject *o, UserRequest *ur);
-static void on_confirmation_sat_message_send(TcorePending *p, gboolean result, void *user_data);      // from Kernel
+static void on_confirmation_sat_message_send(TcorePending *p, gboolean result, void *user_data);      /* from Kernel */
 
 static void on_confirmation_sat_message_send(TcorePending *p, gboolean result, void *user_data)
 {
@@ -86,11 +86,16 @@ static gboolean on_event_sat_proactive_command(CoreObject *o, const void *event_
 	hexData = (char *)g_slist_nth_data(tokens, 0);
 	dbg("SAT data: [%s] SAT data length: [%d]", hexData, strlen(hexData));
 
-	tmp = util_removeQuotes(hexData);
+	tmp = tcore_at_tok_extract(hexData);
 	recordData = util_hexStringToBytes(tmp);
+	if (!recordData) {
+		err("util_hexStringToBytes Failed!!");
+		tcore_at_tok_free(tokens);
+		return FALSE;
+	}
 	dbg("recordData: %x", recordData);
 	g_free(tmp);
-	util_hex_dump("    ", strlen(hexData) / 2, recordData);
+	tcore_util_hex_dump("    ", strlen(hexData) / 2, recordData);
 	len_proactive_cmd = strlen(recordData);
 	dbg("len_proactive_cmd = %d", len_proactive_cmd);
 	tcore_sat_decode_proactive_command((unsigned char *) recordData, (strlen(hexData) / 2) - 1, &decoded_data);
@@ -168,7 +173,6 @@ static gboolean on_event_sat_proactive_command(CoreObject *o, const void *event_
 	case SAT_PROATV_CMD_SETUP_EVENT_LIST:
 		dbg("decoded command is setup event list!!");
 		memcpy(&proactive_noti.proactive_ind_data.setup_event_list, &decoded_data.data.setup_event_list, sizeof(struct tel_sat_setup_event_list_tlv));
-		// setup_event_rsp_get(o, &decoded_data.data.setup_event_list);
 		break;
 
 	case SAT_PROATV_CMD_SETUP_IDLE_MODE_TEXT:
@@ -241,7 +245,6 @@ static void on_response_envelop_cmd(TcorePending *p, int data_len, const void *d
 	GSList *tokens = NULL;
 	struct                      tresp_sat_envelop_data res;
 	const char *line = NULL;
-	//const char *env_res = NULL;
 	int sw2 = -1;
 
 	ur = tcore_pending_ref_user_request(p);
@@ -267,7 +270,6 @@ static void on_response_envelop_cmd(TcorePending *p, int data_len, const void *d
 				return;
 			}
 		}
-		//env_res = g_slist_nth_data(tokens, 0);
 		res.result = 0x8000;
 		res.envelop_resp = ENVELOPE_SUCCESS;
 		dbg("RESPONSE OK 3");
@@ -285,9 +287,9 @@ static void on_response_envelop_cmd(TcorePending *p, int data_len, const void *d
 		res.envelop_resp = ENVELOPE_FAILED;
 	}
 
-	if (ur) {
+	if (ur)
 		tcore_user_request_send_response(ur, TRESP_SAT_REQ_ENVELOPE, sizeof(struct tresp_sat_envelop_data), &res);
-	}
+
 	tcore_at_tok_free(tokens);
 	dbg(" Function exit");
 }
@@ -338,7 +340,7 @@ static TReturn imc_envelope(CoreObject *o, UserRequest *ur)
 	pbuffer = envelope_cmdhex;
 
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
+	if (FALSE == tcore_hal_get_power_state(hal)) {
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}
@@ -350,17 +352,23 @@ static TReturn imc_envelope(CoreObject *o, UserRequest *ur)
 	envelope_cmd_len = tcore_sat_encode_envelop_cmd(req_data, (char *) envelope_cmd);
 
 	dbg("envelope_cmd_len %d", envelope_cmd_len);
-	if (envelope_cmd_len == 0) {
+	if (envelope_cmd_len == 0)
 		return TCORE_RETURN_EINVAL;
-	}
+
 	for (count = 0; count < envelope_cmd_len; count++) {
 		dbg("envelope_cmd %02x", (unsigned char)envelope_cmd[count]);
-		sprintf(pbuffer, "%02x", (unsigned char)envelope_cmd[count]);
+		snprintf(pbuffer, 256, "%02x", (unsigned char)envelope_cmd[count]);
 		pbuffer += 2;
 	}
 	dbg("pbuffer %s", envelope_cmdhex);
 	cmd_str = g_strdup_printf("AT+SATE=\"%s\"", envelope_cmdhex);
 	req = tcore_at_request_new(cmd_str, "+SATE:", TCORE_AT_SINGLELINE);
+	if (req == NULL) {
+		g_free(cmd_str);
+		tcore_pending_free(pending);
+		return TCORE_RETURN_FAILURE;
+	}
+
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
@@ -390,7 +398,7 @@ static TReturn imc_terminal_response(CoreObject *o, UserRequest *ur)
 	dbg("Function Entry");
 	memset(&proactive_resphex, 0x00, sizeof(proactive_resphex));
 	hal = tcore_object_get_hal(o);
-	if(FALSE == tcore_hal_get_power_state(hal)){
+	if (FALSE == tcore_hal_get_power_state(hal)) {
 		dbg("cp not ready/n");
 		return TCORE_RETURN_ENOSYS;
 	}
@@ -406,6 +414,10 @@ static TReturn imc_terminal_response(CoreObject *o, UserRequest *ur)
 		return TCORE_RETURN_EINVAL;
 	}
 	hexString = calloc((proactive_resp_len * 2) + 1, 1);
+	if (hexString == NULL) {
+		tcore_pending_free(pending);
+		return TCORE_RETURN_FAILURE;
+	}
 
 	for (i = 0; i < proactive_resp_len * 2; i += 2) {
 		char value = 0;
@@ -426,6 +438,13 @@ static TReturn imc_terminal_response(CoreObject *o, UserRequest *ur)
 	cmd_str = g_strdup_printf("AT+SATR=\"%s\"", hexString);
 
 	req = tcore_at_request_new(cmd_str, NULL, TCORE_AT_NO_RESULT);
+	if (req == NULL) {
+		g_free(cmd_str);
+		g_free(hexString);
+		tcore_pending_free(pending);
+		return TCORE_RETURN_FAILURE;
+	}
+
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 
 	tcore_pending_set_request_data(pending, 0, req);
@@ -450,7 +469,7 @@ gboolean imc_sat_init(TcorePlugin *cp, CoreObject *co_sat)
 	dbg("Entry");
 
 	/* Set operations */
-	tcore_sat_set_ops(co_sat, &sat_ops);
+	tcore_sat_set_ops(co_sat, &sat_ops, TCORE_OPS_TYPE_CP);
 
 	tcore_object_add_callback(co_sat, "+SATI", on_event_sat_proactive_command, NULL);
 	tcore_object_add_callback(co_sat, "+SATN", on_event_sat_proactive_command, NULL);

@@ -10,7 +10,7 @@ SET(INCLUDEDIR "\${prefix}/include")
 
 # Set required packages
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED glib-2.0 tcore dlog db-util libxml-2.0 vconf)
+pkg_check_modules(pkgs REQUIRED glib-2.0 tcore dlog db-util libxml-2.0 vconf secure-storage)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
@@ -57,6 +57,5 @@ SET_TARGET_PROPERTIES(imc-plugin PROPERTIES PREFIX "" OUTPUT_NAME imc-plugin)
 INSTALL(TARGETS imc-plugin
 	LIBRARY DESTINATION ${LIBDIR}/telephony/plugins/modems)
 
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/res/wiki_mcc_mnc_oper_list.sql DESTINATION /tmp RENAME mcc_mnc_oper_list.sql)
 INSTALL(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION /usr/share/license RENAME tel-plugin-imc)
 

@@ -23,10 +23,8 @@
 
 #include <glib.h>
 
-void util_hex_dump(char *pad, int size, const void *data);
 unsigned char util_hexCharToInt(char c);
 char *util_hex_to_string(const char *src, unsigned int src_len);
 char* util_hexStringToBytes(char *s);
-char* util_removeQuotes(void *data);
 
 #endif	// __IMC_COMMON_H__
