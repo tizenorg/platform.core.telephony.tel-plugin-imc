@@ -33,7 +33,7 @@
 #include <user_request.h>
 #include <server.h>
 #include <at.h>
-#include <ss_manager.h>
+#include <ckmc/ckmc-manager.h>
 
 #include "imc_common.h"
 #include "imc_sms.h"
@@ -43,8 +43,7 @@
 #define SIM_PIN_MAX_RETRY_COUNT	 3
 #define SMS_STATE_READY	1
 
-#define SIM_SSM_GROUP_ID "secure-storage::telephony_sim"
-#define SIM_SSM_FILE_IMSI1 "imsi1"
+#define SIM_STORE_ALIAS "telephony_sim_imsi1"
 
 #define SWAPBYTES16(x) \
 	{ \
@@ -449,13 +448,16 @@ static enum tel_sim_access_result _decode_status_word(unsigned short status_word
 	return rst;
 }
 
-#if 0
 static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *imsi)
 {
 	gboolean is_changed = TRUE;
 	char new_imsi[16 + 1]; /* IMSI is 15 digit, but for distingushing between plmn and msin, define as 16 bytes. */
 	char *imsi_buf = NULL;
 	int ret_val = 0;
+
+	char *passwd = NULL;
+	ckmc_raw_buffer_s *ckmc_buffer;
+
 
 	dbg("Entry");
 	if (NULL == imsi) {
@@ -468,26 +470,34 @@ static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *ims
 	memcpy(&new_imsi[6], imsi->msin, strlen(imsi->msin));
 	new_imsi[6 + strlen(imsi->msin)] = '\0';
 
-	ret_val = ssa_get(SIM_SSM_FILE_IMSI1, &imsi_buf, SIM_SSM_GROUP_ID, NULL);
-	if (ret_val >= 0 && imsi_buf != NULL) {
+	ret_val = ckmc_get_data(SIM_STORE_ALIAS, passwd, &ckmc_buffer);
+	imsi_buf = (char*)ckmc_buffer->data;
+	if (ret_val == CKMC_ERROR_NONE && imsi_buf != NULL) {
 		if (strncmp(imsi_buf, new_imsi, 16) == 0)
 			is_changed = FALSE;
-		free(imsi_buf);
+		ckmc_buffer_free(ckmc_buffer);
 	}
 
 	if (is_changed) {
+		ckmc_policy_s policy;
+		ckmc_raw_buffer_s store_buffer;
+
+		policy.password = passwd;
+		policy.extractable = true;
+		store_buffer.data = (unsigned char*)new_imsi;
+		store_buffer.size = strlen(new_imsi) + 1;
+
 		dbg("NEW SIM");
 		/* Update file */
-		ret_val = ssa_put(SIM_SSM_FILE_IMSI1, new_imsi, strlen(new_imsi) + 1, SIM_SSM_GROUP_ID, NULL);
-		if (ret_val < 0)
-			err("ssa_put failed. ret_val=[%d]", ret_val);
+		ret_val = ckmc_save_data(SIM_STORE_ALIAS, store_buffer, policy);
+		if (ret_val != CKMC_ERROR_NONE)
+			err("ckmc_save_data failed. ret_val=[%d]", ret_val);
 	}
 
 	/* Update sim identification */
 	tcore_sim_set_identification(co_sim, is_changed);
 	return TRUE;
 }
-#endif
 
 static TReturn __sim_update_file(CoreObject *o, UserRequest *ur, enum tel_sim_file_id ef,
 					char *encoded_data, unsigned int encoded_len, int rec_index)
@@ -1772,7 +1782,7 @@ static void _response_get_file_data(TcorePending *p, int data_len, const void *d
 				if (dr == FALSE) {
 					err("IMSI decoding failed");
 				} else {
-					//_sim_check_identity(o, imsi);
+					_sim_check_identity(o, imsi);
 					tcore_sim_set_imsi(o, imsi);
 				}
 

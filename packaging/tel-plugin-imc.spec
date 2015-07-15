@@ -1,6 +1,6 @@
 %define major 0
 %define minor 1
-%define patchlevel 86
+%define patchlevel 87
 
 Name:             tel-plugin-imc
 Version:          %{major}.%{minor}.%{patchlevel}
@@ -16,7 +16,7 @@ BuildRequires:    pkgconfig(tcore)
 BuildRequires:    pkgconfig(db-util)
 BuildRequires:    pkgconfig(vconf)
 BuildRequires:    pkgconfig(libxml-2.0)
-BuildRequires:    pkgconfig(secure-storage)
+BuildRequires:    pkgconfig(key-manager)
 Requires(post):   /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 
