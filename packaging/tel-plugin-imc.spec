@@ -1,6 +1,6 @@
 %define major 0
 %define minor 1
-%define patchlevel 87
+%define patchlevel 88
 
 Name:             tel-plugin-imc
 Version:          %{major}.%{minor}.%{patchlevel}

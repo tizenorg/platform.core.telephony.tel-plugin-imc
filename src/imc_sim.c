@@ -43,7 +43,7 @@
 #define SIM_PIN_MAX_RETRY_COUNT	 3
 #define SMS_STATE_READY	1
 
-#define SIM_STORE_ALIAS "telephony_sim_imsi1"
+#define SIM_STORE_KEY "telephony_sim_imsi1"
 
 #define SWAPBYTES16(x) \
 	{ \
@@ -448,6 +448,22 @@ static enum tel_sim_access_result _decode_status_word(unsigned short status_word
 	return rst;
 }
 
+static char *_add_shared_owner_prefix(const char *name)
+{
+	size_t alias_len = strlen(name) + strlen(ckmc_label_shared_owner) + strlen(ckmc_label_name_separator);
+	char *ckm_alias = (char *)malloc(alias_len + 1);
+	if (!ckm_alias) {
+		err("Failed to allocate memory");
+		return NULL;
+	}
+	memset(ckm_alias, 0, alias_len);
+	strncat(ckm_alias, ckmc_label_shared_owner, strlen(ckmc_label_shared_owner));
+	strncat(ckm_alias, ckmc_label_name_separator, strlen(ckmc_label_name_separator));
+	strncat(ckm_alias, name, strlen(name));
+
+	return ckm_alias;
+}
+
 static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *imsi)
 {
 	gboolean is_changed = TRUE;
@@ -455,6 +471,7 @@ static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *ims
 	char *imsi_buf = NULL;
 	int ret_val = 0;
 
+	char *alias = NULL;
 	char *passwd = NULL;
 	ckmc_raw_buffer_s *ckmc_buffer;
 
@@ -465,12 +482,18 @@ static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *ims
 		return FALSE;
 	}
 
+	alias = _add_shared_owner_prefix(SIM_STORE_KEY);
+	if (alias == NULL) {
+		err("Failed to allocate alias name.");
+		return FALSE;
+	}
+
 	memset(new_imsi, 0x5F, 16);
 	memcpy(new_imsi, imsi->plmn, strlen(imsi->plmn));
 	memcpy(&new_imsi[6], imsi->msin, strlen(imsi->msin));
 	new_imsi[6 + strlen(imsi->msin)] = '\0';
 
-	ret_val = ckmc_get_data(SIM_STORE_ALIAS, passwd, &ckmc_buffer);
+	ret_val = ckmc_get_data(alias, passwd, &ckmc_buffer);
 	imsi_buf = (char*)ckmc_buffer->data;
 	if (ret_val == CKMC_ERROR_NONE && imsi_buf != NULL) {
 		if (strncmp(imsi_buf, new_imsi, 16) == 0)
@@ -489,13 +512,17 @@ static gboolean _sim_check_identity(CoreObject *co_sim, struct tel_sim_imsi *ims
 
 		dbg("NEW SIM");
 		/* Update file */
-		ret_val = ckmc_save_data(SIM_STORE_ALIAS, store_buffer, policy);
+		ret_val = ckmc_save_data(alias, store_buffer, policy);
 		if (ret_val != CKMC_ERROR_NONE)
 			err("ckmc_save_data failed. ret_val=[%d]", ret_val);
 	}
 
 	/* Update sim identification */
 	tcore_sim_set_identification(co_sim, is_changed);
+
+	if (alias)
+		free(alias);
+
 	return TRUE;
 }
 
