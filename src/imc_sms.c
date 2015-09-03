@@ -1818,7 +1818,7 @@ static void on_response_get_paramcnt(TcorePending *p,
 									dbg("Getting FileType: [Transparent file type]");
 									/* increment to next byte */
 									ptr_data++;
-									file_type = 0x01; /* SIM_FTYPE_TRANSPARENT */
+									file_type = SIM_FTYPE_TRANSPARENT;
 
 									/* data coding byte - value 21 */
 									ptr_data++;
@@ -1841,7 +1841,7 @@ static void on_response_get_paramcnt(TcorePending *p,
 									num_of_records = *ptr_data++;
 
 									/* Data lossy conversation from enum (int) to unsigned char */
-									file_type = 0x02;	/* SIM_FTYPE_LINEAR_FIXED */
+									file_type = SIM_FTYPE_LINEAR_FIXED;
 								break;
 
 								case 0x6:
@@ -1859,7 +1859,7 @@ static void on_response_get_paramcnt(TcorePending *p,
 									record_len = SMS_SWAPBYTES16(record_len);
 									ptr_data = ptr_data + 2;
 									num_of_records = *ptr_data++;
-									file_type = 0x04;	/* SIM_FTYPE_CYCLIC */
+									file_type = SIM_FTYPE_CYCLIC;
 								break;
 
 								default:
@@ -2086,14 +2086,14 @@ static void on_response_get_paramcnt(TcorePending *p,
 							if (file_type_tag == 0x00 || file_type_tag == 0x01) {
 								/* increament to next byte as this byte is RFU */
 								ptr_data++;
-								file_type = (file_type_tag == 0x00) ? 0x01 : 0x02; /* SIM_FTYPE_TRANSPARENT:SIM_FTYPE_LINEAR_FIXED; */
+								file_type = (file_type_tag == 0x00) ? SIM_FTYPE_TRANSPARENT : SIM_FTYPE_LINEAR_FIXED;
 							} else {
 								/* increment to next byte */
 								ptr_data++;
 
 								/* For a cyclic EF all bits except bit 7 are RFU; b7=1 indicates that */
 								/* the INCREASE command is allowed on the selected cyclic file. */
-								file_type = 0x04;	/* SIM_FTYPE_CYCLIC; */
+								file_type = SIM_FTYPE_CYCLIC;
 							}
 
 							/* bytes 9 to 11 give SIM file access conditions */
