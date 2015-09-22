@@ -450,15 +450,15 @@ static enum tel_sim_access_result _decode_status_word(unsigned short status_word
 
 static char *_add_shared_owner_prefix(const char *name)
 {
-	size_t alias_len = strlen(name) + strlen(ckmc_label_shared_owner) + strlen(ckmc_label_name_separator);
+	size_t alias_len = strlen(name) + strlen(ckmc_owner_id_system) + strlen(ckmc_owner_id_separator);
 	char *ckm_alias = (char *)malloc(alias_len + 1);
 	if (!ckm_alias) {
 		err("Failed to allocate memory");
 		return NULL;
 	}
 	memset(ckm_alias, 0, alias_len);
-	strncat(ckm_alias, ckmc_label_shared_owner, strlen(ckmc_label_shared_owner));
-	strncat(ckm_alias, ckmc_label_name_separator, strlen(ckmc_label_name_separator));
+	strncat(ckm_alias, ckmc_owner_id_system, strlen(ckmc_owner_id_system));
+	strncat(ckm_alias, ckmc_owner_id_separator, strlen(ckmc_owner_id_separator));
 	strncat(ckm_alias, name, strlen(name));
 
 	return ckm_alias;
