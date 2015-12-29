@@ -1440,7 +1440,7 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 {
 	UserRequest *ur = 0;
 	struct tresp_ss_cli resp;
-	enum telephony_ss_cli_type *p_type = NULL;
+	enum telephony_ss_cli_type p_type;
 	char *line = NULL, *status;
 	int error = FALSE;
 	int cli_adj, stat = 0;
@@ -1450,13 +1450,13 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 	dbg("function enter");
 	response = data;
 	ur = tcore_pending_ref_user_request(p);
-	p_type = (enum telephony_ss_cli_type *) (user_data);
+	p_type = GPOINTER_TO_INT(user_data);
 
 	if (response->success > 0) {
 		line = (char *) (((GSList *) response->lines)->data);
 		tokens = tcore_at_tok_new(line);
 
-		if (*p_type == SS_CLI_TYPE_CLIR) {
+		if (p_type == SS_CLI_TYPE_CLIR) {
 			/* +CLIR: <n> <m> */
 			dbg("CLI type is CLIR");
 			/* parse <n> */
@@ -1528,14 +1528,12 @@ static void on_response_ss_cli_get(TcorePending *p, int data_len, const void *da
 		tcore_at_tok_free(tokens);
 	}
 
-	resp.type = *p_type;
+	resp.type = p_type;
 	dbg("check - resp.type = %d ", resp.type);
 	if (ur)
 		tcore_user_request_send_response(ur, TRESP_SS_CLI_GET_STATUS, sizeof(struct tresp_ss_cli), &resp);
 	else
 		dbg("[ error ] ur : (0)");
-
-	g_free(user_data);
 }
 
 static struct tcore_ss_operations ss_ops = {
@@ -2529,7 +2527,6 @@ static TReturn imc_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 	struct treq_ss_cli *cli = 0;
 	gboolean ret = FALSE;
 	char *cmd_prefix = NULL, *rsp_prefix = NULL, *cmd_str = NULL;
-	enum  telephony_ss_cli_type *user_data = 0;
 	TcorePending *pending = NULL;
 	TcoreATRequest *req;
 
@@ -2575,14 +2572,6 @@ static TReturn imc_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 	cmd_str = g_strdup_printf("AT%s?", cmd_prefix);
 	dbg("request cmd : %s", cmd_str);
 
-	user_data = g_new0(enum telephony_ss_cli_type, 1);
-	if (!user_data) {
-		dbg("[ error ] failed to allocate memory");
-		g_free(cmd_str);
-		return TCORE_RETURN_ENOMEM;
-	}
-	*user_data = cli->type;
-
 	pending = tcore_pending_new(o, 0);
 
 	req = tcore_at_request_new(cmd_str, rsp_prefix, TCORE_AT_SINGLELINE);
@@ -2594,15 +2583,12 @@ static TReturn imc_ss_cli_get_status(CoreObject *o, UserRequest *ur)
 	dbg("cmd : %s, prefix(if any) :%s, cmd_len : %d", req->cmd, req->prefix, strlen(req->cmd));
 	tcore_pending_set_request_data(pending, 0, req);
 
-	ret = _ss_request_message(pending, o, ur, on_response_ss_cli_get, user_data);
+	ret = _ss_request_message(pending, o, ur, on_response_ss_cli_get, GINT_TO_POINTER(cli->type));
 	g_free(cmd_str);
 	if (!ret) {
 		dbg("AT request sent failed ");
-		if (user_data != NULL) {
-			g_free(user_data);
-			tcore_pending_free(pending);
-			tcore_at_request_free(req);
-		}
+		tcore_pending_free(pending);
+		tcore_at_request_free(req);
 		return TCORE_RETURN_FAILURE;
 	}
 	return TCORE_RETURN_SUCCESS;
